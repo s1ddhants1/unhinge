@@ -1,0 +1,223 @@
+name: Release
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+    paths-ignore:
+      - "README.md"
+      - "assets/**"
+      - ".github/**/*.md"
+      - ".github/FUNDING.yml"
+      - ".github/ISSUE_TEMPLATE/**"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-version:
+    name: Check Version Change
+    runs-on: ubuntu-latest
+    outputs:
+      version_changed: ${{ steps.check_version.outputs.version_changed }}
+      new_version: ${{ steps.check_version.outputs.new_version }}
+      version_code: ${{ steps.check_version.outputs.version_code }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+
+      - name: Check if version was bumped
+        id: check_version
+        run: |
+          FILE="app/build.gradle.kts"
+          NEW_VERSION=$(grep -m1 -oP '^\s*(val\s+appVersionName\s*=\s*"|versionName\s*=\s*")\K[^"]+' "$FILE" || echo "")
+          VERSION_CODE=$(grep -m1 -oP '^\s*(val\s+appVersionCode\s*=\s*|versionCode\s*=\s*)\K\d+' "$FILE" || echo "")
+
+          echo "Current version in build.gradle.kts: $NEW_VERSION"
+          echo "Current versionCode: $VERSION_CODE"
+
+          if [ -z "$NEW_VERSION" ]; then
+            echo "Error: Could not extract versionName from $FILE"
+            exit 1
+          fi
+
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "Manual release requested for version $NEW_VERSION"
+            echo "version_changed=true" >> $GITHUB_OUTPUT
+            echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+            echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          if git show HEAD^:$FILE > /dev/null 2>&1; then
+            OLD_VERSION=$(git show HEAD^:$FILE | grep -m1 -oP '^\s*(val\s+appVersionName\s*=\s*"|versionName\s*=\s*")\K[^"]+' || echo "")
+            echo "Previous version: $OLD_VERSION"
+
+            if [ "$OLD_VERSION" != "$NEW_VERSION" ]; then
+              echo "Version changed from $OLD_VERSION to $NEW_VERSION"
+              echo "version_changed=true" >> $GITHUB_OUTPUT
+              echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+              echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
+            else
+              echo "Version unchanged: $NEW_VERSION"
+              echo "version_changed=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "First version detected: $NEW_VERSION"
+            echo "version_changed=true" >> $GITHUB_OUTPUT
+            echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+            echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
+          fi
+
+  build:
+    name: Build Release APK
+    needs: check-version
+    if: needs.check-version.outputs.version_changed == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v6
+        with:
+          java-version: "25"
+          distribution: "temurin"
+
+      - name: Set Up Gradle
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          cache-read-only: true
+          cache-cleanup: on-success
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build Release APK
+        run: ./gradlew --console=plain assembleRelease --warning-mode summary
+        env:
+          BUILD_COMMIT: ${{ github.sha }}
+          PULL_REQUEST: "false"
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+
+      - name: Check Keystore Availability
+        id: check_keystore
+        run: |
+          if [ -n "${{ secrets.KEYSTORE }}" ]; then
+            echo "has_keystore=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_keystore=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Sign APK
+        if: steps.check_keystore.outputs.has_keystore == 'true'
+        uses: ilharp/sign-android-release@v2.0.0
+        with:
+          releaseDir: app/build/outputs/apk/release/
+          signingKey: ${{ secrets.KEYSTORE }}
+          keyAlias: ${{ secrets.KEY_ALIAS }}
+          keyStorePassword: ${{ secrets.KEYSTORE_PASSWORD }}
+          keyPassword: ${{ secrets.KEY_PASSWORD }}
+          buildToolsVersion: 36.0.0
+
+      - name: Move and rename release APK
+        run: |
+          OUTPUT_DIR="app/build/outputs/apk/release"
+          mkdir -p "$OUTPUT_DIR/out"
+
+          SIGNED_APK=$(find "$OUTPUT_DIR" -name "*-signed.apk" -o -name "*-unsigned-signed.apk" 2>/dev/null | head -1 || true)
+          if [ -n "$SIGNED_APK" ] && [ -f "$SIGNED_APK" ]; then
+            cp "$SIGNED_APK" "$OUTPUT_DIR/out/Unhinge-v${{ needs.check-version.outputs.new_version }}.apk"
+          else
+            RELEASE_APK=$(find "$OUTPUT_DIR" -name "*.apk" | head -1)
+            cp "$RELEASE_APK" "$OUTPUT_DIR/out/Unhinge-v${{ needs.check-version.outputs.new_version }}.apk"
+          fi
+
+          echo "Prepared APKs:"
+          ls -la "$OUTPUT_DIR/out/"
+
+      - name: Upload Release APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: Unhinge-v${{ needs.check-version.outputs.new_version }}
+          path: app/build/outputs/apk/release/out/*.apk
+
+  create-release:
+    name: Create GitHub Release
+    needs: [check-version, build]
+    if: needs.check-version.outputs.version_changed == 'true' || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Download release APKs
+        uses: actions/download-artifact@v8
+        with:
+          path: downloaded_artifacts/
+
+      - name: Organize APKs for release
+        run: |
+          echo "Organizing APK files..."
+          mkdir -p release_files
+          find downloaded_artifacts -name "*.apk" -exec cp {} release_files/ \;
+          echo "APKs ready for release:"
+          ls -la release_files/
+
+      - name: Parse release notes from changelog
+        run: |
+          VERSION="${{ needs.check-version.outputs.new_version }}"
+          chmod +x .github/scripts/parse_changelog.sh
+
+          if bash .github/scripts/parse_changelog.sh "$VERSION" changelog.md > release_notes.md; then
+            echo "Release notes sourced from changelog.md for v$VERSION"
+            echo "--- Preview ---"
+            head -20 release_notes.md
+          else
+            echo "::warning::v$VERSION not found in changelog.md — falling back to git log"
+            {
+              echo "Release of version $VERSION"
+              echo ""
+              git log "$(git describe --tags --abbrev=0 2>/dev/null || echo "HEAD~10")..HEAD" \
+                --pretty=format:"- %s" --no-merges | head -10 || echo "- Initial release"
+            } > release_notes.md
+            echo "--- Fallback notes ---"
+            cat release_notes.md
+          fi
+
+      - name: Create Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ needs.check-version.outputs.new_version }}"
+          echo "Creating release v${VERSION}"
+
+          {
+            echo "Released by @${{ github.triggering_actor }}"
+            echo ""
+            cat release_notes.md
+          } > attributed_release_notes.md
+
+          gh release create "v${VERSION}" \
+            --title "v${VERSION}" \
+            --notes-file attributed_release_notes.md \
+            --latest \
+            release_files/*.apk
+
+          echo "Release created successfully!"
+
+      - name: Update release summary
+        run: |
+          echo "## Release Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: v${{ needs.check-version.outputs.new_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version Code**: ${{ needs.check-version.outputs.version_code }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Released by**: @${{ github.triggering_actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **APKs Built**: $(ls release_files/*.apk | wc -l)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Release URL**: https://github.com/${{ github.repository }}/releases/tag/v${{ needs.check-version.outputs.new_version }}" >> $GITHUB_STEP_SUMMARY
