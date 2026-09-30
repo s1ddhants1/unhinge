@@ -207,7 +207,7 @@ The companion manager app provides deep inspection, local archival, telemetry st
    - [SettingsScreen.kt](../app/src/main/java/io/github/s1ddhants1/unhinge/ui/component/settings/SettingsScreen.kt) orchestrates smooth `AnimatedContent` subpage transitions based on `SettingsSubpage`.
    - Categories:
      - **Appearance**: ThemeMode (`SYSTEM`, `LIGHT`, `DARK`) selection via `SingleChoiceSegmentedButtonRow` and AMOLED pure black toggle.
-     - **AI Prompt Wingman**: Configured mirroring the Metrolist AI translation settings architecture (`Material3SettingsGroup` 24dp/6dp layout) with interactive dialogs for API Key (masked), API base URL, Model selection with quick-preset chips, tone persona selector, and custom system prompt editor.
+     - **AI Prompt Wingman**: Configured mirroring the Metrolist AI translation settings architecture (`Material3SettingsGroup` 24dp/6dp layout) with interactive dialogs for API Key (masked), API base URL, Model selection with quick-preset chips, Model Parameters sliders (temperature, top-P, max tokens), and custom system prompt editor.
      - **Privacy & Telemetry**: 13 modular switches controlling tracking SDK suppression, device ID spoofing, and location fuzzing.
 3. **Archival Persistence**:
    - [CandidateArchiveDb.kt](../app/src/main/java/io/github/s1ddhants1/unhinge/data/CandidateArchiveDb.kt) maintains a persistent local SQLite ledger (`candidate_archive.db`, version 3) with full-text search, rating annotations, and review flags.

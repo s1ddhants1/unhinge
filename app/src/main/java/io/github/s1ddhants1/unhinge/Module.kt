@@ -8,6 +8,7 @@ import androidx.annotation.Keep
 import io.github.libxposed.api.XposedInterface
 import io.github.libxposed.api.XposedModule
 import io.github.libxposed.api.XposedModuleInterface
+import io.github.s1ddhants1.unhinge.hook.hookFirst
 import io.github.s1ddhants1.unhinge.hook.hookTracked
 import io.github.s1ddhants1.unhinge.hook.privacy.*
 import io.github.s1ddhants1.unhinge.util.LSPatchHelper
@@ -152,12 +153,25 @@ class Module : XposedModule() {
         PrivacyContactsHook.apply(this, null, cl, prefs)
         PrivacyMetricWorkersHook.apply(this, null, cl, prefs)
         PrivacyDataTransportHook.apply(this, null, cl, prefs)
+
+        // Ensure AccessibilityManager.isEnabled() returns true so Jetpack Compose constructs accessibility semantics
+        attempt<Unit>("hook AccessibilityManager.isEnabled", silent = true) {
+            hookFirst(
+                cl = cl,
+                className = "android.view.accessibility.AccessibilityManager",
+                methodName = "isEnabled",
+                id = "a11y_is_enabled"
+            ) {
+                true
+            }
+        }
         Log.i(Consts.TAG, "Phase 1 early bytecode privacy hooks installed successfully")
     }
 
     private fun applyContextHooks(ctx: Context, cl: ClassLoader, prefs: PreferencesManager) {
         Log.i(Consts.TAG, "Installing Phase 2 context hooks and overlay...")
         prefs.ensureBackupPrefs(ctx)
+        io.github.s1ddhants1.unhinge.hook.ui.HostAppAiFab.ensureAccessibilityEnabled(ctx)
 
         // Disable GMS measurement components via PackageManager
         PrivacyGmsComponentsHook.apply(this, ctx, cl, prefs)

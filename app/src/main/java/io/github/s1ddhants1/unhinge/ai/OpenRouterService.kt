@@ -1,5 +1,6 @@
 package io.github.s1ddhants1.unhinge.ai
 
+import io.github.s1ddhants1.unhinge.Consts
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -45,6 +46,10 @@ object OpenRouterService {
         mode: String,
         maxRetries: Int = 3,
         customSystemPrompt: String = "",
+        avoidReplies: List<String> = emptyList(),
+        temperature: Float = Consts.DEFAULT_AI_TEMPERATURE,
+        topP: Float = Consts.DEFAULT_AI_TOP_P,
+        maxTokens: Int = Consts.DEFAULT_AI_MAX_TOKENS,
     ): Result<List<String>> =
         withContext(Dispatchers.IO) {
             if (text.isBlank()) return@withContext Result.failure(Exception("Input text is empty"))
@@ -59,6 +64,10 @@ object OpenRouterService {
                             mode = mode,
                             customSystemPrompt = customSystemPrompt,
                             baseUrl = baseUrl.ifBlank { OpenRouterDefaultBaseUrl },
+                            avoidReplies = avoidReplies,
+                            temperature = temperature,
+                            topP = topP,
+                            maxTokens = maxTokens,
                         )
                     val request =
                         Request
@@ -115,6 +124,10 @@ internal fun buildTranslationRequest(
     customSystemPrompt: String,
     baseUrl: String = OpenRouterDefaultBaseUrl,
     stream: Boolean = false,
+    avoidReplies: List<String> = emptyList(),
+    temperature: Float = Consts.DEFAULT_AI_TEMPERATURE,
+    topP: Float = Consts.DEFAULT_AI_TOP_P,
+    maxTokens: Int = Consts.DEFAULT_AI_MAX_TOKENS,
 ): JsonObject {
     val lineCount = text.lines().size
     val isWingmanMode = mode !in listOf("Romanized", "Transcribed", "Translated")
@@ -123,7 +136,6 @@ internal fun buildTranslationRequest(
             ?: if (isWingmanMode) {
                 """You are an exceptionally witty, charming, and perceptive dating wingman AI assistant.
 Your task is to analyze dating app candidate prompts (from Hinge) and craft irresistible, authentic, high-converting opening replies.
-Tone: $mode
 
 CRITICAL RULES:
 1. Output ONLY a valid JSON object of the form: {"lines": ["reply1", "reply2"]}
@@ -208,7 +220,12 @@ Output MUST be a JSON object {"lines": [...]} with EXACTLY $lineCount strings.""
             }
 
             else -> {
-                """Generate charismatic, personalized dating app opening replies for the following candidate prompts with a '$mode' tone.
+                val avoidInstruction = if (avoidReplies.isNotEmpty()) {
+                    "\n\nPreviously generated replies (generate a completely fresh, creative, and DIFFERENT opener; do NOT repeat or use similar jokes/angles):\n" +
+                            avoidReplies.joinToString("\n") { "- \"$it\"" }
+                } else ""
+
+                """Generate charismatic, personalized dating app opening replies for the following candidate prompts.$avoidInstruction
 
 Candidate Prompts ($lineCount items):
 $text
@@ -236,8 +253,9 @@ Output MUST be a JSON object {"lines": [...]} with EXACTLY $lineCount opening re
             },
         )
         if (model.isNotBlank()) put("model", model)
-        put("temperature", 0.3)
-        put("max_tokens", lineCount * 100)
+        put("temperature", if (isWingmanMode) temperature.toDouble() else 0.3)
+        put("top_p", if (isWingmanMode) topP.toDouble() else 1.0)
+        put("max_tokens", if (isWingmanMode) maxTokens else (lineCount * 100))
         put(
             "response_format",
             buildJsonObject {

@@ -98,6 +98,7 @@ fun UnhingeTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     pureBlack: Boolean = false,
     themeColor: Color = DefaultThemeColor,
+    setSystemBars: Boolean = true,
     content: @Composable () -> Unit
 ) {
     val context = LocalContext.current
@@ -140,7 +141,7 @@ fun UnhingeTheme(
     }
 
     val view = LocalView.current
-    if (!view.isInEditMode) {
+    if (!view.isInEditMode && setSystemBars && view.context.packageName == "io.github.s1ddhants1.unhinge") {
         SideEffect {
             val window = (view.context as? Activity)?.window ?: return@SideEffect
             val windowInsetsController = WindowCompat.getInsetsController(window, view)

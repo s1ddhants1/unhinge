@@ -46,7 +46,9 @@ object Consts {
     const val PREF_AI_CUSTOM_SYSTEM_PROMPT = "ai_custom_system_prompt"
     const val PREF_AI_OVERRIDE_SYSTEM_PROMPT = "ai_override_system_prompt"
     const val PREF_SHOW_HOST_APP_FAB = "show_host_app_fab"
-    const val PREF_AI_RESPONSE_TONE = "ai_response_tone"
+    const val PREF_AI_TEMPERATURE = "ai_temperature"
+    const val PREF_AI_TOP_P = "ai_top_p"
+    const val PREF_AI_MAX_TOKENS = "ai_max_tokens"
     const val PREF_PURE_BLACK = "pure_black"
     const val PREF_THEME_COLOR = "theme_color"
     const val PREF_THEME_MODE = "theme_mode"
@@ -54,6 +56,9 @@ object Consts {
     const val OPENROUTER_DEFAULT_BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
     const val OPENROUTER_DEFAULT_MODEL = "google/gemini-2.5-flash-lite"
     const val DEFAULT_THEME_COLOR = 0xFFED5564L
+    const val DEFAULT_AI_TEMPERATURE = 0.85f
+    const val DEFAULT_AI_TOP_P = 0.95f
+    const val DEFAULT_AI_MAX_TOKENS = 250
 
     val DEFAULT_AI_SYSTEM_PROMPT = """
 You are an exceptionally witty, charming, and perceptive dating wingman AI assistant.
@@ -63,10 +68,6 @@ GUIDELINES FOR RESPONSES:
 - Each reply must directly reference details from their prompt or profile.
 - Sound like a real, confident, high-value person with personality. Avoid generic cliché pickup lines (e.g. "did it hurt when you fell from heaven").
 - Keep responses concise and punchy (1-2 sentences max, 10-30 words).
-- For each prompt, generate 4 distinct tonal variations:
-  1. witty: clever teasing, playful banter, fun challenge or contradiction
-  2. thoughtful: genuine question or observation that shows active reading and curiosity
-  3. flirty: smooth, charismatic, bold, charming yet tasteful
-  4. funny: humorous observation, absurdity, relatable comedy
+- Deliver creative, distinct angles that spark curiosity and make starting a conversation effortless.
 """.trimIndent()
 }

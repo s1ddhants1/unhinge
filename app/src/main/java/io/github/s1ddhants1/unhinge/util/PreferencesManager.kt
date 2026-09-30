@@ -115,6 +115,28 @@ class PreferencesManager(
         return defaultValue
     }
 
+    private fun getFloat(key: String, defaultValue: Float): Float {
+        if (prefs?.contains(key) == true) {
+            return prefs.getFloat(key, defaultValue)
+        }
+        val bp = backupPrefs
+        if (bp?.contains(key) == true) {
+            return bp.getFloat(key, defaultValue)
+        }
+        return defaultValue
+    }
+
+    private fun getInt(key: String, defaultValue: Int): Int {
+        if (prefs?.contains(key) == true) {
+            return prefs.getInt(key, defaultValue)
+        }
+        val bp = backupPrefs
+        if (bp?.contains(key) == true) {
+            return bp.getInt(key, defaultValue)
+        }
+        return defaultValue
+    }
+
     var onPreferenceChanged: (() -> Unit)? = null
 
     private var rawUpdatedAt: Long = prefs?.getLong("updated_at", 0L) ?: 0L
@@ -185,6 +207,42 @@ class PreferencesManager(
         onPreferenceChanged?.invoke()
     }
 
+    private fun putFloat(key: String, value: Float) {
+        val now = System.currentTimeMillis()
+        isInternalUpdate = true
+        try {
+            attempt("save preference float $key to remote", silent = true) {
+                prefs?.edit()?.putFloat(key, value)?.putLong("updated_at", now)?.apply()
+            }
+            attempt("save preference float $key to backup", silent = true) {
+                backupPrefs?.edit()?.putFloat(key, value)?.putLong("updated_at", now)?.apply()
+            }
+            rawUpdatedAt = now
+            preferenceSyncers[key]?.invoke()
+        } finally {
+            isInternalUpdate = false
+        }
+        onPreferenceChanged?.invoke()
+    }
+
+    private fun putInt(key: String, value: Int) {
+        val now = System.currentTimeMillis()
+        isInternalUpdate = true
+        try {
+            attempt("save preference int $key to remote", silent = true) {
+                prefs?.edit()?.putInt(key, value)?.putLong("updated_at", now)?.apply()
+            }
+            attempt("save preference int $key to backup", silent = true) {
+                backupPrefs?.edit()?.putInt(key, value)?.putLong("updated_at", now)?.apply()
+            }
+            rawUpdatedAt = now
+            preferenceSyncers[key]?.invoke()
+        } finally {
+            isInternalUpdate = false
+        }
+        onPreferenceChanged?.invoke()
+    }
+
     private fun <T> registerPreference(pref: Preference<T>): Preference<T> {
         preferenceSyncers[pref.key] = { pref.syncFromStorage() }
         return pref
@@ -198,6 +256,12 @@ class PreferencesManager(
 
     private fun longPreference(key: String, defaultValue: Long = 0L) =
         registerPreference(Preference(isDynamic, key, defaultValue, ::getLong, ::putLong) { prefs?.contains(it) == true })
+
+    private fun floatPreference(key: String, defaultValue: Float = 0f) =
+        registerPreference(Preference(isDynamic, key, defaultValue, ::getFloat, ::putFloat) { prefs?.contains(it) == true })
+
+    private fun intPreference(key: String, defaultValue: Int = 0) =
+        registerPreference(Preference(isDynamic, key, defaultValue, ::getInt, ::putInt) { prefs?.contains(it) == true })
 
     // Privacy Toggles
     var masterEnabled by booleanPreference(Consts.PREF_MASTER_ENABLED, true)
@@ -227,7 +291,9 @@ class PreferencesManager(
     var aiCustomSystemPrompt by stringPreference(Consts.PREF_AI_CUSTOM_SYSTEM_PROMPT, "")
     var aiOverrideSystemPrompt by booleanPreference(Consts.PREF_AI_OVERRIDE_SYSTEM_PROMPT, false)
     var showHostAppFab by booleanPreference(Consts.PREF_SHOW_HOST_APP_FAB, true)
-    var aiResponseTone by stringPreference(Consts.PREF_AI_RESPONSE_TONE, "Witty & Playful")
+    var aiTemperature by floatPreference(Consts.PREF_AI_TEMPERATURE, Consts.DEFAULT_AI_TEMPERATURE)
+    var aiTopP by floatPreference(Consts.PREF_AI_TOP_P, Consts.DEFAULT_AI_TOP_P)
+    var aiMaxTokens by intPreference(Consts.PREF_AI_MAX_TOKENS, Consts.DEFAULT_AI_MAX_TOKENS)
     var pureBlack by booleanPreference(Consts.PREF_PURE_BLACK, false)
     var themeColor by longPreference(Consts.PREF_THEME_COLOR, Consts.DEFAULT_THEME_COLOR)
     var themeModeString by stringPreference(Consts.PREF_THEME_MODE, ThemeMode.SYSTEM.name)
@@ -278,10 +344,9 @@ class PreferencesManager(
                 }
                 aiOverrideSystemPrompt = localPrefs.getBoolean(Consts.PREF_AI_OVERRIDE_SYSTEM_PROMPT, aiOverrideSystemPrompt)
                 showHostAppFab = localPrefs.getBoolean(Consts.PREF_SHOW_HOST_APP_FAB, showHostAppFab)
-                val toneInStorage = localPrefs.getString(Consts.PREF_AI_RESPONSE_TONE, "") ?: ""
-                if (toneInStorage.isNotBlank()) {
-                    aiResponseTone = toneInStorage
-                }
+                aiTemperature = localPrefs.getFloat(Consts.PREF_AI_TEMPERATURE, aiTemperature)
+                aiTopP = localPrefs.getFloat(Consts.PREF_AI_TOP_P, aiTopP)
+                aiMaxTokens = localPrefs.getInt(Consts.PREF_AI_MAX_TOKENS, aiMaxTokens)
                 pureBlack = localPrefs.getBoolean(Consts.PREF_PURE_BLACK, pureBlack)
                 themeColor = localPrefs.getLong(Consts.PREF_THEME_COLOR, themeColor)
                 themeModeString = localPrefs.getString(Consts.PREF_THEME_MODE, themeModeString) ?: themeModeString
@@ -345,7 +410,9 @@ class PreferencesManager(
                         .putString(Consts.PREF_AI_CUSTOM_SYSTEM_PROMPT, aiCustomSystemPrompt)
                         .putBoolean(Consts.PREF_AI_OVERRIDE_SYSTEM_PROMPT, aiOverrideSystemPrompt)
                         .putBoolean(Consts.PREF_SHOW_HOST_APP_FAB, showHostAppFab)
-                        .putString(Consts.PREF_AI_RESPONSE_TONE, aiResponseTone)
+                        .putFloat(Consts.PREF_AI_TEMPERATURE, aiTemperature)
+                        .putFloat(Consts.PREF_AI_TOP_P, aiTopP)
+                        .putInt(Consts.PREF_AI_MAX_TOKENS, aiMaxTokens)
                         .putBoolean(Consts.PREF_PURE_BLACK, pureBlack)
                         .putLong(Consts.PREF_THEME_COLOR, themeColor)
                         .putString(Consts.PREF_THEME_MODE, themeModeString)
@@ -379,7 +446,9 @@ class PreferencesManager(
                                 .putString(Consts.PREF_AI_CUSTOM_SYSTEM_PROMPT, aiCustomSystemPrompt)
                                 .putBoolean(Consts.PREF_AI_OVERRIDE_SYSTEM_PROMPT, aiOverrideSystemPrompt)
                                 .putBoolean(Consts.PREF_SHOW_HOST_APP_FAB, showHostAppFab)
-                                .putString(Consts.PREF_AI_RESPONSE_TONE, aiResponseTone)
+                                .putFloat(Consts.PREF_AI_TEMPERATURE, aiTemperature)
+                                .putFloat(Consts.PREF_AI_TOP_P, aiTopP)
+                                .putInt(Consts.PREF_AI_MAX_TOKENS, aiMaxTokens)
                                 .putBoolean(Consts.PREF_PURE_BLACK, pureBlack)
                                 .putLong(Consts.PREF_THEME_COLOR, themeColor)
                                 .putString(Consts.PREF_THEME_MODE, themeModeString)

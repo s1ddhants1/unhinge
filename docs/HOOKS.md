@@ -124,3 +124,5 @@ This guide documents the technical specifications, target classes, intercepted m
   2. Checks `prefs.showHostAppFab`.
   3. Resolves root decor view and adds the draggable overlay button.
   4. On activity teardown (`onDestroy`), detaches the overlay container to prevent WindowManager leaks.
+  5. **Dynamic Screen Clues Extraction**: On FAB tap, scans the view hierarchy and `AccessibilityNodeInfo` for visible prompt text, photo accessibility descriptions (`"[Name]'s photo"`), and skip actions (`"Skip [Name]"`), without referencing any obfuscated classes.
+  6. **Multi-Feed Candidate Targeting**: Passes extracted clues to `HostCandidateReader.readTargetCandidate()` to semantically match and display whatever candidate profile is currently visible on screen (including Standouts, Discover, and Likes You).

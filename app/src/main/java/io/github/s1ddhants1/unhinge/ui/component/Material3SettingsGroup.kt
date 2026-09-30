@@ -93,7 +93,7 @@ fun Material3SettingsGroup(
                     ),
                     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                 ) {
-                    Row(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .then(
@@ -103,33 +103,66 @@ fun Material3SettingsGroup(
                                     Modifier
                                 }
                             )
-                            .padding(horizontal = 20.dp, vertical = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .padding(
+                                horizontal = 20.dp,
+                                vertical = if (item.content != null) 14.dp else 16.dp
+                            )
                     ) {
-                        // Custom leading content or Icon with background
-                        if (item.leadingContent != null) {
-                            item.leadingContent.invoke()
-                            Spacer(modifier = Modifier.width(16.dp))
-                        } else if (item.icon != null || item.imageVector != null) {
-                            Box(
-                                modifier = Modifier
-                                    .size(40.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(
-                                        MaterialTheme.colorScheme.primary.copy(
-                                            alpha = if (item.isHighlighted) 0.15f else 0.1f
-                                        )
-                                    ),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                if (item.showBadge) {
-                                    BadgedBox(
-                                        badge = {
-                                            Badge(
-                                                containerColor = MaterialTheme.colorScheme.error
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Custom leading content or Icon with background
+                            if (item.leadingContent != null) {
+                                item.leadingContent.invoke()
+                                Spacer(modifier = Modifier.width(16.dp))
+                            } else if (item.icon != null || item.imageVector != null) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(
+                                            MaterialTheme.colorScheme.primary.copy(
+                                                alpha = if (item.isHighlighted) 0.15f else 0.1f
                                             )
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (item.showBadge) {
+                                        BadgedBox(
+                                            badge = {
+                                                Badge(
+                                                    containerColor = MaterialTheme.colorScheme.error
+                                                )
+                                            }
+                                        ) {
+                                            if (item.icon != null) {
+                                                Icon(
+                                                    painter = item.icon,
+                                                    contentDescription = null,
+                                                    tint = if (!item.enabled)
+                                                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                                                    else if (item.isHighlighted)
+                                                        MaterialTheme.colorScheme.primary
+                                                    else
+                                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
+                                                    modifier = Modifier.size(24.dp)
+                                                )
+                                            } else if (item.imageVector != null) {
+                                                Icon(
+                                                    imageVector = item.imageVector,
+                                                    contentDescription = null,
+                                                    tint = if (!item.enabled)
+                                                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                                                    else if (item.isHighlighted)
+                                                        MaterialTheme.colorScheme.primary
+                                                    else
+                                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
+                                                    modifier = Modifier.size(24.dp)
+                                                )
+                                            }
                                         }
-                                    ) {
+                                    } else {
                                         if (item.icon != null) {
                                             Icon(
                                                 painter = item.icon,
@@ -156,74 +189,53 @@ fun Material3SettingsGroup(
                                             )
                                         }
                                     }
-                                } else {
-                                    if (item.icon != null) {
-                                        Icon(
-                                            painter = item.icon,
-                                            contentDescription = null,
-                                            tint = if (!item.enabled)
-                                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                                            else if (item.isHighlighted)
-                                                MaterialTheme.colorScheme.primary
-                                            else
-                                                MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
-                                            modifier = Modifier.size(24.dp)
-                                        )
-                                    } else if (item.imageVector != null) {
-                                        Icon(
-                                            imageVector = item.imageVector,
-                                            contentDescription = null,
-                                            tint = if (!item.enabled)
-                                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                                            else if (item.isHighlighted)
-                                                MaterialTheme.colorScheme.primary
-                                            else
-                                                MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
-                                            modifier = Modifier.size(24.dp)
-                                        )
-                                    }
                                 }
+
+                                Spacer(modifier = Modifier.width(16.dp))
                             }
 
-                            Spacer(modifier = Modifier.width(16.dp))
-                        }
-
-                        // Title and description
-                        Column(
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            ProvideTextStyle(
-                                MaterialTheme.typography.titleMedium.copy(
-                                    color = if (!item.enabled) {
-                                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurface
-                                    }
-                                )
+                            // Title and description
+                            Column(
+                                modifier = Modifier.weight(1f)
                             ) {
-                                item.title()
-                            }
-
-                            item.description?.let { desc ->
-                                Spacer(modifier = Modifier.height(2.dp))
                                 ProvideTextStyle(
-                                    MaterialTheme.typography.bodyMedium.copy(
+                                    MaterialTheme.typography.titleMedium.copy(
                                         color = if (!item.enabled) {
                                             MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
                                         } else {
-                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                            MaterialTheme.colorScheme.onSurface
                                         }
                                     )
                                 ) {
-                                    desc()
+                                    item.title()
                                 }
+
+                                item.description?.let { desc ->
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    ProvideTextStyle(
+                                        MaterialTheme.typography.bodyMedium.copy(
+                                            color = if (!item.enabled) {
+                                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                                            } else {
+                                                MaterialTheme.colorScheme.onSurfaceVariant
+                                            }
+                                        )
+                                    ) {
+                                        desc()
+                                    }
+                                }
+                            }
+
+                            // Trailing content
+                            item.trailingContent?.let { trailing ->
+                                Spacer(modifier = Modifier.width(8.dp))
+                                trailing()
                             }
                         }
 
-                        // Trailing content
-                        item.trailingContent?.let { trailing ->
-                            Spacer(modifier = Modifier.width(8.dp))
-                            trailing()
+                        item.content?.let { customContent ->
+                            Spacer(modifier = Modifier.height(8.dp))
+                            customContent()
                         }
                     }
                 }
@@ -242,6 +254,7 @@ data class Material3SettingsItem(
     val title: @Composable () -> Unit,
     val description: (@Composable () -> Unit)? = null,
     val trailingContent: (@Composable () -> Unit)? = null,
+    val content: (@Composable () -> Unit)? = null,
     val showBadge: Boolean = false,
     val isHighlighted: Boolean = false,
     val enabled: Boolean = true,

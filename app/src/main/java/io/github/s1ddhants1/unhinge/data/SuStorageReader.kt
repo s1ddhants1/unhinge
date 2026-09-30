@@ -343,7 +343,7 @@ object SuStorageReader {
                             val qId = cursor.getString(0) ?: ""
                             val qText = promptTitles[qId] ?: ""
                             val raw = cursor.getString(1) ?: ""
-                            val responseText = Regex("\"response\"\\s*:\\s*\"([^\"]+)\"").find(raw)?.groupValues?.get(1) ?: raw
+                            val responseText = HostCandidateReader.parsePromptAnswer(raw)
                             val contentId = Regex("\"contentId\"\\s*:\\s*\"([^\"]+)\"").find(raw)?.groupValues?.get(1) ?: ""
                             playerAnswers.add(PlayerAnswerItem(qId, qText, responseText, contentId))
                         }
@@ -481,8 +481,8 @@ object SuStorageReader {
                                 val qId = c.getString(1) ?: ""
                                 val qText = promptTitles[qId] ?: ""
                                 val raw = c.getString(2) ?: ""
-                                val resp = Regex("\"response\"\\s*:\\s*\"([^\"]+)\"").find(raw)?.groupValues?.get(1)
-                                if (u != null && !resp.isNullOrBlank()) {
+                                val resp = HostCandidateReader.parsePromptAnswer(raw)
+                                if (u != null && resp.isNotBlank()) {
                                     promptsMap.getOrPut(u) { mutableListOf() }.add(CandidatePromptItem(question = qText, answer = resp))
                                 }
                             }

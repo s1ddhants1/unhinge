@@ -60,8 +60,8 @@ object HostCandidateReader {
                             val qId = c.getString(1) ?: ""
                             val qText = promptTitles[qId] ?: ""
                             val raw = c.getString(2) ?: ""
-                            val resp = Regex("\"response\"\\s*:\\s*\"([^\"]+)\"").find(raw)?.groupValues?.get(1)
-                            if (!resp.isNullOrBlank()) {
+                            val resp = parsePromptAnswer(raw)
+                            if (resp.isNotBlank()) {
                                 promptsMap.getOrPut(u) { mutableListOf() }.add(
                                     CandidatePromptItem(question = qText, answer = resp)
                                 )
@@ -98,12 +98,17 @@ object HostCandidateReader {
                     }
                 } catch (_: Exception) {}
 
-                // Standouts IDs
-                val standoutIds = mutableSetOf<String>()
+                // Standouts IDs in position order
+                val standoutOrder = mutableListOf<String>()
+                val standoutSet = mutableSetOf<String>()
                 try {
-                    db.rawQuery("SELECT subjectId FROM standouts_content", null).use { c ->
+                    db.rawQuery("SELECT subjectId FROM standouts_content ORDER BY position ASC", null).use { c ->
                         while (c.moveToNext()) {
-                            c.getString(0)?.let { standoutIds.add(it) }
+                            c.getString(0)?.let { id ->
+                                if (standoutSet.add(id)) {
+                                    standoutOrder.add(id)
+                                }
+                            }
                         }
                     }
                 } catch (_: Exception) {}
@@ -151,7 +156,7 @@ object HostCandidateReader {
                             isCircleMember = c.getInt(12) == 1,
                             photos = photosMap[uId] ?: emptyList(),
                             prompts = promptsMap[uId] ?: emptyList(),
-                            isStandout = standoutIds.contains(uId),
+                            isStandout = standoutSet.contains(uId),
                             isDiscover = discoverOrder.contains(uId),
                             isLiveInFeed = true,
                             school = c.getString(13) ?: "",
@@ -178,8 +183,8 @@ object HostCandidateReader {
                     profilesFound.remove(id)?.let { candidates.add(it) }
                 }
 
-                // Then standouts
-                for (id in standoutIds) {
+                // Then standouts in position order
+                for (id in standoutOrder) {
                     profilesFound.remove(id)?.let { candidates.add(it) }
                 }
 
@@ -197,6 +202,183 @@ object HostCandidateReader {
         }
 
         return candidates
+    }
+
+    fun parsePromptAnswer(raw: String): String {
+        if (raw.isBlank()) return ""
+        try {
+            val json = org.json.JSONObject(raw)
+            val resp = json.optString("response")
+            if (resp.isNotBlank()) {
+                return resp
+                    .replace("\\n", "\n")
+                    .replace("\\r", "\r")
+                    .replace("\\t", "\t")
+            }
+        } catch (_: Throwable) {}
+
+        val resp = Regex("\"response\"\\s*:\\s*\"([^\"]+)\"").find(raw)?.groupValues?.get(1) ?: raw
+        return resp
+            .replace("\\n", "\n")
+            .replace("\\r", "\r")
+            .replace("\\t", "\t")
+            .replace("\\\"", "\"")
+            .replace("\\\\", "\\")
+    }
+
+    enum class ScreenContext {
+        DISCOVER,
+        STANDOUTS,
+        LIKES_YOU,
+        UNKNOWN
+    }
+
+    data class ScreenClues(
+        val visibleTexts: Set<String> = emptySet(),
+        val activeContext: ScreenContext = ScreenContext.UNKNOWN
+    )
+
+    suspend fun readTargetCandidate(
+        context: Context,
+        screenClues: ScreenClues? = null
+    ): CachedCandidateProfile? = withContext(Dispatchers.IO) {
+        readTargetCandidateSync(context, screenClues)
+    }
+
+    fun readTargetCandidateSync(
+        context: Context,
+        screenClues: ScreenClues? = null
+    ): CachedCandidateProfile? {
+        val allCandidates = readActiveCandidatesSync(context)
+        if (allCandidates.isEmpty()) return null
+
+        if (screenClues != null && screenClues.visibleTexts.isNotEmpty()) {
+            val scored = allCandidates.map { candidate ->
+                candidate to scoreCandidate(candidate, screenClues)
+            }.sortedByDescending { it.second }
+
+            val top3 = scored.take(3).map { "${it.first.firstName} (id=${it.first.userId}, standout=${it.first.isStandout}, discover=${it.first.isDiscover}, score=${it.second})" }
+            Log.i(Consts.TAG, "HostCandidateReader: Scored top candidates: $top3")
+
+            val best = scored.firstOrNull()
+            if (best != null && best.second > 0) {
+                Log.i(Consts.TAG, "HostCandidateReader: Targeted candidate on screen: ${best.first.firstName} (${best.first.userId}) score=${best.second}")
+                return best.first
+            }
+        }
+
+        // Contextual fallback when no on-screen text matches scored positively
+        if (screenClues?.activeContext == ScreenContext.STANDOUTS) {
+            val standout = allCandidates.firstOrNull { it.isStandout }
+            if (standout != null) {
+                Log.d(Consts.TAG, "HostCandidateReader: Falling back to first standout candidate: ${standout.firstName} (${standout.userId})")
+                return standout
+            }
+        } else if (screenClues?.activeContext == ScreenContext.LIKES_YOU) {
+            val incoming = allCandidates.firstOrNull { it.isIncomingLike }
+            if (incoming != null) {
+                Log.d(Consts.TAG, "HostCandidateReader: Falling back to first incoming like candidate: ${incoming.firstName} (${incoming.userId})")
+                return incoming
+            }
+        }
+
+        // Default to Discover candidate fallback
+        return readCurrentDiscoverCandidateSync(context) ?: allCandidates.firstOrNull()
+    }
+
+    fun scoreCandidate(
+        candidate: CachedCandidateProfile,
+        screenClues: ScreenClues
+    ): Int {
+        var score = 0
+        val normalizedTexts = screenClues.visibleTexts
+            .map { it.trim().lowercase() }
+            .filter { it.isNotBlank() }
+        val fullBlob = normalizedTexts.joinToString(" ")
+        val candidateName = candidate.firstName.trim().lowercase()
+
+        // 1. Prompt Answers (highest specificity & reliability)
+        for (prompt in candidate.prompts) {
+            val ans = prompt.answer.trim().lowercase()
+            if (ans.length >= 3) {
+                if (fullBlob.contains(ans) || normalizedTexts.any { it.contains(ans) || (ans.contains(it) && it.length >= 10) }) {
+                    score += 1000
+                } else {
+                    val words = ans.split(Regex("[^a-zA-Z0-9]+")).filter { it.length >= 4 }
+                    if (words.size >= 2) {
+                        val matched = words.count { fullBlob.contains(it) }
+                        if (matched >= 2 && matched >= (words.size * 0.5)) {
+                            score += 600
+                        }
+                    }
+                }
+            }
+
+            val q = prompt.question.trim().lowercase()
+            if (q.length >= 4 && fullBlob.contains(q)) {
+                score += 200
+            }
+        }
+
+        // 2. Candidate name patterns in descriptions and UI text
+        if (candidateName.isNotEmpty()) {
+            val photoPattern = Regex("(?i)\\b${Regex.escape(candidateName)}['’]s\\s+photo")
+            val skipPattern = Regex("(?i)\\bskip\\s+${Regex.escape(candidateName)}\\b")
+            for (text in screenClues.visibleTexts) {
+                if (photoPattern.containsMatchIn(text) || skipPattern.containsMatchIn(text)) {
+                    score += 800
+                    break
+                }
+            }
+
+            // Standalone exact name in text or title
+            if (screenClues.visibleTexts.any { it.trim().equals(candidate.firstName.trim(), ignoreCase = true) }) {
+                score += 250
+            }
+
+            // Name + Age match
+            if (candidate.age > 0) {
+                val nameAgePattern = Regex("(?i)\\b${Regex.escape(candidateName)},?\\s+${candidate.age}\\b")
+                if (screenClues.visibleTexts.any { nameAgePattern.containsMatchIn(it) }) {
+                    score += 400
+                }
+            }
+        }
+
+        // 3. Other metadata
+        if (candidate.jobTitle.isNotBlank() && candidate.jobTitle.length >= 3) {
+            if (fullBlob.contains(candidate.jobTitle.trim().lowercase())) {
+                score += 150
+            }
+        }
+        if (candidate.school.isNotBlank() && candidate.school.length >= 3) {
+            if (fullBlob.contains(candidate.school.trim().lowercase())) {
+                score += 150
+            }
+        }
+        if (candidate.location.isNotBlank() && candidate.location.length >= 4) {
+            if (fullBlob.contains(candidate.location.trim().lowercase())) {
+                score += 100
+            }
+        }
+
+        // 4. Context alignment bonus / penalty
+        when (screenClues.activeContext) {
+            ScreenContext.STANDOUTS -> {
+                if (candidate.isStandout) score += 100
+                if (candidate.isDiscover) score -= 100
+            }
+            ScreenContext.DISCOVER -> {
+                if (candidate.isDiscover) score += 100
+                if (candidate.isStandout) score -= 100
+            }
+            ScreenContext.LIKES_YOU -> {
+                if (candidate.isIncomingLike) score += 100
+            }
+            ScreenContext.UNKNOWN -> {}
+        }
+
+        return score
     }
 
     suspend fun readCurrentDiscoverCandidate(context: Context): CachedCandidateProfile? =
@@ -304,8 +486,8 @@ object HostCandidateReader {
                     val qId = c.getString(0) ?: ""
                     val qText = promptTitles[qId] ?: ""
                     val raw = c.getString(1) ?: ""
-                    val resp = Regex("\"response\"\\s*:\\s*\"([^\"]+)\"").find(raw)?.groupValues?.get(1)
-                    if (!resp.isNullOrBlank()) {
+                    val resp = parsePromptAnswer(raw)
+                    if (resp.isNotBlank()) {
                         prompts.add(CandidatePromptItem(question = qText, answer = resp))
                     }
                 }
@@ -335,6 +517,20 @@ object HostCandidateReader {
                     isIncoming = true
                     incomingType = c.getString(0) ?: "like"
                 }
+            }
+        } catch (_: Exception) {}
+
+        var isStandout = false
+        try {
+            db.rawQuery("SELECT 1 FROM standouts_content WHERE subjectId = ? LIMIT 1", arrayOf(targetId)).use {
+                isStandout = it.moveToFirst()
+            }
+        } catch (_: Exception) {}
+
+        var isDiscover = false
+        try {
+            db.rawQuery("SELECT 1 FROM discover_subject WHERE userId = ? LIMIT 1", arrayOf(targetId)).use {
+                isDiscover = it.moveToFirst()
             }
         } catch (_: Exception) {}
 
@@ -368,8 +564,8 @@ object HostCandidateReader {
                         isCircleMember = c.getInt(12) == 1,
                         photos = photos,
                         prompts = prompts,
-                        isStandout = false,
-                        isDiscover = true,
+                        isStandout = isStandout,
+                        isDiscover = isDiscover,
                         isLiveInFeed = true,
                         school = c.getString(13) ?: "",
                         employer = c.getString(14) ?: "",

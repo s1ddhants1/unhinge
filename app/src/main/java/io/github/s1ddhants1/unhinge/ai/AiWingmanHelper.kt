@@ -5,6 +5,7 @@ import io.github.s1ddhants1.unhinge.R
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -82,8 +83,14 @@ object AiWingmanHelper {
         }
     }
 
-    private fun getCacheKey(text: String, mode: String, targetLanguage: String): String {
-        return "${text.hashCode()}_${mode}_${targetLanguage}"
+    private fun getCacheKey(
+        text: String,
+        targetLanguage: String,
+        temperature: Float,
+        topP: Float,
+        maxTokens: Int,
+    ): String {
+        return "${text.hashCode()}_${targetLanguage}_${temperature}_${topP}_${maxTokens}"
     }
 
     /**
@@ -100,13 +107,77 @@ object AiWingmanHelper {
             }
     }
 
+    fun resolveEffectiveEndpoint(
+        provider: String,
+        apiKey: String,
+        baseUrl: String,
+        model: String,
+    ): Triple<String, String, String> {
+        val effectiveApiKey = apiKey.trim()
+        val effectiveProvider = if (effectiveApiKey.startsWith("AQ.") || effectiveApiKey.startsWith("AIzaSy")) {
+            "Gemini"
+        } else {
+            provider
+        }
+
+        val effectiveBaseUrl = when {
+            effectiveProvider.equals("Gemini", ignoreCase = true) && (baseUrl.isBlank() || baseUrl.contains("openrouter.ai")) ->
+                "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+            effectiveProvider.equals("OpenAI", ignoreCase = true) && (baseUrl.isBlank() || baseUrl.contains("openrouter.ai")) ->
+                "https://api.openai.com/v1/chat/completions"
+            effectiveProvider.equals("Claude", ignoreCase = true) && (baseUrl.isBlank() || baseUrl.contains("openrouter.ai")) ->
+                "https://api.anthropic.com/v1/messages"
+            effectiveProvider.equals("Perplexity", ignoreCase = true) && (baseUrl.isBlank() || baseUrl.contains("openrouter.ai")) ->
+                "https://api.perplexity.ai/chat/completions"
+            effectiveProvider.equals("XAi", ignoreCase = true) && (baseUrl.isBlank() || baseUrl.contains("openrouter.ai")) ->
+                "https://api.x.ai/v1/chat/completions"
+            effectiveProvider.equals("Mistral", ignoreCase = true) && (baseUrl.isBlank() || baseUrl.contains("openrouter.ai")) ->
+                "https://api.mistral.ai/v1/chat/completions"
+            effectiveProvider.equals("Inception", ignoreCase = true) && (baseUrl.isBlank() || baseUrl.contains("openrouter.ai")) ->
+                "https://api.inceptionlabs.ai/v1/chat/completions"
+            else -> baseUrl.ifBlank { OpenRouterDefaultBaseUrl }
+        }
+
+        val effectiveModel = if (effectiveProvider.equals("Gemini", ignoreCase = true) && (model.isBlank() || model.contains("gemini-2.5-flash-lite"))) {
+            "gemini-flash-lite-latest"
+        } else {
+            model.ifBlank { io.github.s1ddhants1.unhinge.Consts.OPENROUTER_DEFAULT_MODEL }
+        }
+
+        return Triple(effectiveProvider, effectiveBaseUrl, effectiveModel)
+    }
+
+    fun streamCustomChat(
+        userPrompt: String,
+        systemPrompt: String,
+        apiKey: String,
+        baseUrl: String,
+        model: String,
+        provider: String,
+        temperature: Float = io.github.s1ddhants1.unhinge.Consts.DEFAULT_AI_TEMPERATURE,
+        topP: Float = io.github.s1ddhants1.unhinge.Consts.DEFAULT_AI_TOP_P,
+        maxTokens: Int = io.github.s1ddhants1.unhinge.Consts.DEFAULT_AI_MAX_TOKENS,
+    ): Flow<OpenRouterStreamingService.ChatStreamChunk> {
+        val (_, effectiveBaseUrl, effectiveModel) = resolveEffectiveEndpoint(provider, apiKey, baseUrl, model)
+        return OpenRouterStreamingService.streamChat(
+            systemPrompt = systemPrompt,
+            userPrompt = userPrompt,
+            apiKey = apiKey,
+            baseUrl = effectiveBaseUrl,
+            model = effectiveModel,
+            temperature = temperature,
+            topP = topP,
+            maxTokens = maxTokens,
+        )
+    }
+
     fun generateReplies(
         prompts: List<PromptEntry>,
         targetLanguage: String = "English",
         apiKey: String,
         baseUrl: String,
         model: String,
-        mode: String,
+        mode: String = "Wingman",
         scope: CoroutineScope,
         context: Context,
         provider: String = "OpenRouter",
@@ -116,12 +187,20 @@ object AiWingmanHelper {
         candidateId: String = "",
         database: Any? = null,
         systemPrompt: String = "",
+        forceRefresh: Boolean = false,
+        temperature: Float = io.github.s1ddhants1.unhinge.Consts.DEFAULT_AI_TEMPERATURE,
+        topP: Float = io.github.s1ddhants1.unhinge.Consts.DEFAULT_AI_TOP_P,
+        maxTokens: Int = io.github.s1ddhants1.unhinge.Consts.DEFAULT_AI_MAX_TOKENS,
     ) {
-        generationJob?.cancel()
+        if (!forceRefresh) {
+            generationJob?.cancel()
+        }
         _status.value = WingmanStatus.Generating
 
-        // Clear existing suggestions to indicate regeneration
-        prompts.forEach { it.suggestedReplyFlow.value = null }
+        prompts.forEach { it.isGeneratingFlow.value = true }
+        if (!forceRefresh) {
+            prompts.forEach { it.suggestedReplyFlow.value = null }
+        }
 
         generationJob = scope.launch(Dispatchers.IO) {
             try {
@@ -131,37 +210,10 @@ object AiWingmanHelper {
                     return@launch
                 }
 
-                val effectiveProvider = if (effectiveApiKey.startsWith("AQ.") || effectiveApiKey.startsWith("AIzaSy")) {
-                    "Gemini"
-                } else {
-                    provider
-                }
+                val (effectiveProvider, effectiveBaseUrl, effectiveModel) =
+                    resolveEffectiveEndpoint(provider, effectiveApiKey, baseUrl, model)
 
-                val effectiveBaseUrl = when {
-                    effectiveProvider.equals("Gemini", ignoreCase = true) && (baseUrl.isBlank() || baseUrl.contains("openrouter.ai")) ->
-                        "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
-                    effectiveProvider.equals("OpenAI", ignoreCase = true) && (baseUrl.isBlank() || baseUrl.contains("openrouter.ai")) ->
-                        "https://api.openai.com/v1/chat/completions"
-                    effectiveProvider.equals("Claude", ignoreCase = true) && (baseUrl.isBlank() || baseUrl.contains("openrouter.ai")) ->
-                        "https://api.anthropic.com/v1/messages"
-                    effectiveProvider.equals("Perplexity", ignoreCase = true) && (baseUrl.isBlank() || baseUrl.contains("openrouter.ai")) ->
-                        "https://api.perplexity.ai/chat/completions"
-                    effectiveProvider.equals("XAi", ignoreCase = true) && (baseUrl.isBlank() || baseUrl.contains("openrouter.ai")) ->
-                        "https://api.x.ai/v1/chat/completions"
-                    effectiveProvider.equals("Mistral", ignoreCase = true) && (baseUrl.isBlank() || baseUrl.contains("openrouter.ai")) ->
-                        "https://api.mistral.ai/v1/chat/completions"
-                    effectiveProvider.equals("Inception", ignoreCase = true) && (baseUrl.isBlank() || baseUrl.contains("openrouter.ai")) ->
-                        "https://api.inceptionlabs.ai/v1/chat/completions"
-                    else -> baseUrl.ifBlank { OpenRouterDefaultBaseUrl }
-                }
-
-                val effectiveModel = if (effectiveProvider.equals("Gemini", ignoreCase = true) && (model.isBlank() || model.contains("gemini-2.5-flash-lite"))) {
-                    "gemini-flash-lite-latest"
-                } else {
-                    model
-                }
-
-                Timber.d("generateReplies: provider=$effectiveProvider, baseUrl=$effectiveBaseUrl, model=$effectiveModel, keyLen=${effectiveApiKey.length}")
+                Timber.d("generateReplies: provider=$effectiveProvider, baseUrl=$effectiveBaseUrl, model=$effectiveModel, keyLen=${effectiveApiKey.length}, forceRefresh=$forceRefresh")
 
                 if (prompts.isEmpty()) {
                     _status.value = WingmanStatus.Error(context.getString(R.string.ai_error_no_prompts))
@@ -179,22 +231,26 @@ object AiWingmanHelper {
 
                 val fullText = nonEmptyEntries.joinToString("\n") { it.second.text }
 
-                val cacheKey = getCacheKey(fullText, mode, targetLanguage)
-                val cachedReplies = replyCache[cacheKey]
-                if (cachedReplies != null && cachedReplies.size >= nonEmptyEntries.size) {
-                    nonEmptyEntries.forEachIndexed { idx, (originalIndex, _) ->
-                        if (idx < cachedReplies.size) {
-                            prompts[originalIndex].suggestedReplyFlow.value = cachedReplies[idx]
+                val cacheKey = getCacheKey(fullText, targetLanguage, temperature, topP, maxTokens)
+                if (!forceRefresh) {
+                    val cachedReplies = replyCache[cacheKey]
+                    if (cachedReplies != null && cachedReplies.size >= nonEmptyEntries.size) {
+                        nonEmptyEntries.forEachIndexed { idx, (_, entry) ->
+                            if (idx < cachedReplies.size) {
+                                entry.addReply(cachedReplies[idx], selectNew = true)
+                            }
                         }
-                    }
-                    _hasActiveSuggestions.value = true
-                    _status.value = WingmanStatus.Success
+                        _hasActiveSuggestions.value = true
+                        _status.value = WingmanStatus.Success
 
-                    delay(3000)
-                    if (_status.value is WingmanStatus.Success && isCompositionActive) {
-                        _status.value = WingmanStatus.Idle
+                        delay(3000)
+                        if (_status.value is WingmanStatus.Success && isCompositionActive) {
+                            _status.value = WingmanStatus.Idle
+                        }
+                        return@launch
                     }
-                    return@launch
+                } else {
+                    replyCache.remove(cacheKey)
                 }
 
                 if (targetLanguage.isBlank()) {
@@ -209,6 +265,8 @@ object AiWingmanHelper {
                         null
                     }
                     ?: targetLanguage
+
+                val avoidReplies = if (prompts.size == 1) prompts[0].repliesFlow.value else emptyList()
 
                 val result = if (provider == "DeepL") {
                     Timber.d("Using DeepL for translation")
@@ -233,6 +291,10 @@ object AiWingmanHelper {
                         model = effectiveModel,
                         mode = mode,
                         customSystemPrompt = systemPrompt,
+                        avoidReplies = avoidReplies,
+                        temperature = temperature,
+                        topP = topP,
+                        maxTokens = maxTokens,
                     ).collect { chunk ->
                         when (chunk) {
                             is OpenRouterStreamingService.StreamChunk.Content -> {
@@ -280,20 +342,26 @@ object AiWingmanHelper {
                         model = effectiveModel,
                         mode = mode,
                         customSystemPrompt = systemPrompt,
+                        avoidReplies = avoidReplies,
+                        temperature = temperature,
+                        topP = topP,
+                        maxTokens = maxTokens,
                     )
                 }
 
                 result.onSuccess { replies ->
                     if (!isCompositionActive) return@onSuccess
 
-                    val cacheKey = getCacheKey(fullText, mode, targetLanguage)
-                    replyCache[cacheKey] = replies
+                    if (!forceRefresh) {
+                        val cacheKey = getCacheKey(fullText, targetLanguage, temperature, topP, maxTokens)
+                        replyCache[cacheKey] = replies
+                    }
 
                     val expectedCount = nonEmptyEntries.size
                     when {
                         replies.size >= expectedCount -> {
-                            nonEmptyEntries.forEachIndexed { idx, (originalIndex, _) ->
-                                prompts[originalIndex].suggestedReplyFlow.value = replies[idx]
+                            nonEmptyEntries.forEachIndexed { idx, (_, entry) ->
+                                entry.addReply(replies[idx], selectNew = true)
                             }
                             _hasActiveSuggestions.value = true
                             _status.value = WingmanStatus.Success
@@ -302,8 +370,8 @@ object AiWingmanHelper {
                         replies.isNotEmpty() -> {
                             replies.forEachIndexed { idx, reply ->
                                 if (idx < nonEmptyEntries.size) {
-                                    val originalIndex = nonEmptyEntries[idx].first
-                                    prompts[originalIndex].suggestedReplyFlow.value = reply
+                                    val (_, entry) = nonEmptyEntries[idx]
+                                    entry.addReply(reply, selectNew = true)
                                 }
                             }
                             _hasActiveSuggestions.value = true
@@ -325,6 +393,8 @@ object AiWingmanHelper {
                     val errorMessage = e.message ?: context.getString(R.string.ai_error_translation_failed)
                     _status.value = WingmanStatus.Error(errorMessage)
                 }
+            } finally {
+                prompts.forEach { it.isGeneratingFlow.value = false }
             }
         }
     }

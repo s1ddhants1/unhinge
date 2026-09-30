@@ -6,17 +6,38 @@ import android.content.Context
 import android.content.Intent
 import android.widget.Toast
 import androidx.compose.animation.*
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Velocity
+import kotlin.math.roundToInt
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -25,10 +46,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -36,9 +62,11 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.SubcomposeAsyncImage
 import coil3.compose.setSingletonImageLoaderFactory
 import io.github.s1ddhants1.unhinge.ai.AiWingmanHelper
+import io.github.s1ddhants1.unhinge.ai.OpenRouterStreamingService
 import io.github.s1ddhants1.unhinge.ai.PromptEntry
 import io.github.s1ddhants1.unhinge.data.HostCandidateReader
 import io.github.s1ddhants1.unhinge.model.CachedCandidateProfile
+import io.github.s1ddhants1.unhinge.ui.theme.HingeFonts
 import io.github.s1ddhants1.unhinge.util.PreferencesManager
 import io.github.s1ddhants1.unhinge.util.ThemeMode
 import io.github.s1ddhants1.unhinge.util.UnhingeImageLoader
@@ -89,9 +117,17 @@ private fun launchUnhingeSettings(context: Context) {
     }
 }
 
+data class CustomAiInteraction(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val query: String,
+    val reply: String = "",
+    val isStreaming: Boolean = true,
+    val error: String? = null,
+)
+
 /**
  * AI Wingman bottom sheet strictly focused on the active candidate:
- * - Editorial serif typography for prompt answers and candidate headlines
+ * - Native Modern Era typography across the entire bottom sheet
  * - Prompt cards styled like native Hinge Discover profile entries
  * - Integrated comment bubble for crafted conversation openers
  * - Capsule pill buttons and category selectors
@@ -104,6 +140,7 @@ fun HostAppAiSheetContent(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
     candidateList: List<CachedCandidateProfile>? = null,
+    screenClues: HostCandidateReader.ScreenClues? = null,
     showDragHandle: Boolean = false,
 ) {
     val context = LocalContext.current
@@ -129,16 +166,21 @@ fun HostAppAiSheetContent(
     val pillBg = if (isDark) HingeDesignTokens.DarkPillUnselected else HingeDesignTokens.LightPillUnselected
     val pillBorder = if (isDark) HingeDesignTokens.DarkPillBorder else HingeDesignTokens.LightPillBorder
 
+    val tiemposRegular = remember(context) { HingeFonts.tiemposRegular(context) }
+    val modernEraRegular = remember(context) { HingeFonts.modernEraRegular(context) }
+    val modernEraMedium = remember(context) { HingeFonts.modernEraMedium(context) }
+    val modernEraBold = remember(context) { HingeFonts.modernEraBold(context) }
+
     var loadedCandidate by remember { mutableStateOf(candidateList?.firstOrNull()) }
     var isLoadingCandidate by remember { mutableStateOf(candidateList == null) }
 
-    LaunchedEffect(candidateList) {
+    LaunchedEffect(candidateList, screenClues) {
         if (candidateList != null) {
             loadedCandidate = candidateList.firstOrNull()
             isLoadingCandidate = false
         } else {
             isLoadingCandidate = true
-            val current = HostCandidateReader.readCurrentDiscoverCandidate(context)
+            val current = HostCandidateReader.readTargetCandidate(context, screenClues)
                 ?: HostCandidateReader.readActiveCandidates(context).firstOrNull()
             loadedCandidate = current
             isLoadingCandidate = false
@@ -147,24 +189,13 @@ fun HostAppAiSheetContent(
 
     val candidate = loadedCandidate
 
-    val tones = listOf(
-        "Witty" to "Witty & Playful",
-        "Flirty" to "Charming & Flirty",
-        "Curious" to "Intellectual & Curious",
-        "Bold" to "Sarcastic & Bold"
-    )
-
-    var currentTone by remember {
-        mutableStateOf(prefs.aiResponseTone.ifBlank { "Witty & Playful" })
-    }
-
     val status by AiWingmanHelper.status.collectAsState()
 
     // Map candidate prompt items to AI PromptEntry carriers
     val promptEntries = remember(candidate?.userId, candidate?.prompts) {
         val prompts = candidate?.prompts.orEmpty()
         if (prompts.isNotEmpty()) {
-            prompts.map { PromptEntry(text = "${it.question}: ${it.answer}") }
+            prompts.map { PromptEntry(text = "${it.question}: ${it.answer.replace("\\n", "\n")}") }
         } else if (candidate != null) {
             val bio = listOfNotNull(
                 candidate.jobTitle.takeIf { it.isNotBlank() }?.let { "Job: $it" },
@@ -177,7 +208,10 @@ fun HostAppAiSheetContent(
         }
     }
 
-    fun requestWingmanGeneration(targets: List<PromptEntry> = promptEntries) {
+    fun requestWingmanGeneration(
+        targets: List<PromptEntry> = promptEntries,
+        forceRefresh: Boolean = false
+    ) {
         val key = if (prefs.aiProvider == "DeepL") prefs.deeplApiKey else prefs.openRouterApiKey
         if (key.isBlank() || targets.isEmpty()) return
         AiWingmanHelper.generateReplies(
@@ -186,7 +220,6 @@ fun HostAppAiSheetContent(
             apiKey = prefs.openRouterApiKey,
             baseUrl = prefs.openRouterBaseUrl,
             model = prefs.openRouterModel,
-            mode = currentTone,
             scope = coroutineScope,
             context = context,
             provider = prefs.aiProvider,
@@ -194,11 +227,15 @@ fun HostAppAiSheetContent(
             deeplFormality = prefs.deeplFormality,
             useStreaming = true,
             candidateId = candidate?.userId.orEmpty(),
-            systemPrompt = prefs.aiCustomSystemPrompt
+            systemPrompt = prefs.aiCustomSystemPrompt,
+            forceRefresh = forceRefresh,
+            temperature = prefs.aiTemperature,
+            topP = prefs.aiTopP,
+            maxTokens = prefs.aiMaxTokens,
         )
     }
 
-    LaunchedEffect(candidate?.userId, prefs.openRouterApiKey, prefs.deeplApiKey, currentTone) {
+    LaunchedEffect(candidate?.userId, prefs.openRouterApiKey, prefs.deeplApiKey) {
         val key = if (prefs.aiProvider == "DeepL") prefs.deeplApiKey else prefs.openRouterApiKey
         if (key.isNotBlank() && promptEntries.isNotEmpty()) {
             requestWingmanGeneration()
@@ -220,15 +257,236 @@ fun HostAppAiSheetContent(
         }
     }
 
+    var askAiQuery by remember { mutableStateOf("") }
+    var isAskAiGenerating by remember { mutableStateOf(false) }
+    val customInteractions = remember { mutableStateListOf<CustomAiInteraction>() }
+
+    LaunchedEffect(candidate?.userId) {
+        customInteractions.clear()
+    }
+
+    fun submitAskAi(queryText: String = askAiQuery) {
+        val query = queryText.trim()
+        if (query.isBlank()) return
+
+        val activeKey = if (prefs.aiProvider == "DeepL") prefs.deeplApiKey else prefs.openRouterApiKey
+        if (activeKey.isBlank()) {
+            launchUnhingeSettings(context)
+            return
+        }
+        if (prefs.aiProvider == "DeepL") {
+            Toast.makeText(context, "Ask AI requires an LLM provider (OpenRouter or Gemini)", Toast.LENGTH_LONG).show()
+            return
+        }
+
+        askAiQuery = ""
+
+        val newInteraction = CustomAiInteraction(query = query, isStreaming = true)
+        customInteractions.add(0, newInteraction)
+        isAskAiGenerating = true
+
+        val candidateProfileSummary = buildString {
+            if (candidate != null) {
+                append("Name: ${candidate.firstName.ifBlank { "Candidate" }}")
+                if (candidate.age > 0) append(", Age: ${candidate.age}")
+                if (candidate.jobTitle.isNotBlank()) append("\nWork: ${candidate.jobTitle}")
+                if (candidate.employer.isNotBlank()) append(" at ${candidate.employer}")
+                if (candidate.school.isNotBlank()) append("\nSchool: ${candidate.school}")
+                if (candidate.location.isNotBlank()) append("\nLocation: ${candidate.location}")
+                if (candidate.hometown.isNotBlank()) append("\nHometown: ${candidate.hometown}")
+                if (candidate.datingIntention.isNotBlank()) append("\nDating Intention: ${candidate.datingIntention}")
+                if (candidate.relationshipType.isNotBlank()) append("\nRelationship Type: ${candidate.relationshipType}")
+                if (candidate.religion.isNotBlank()) append("\nReligion: ${candidate.religion}")
+                if (candidate.politics.isNotBlank()) append("\nPolitics: ${candidate.politics}")
+                if (candidate.prompts.isNotEmpty()) {
+                    append("\n\nPrompts:")
+                    candidate.prompts.forEachIndexed { i, p ->
+                        append("\n${i + 1}. ${p.question}: ${p.answer.replace("\\n", "\n")}")
+                    }
+                }
+            }
+        }
+
+        val systemPrompt = buildString {
+            append("You are an exceptionally clever, charming, authentic dating wingman AI assistant for Hinge.\n")
+            append("Candidate Profile:\n$candidateProfileSummary\n\n")
+            append("INSTRUCTIONS:\n")
+            append("- Respond directly to the user's prompt or request.\n")
+            append("- Craft natural, witty, charming openers or personalized advice tailored to the candidate.\n")
+            append("- Do NOT include conversational filler like 'Sure!' or 'Here are some ideas:'. Output the customized openers, answers, or lines directly so they can be immediately read or copied.")
+            if (prefs.aiCustomSystemPrompt.isNotBlank()) {
+                append("\nAdditional System Instructions:\n${prefs.aiCustomSystemPrompt}")
+            }
+        }
+
+        coroutineScope.launch {
+            try {
+                val contentAccumulator = StringBuilder()
+                AiWingmanHelper.streamCustomChat(
+                    userPrompt = query,
+                    systemPrompt = systemPrompt,
+                    apiKey = activeKey,
+                    baseUrl = prefs.openRouterBaseUrl,
+                    model = prefs.openRouterModel,
+                    provider = prefs.aiProvider,
+                    temperature = prefs.aiTemperature,
+                    topP = prefs.aiTopP,
+                    maxTokens = prefs.aiMaxTokens,
+                ).collect { chunk ->
+                    when (chunk) {
+                        is OpenRouterStreamingService.ChatStreamChunk.Content -> {
+                            contentAccumulator.append(chunk.text)
+                            val idx = customInteractions.indexOfFirst { it.id == newInteraction.id }
+                            if (idx != -1) {
+                                customInteractions[idx] = customInteractions[idx].copy(
+                                    reply = contentAccumulator.toString(),
+                                    isStreaming = true
+                                )
+                            }
+                        }
+                        is OpenRouterStreamingService.ChatStreamChunk.Complete -> {
+                            val idx = customInteractions.indexOfFirst { it.id == newInteraction.id }
+                            if (idx != -1) {
+                                customInteractions[idx] = customInteractions[idx].copy(
+                                    reply = chunk.fullText.ifBlank { contentAccumulator.toString() },
+                                    isStreaming = false
+                                )
+                            }
+                        }
+                        is OpenRouterStreamingService.ChatStreamChunk.Error -> {
+                            val idx = customInteractions.indexOfFirst { it.id == newInteraction.id }
+                            if (idx != -1) {
+                                customInteractions[idx] = customInteractions[idx].copy(
+                                    error = chunk.message,
+                                    isStreaming = false
+                                )
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                val idx = customInteractions.indexOfFirst { it.id == newInteraction.id }
+                if (idx != -1) {
+                    customInteractions[idx] = customInteractions[idx].copy(
+                        error = e.message ?: "Failed to generate reply",
+                        isStreaming = false
+                    )
+                }
+            } finally {
+                isAskAiGenerating = false
+            }
+        }
+    }
+
     val imageLoader = remember(context) { UnhingeImageLoader.get(context) }
     setSingletonImageLoaderFactory { ctx ->
         UnhingeImageLoader.get(ctx)
+    }
+
+    val offsetY = remember { Animatable(0f) }
+    var sheetHeightPx by remember { mutableFloatStateOf(0f) }
+
+    fun dismissWithAnimation() {
+        coroutineScope.launch {
+            offsetY.animateTo(
+                targetValue = if (sheetHeightPx > 0f) sheetHeightPx else 2000f,
+                animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing)
+            )
+            onDismiss()
+        }
+    }
+
+    val handleDragStopped: (Float) -> Unit = { velocity ->
+        coroutineScope.launch {
+            val dismissThreshold = if (sheetHeightPx > 0f) sheetHeightPx * 0.25f else 300f
+            if (velocity > 1000f || offsetY.value > dismissThreshold) {
+                offsetY.animateTo(
+                    targetValue = if (sheetHeightPx > 0f) sheetHeightPx else 2000f,
+                    animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing)
+                )
+                onDismiss()
+            } else {
+                offsetY.animateTo(
+                    targetValue = 0f,
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                        stiffness = Spring.StiffnessMediumLow
+                    )
+                )
+            }
+        }
+    }
+
+    val dragModifier = Modifier.draggable(
+        state = rememberDraggableState { delta ->
+            coroutineScope.launch {
+                offsetY.snapTo((offsetY.value + delta).coerceAtLeast(0f))
+            }
+        },
+        orientation = Orientation.Vertical,
+        onDragStopped = { velocity ->
+            handleDragStopped(velocity)
+        }
+    )
+
+    val nestedScrollConnection = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                val delta = available.y
+                if (delta < 0f && offsetY.value > 0f) {
+                    val newOffset = (offsetY.value + delta).coerceAtLeast(0f)
+                    val consumed = newOffset - offsetY.value
+                    coroutineScope.launch {
+                        offsetY.snapTo(newOffset)
+                    }
+                    return Offset(0f, consumed)
+                }
+                return Offset.Zero
+            }
+
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource
+            ): Offset {
+                val delta = available.y
+                if (delta > 0f) {
+                    val newOffset = offsetY.value + delta
+                    coroutineScope.launch {
+                        offsetY.snapTo(newOffset)
+                    }
+                    return Offset(0f, delta)
+                }
+                return Offset.Zero
+            }
+
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                if (offsetY.value > 0f) {
+                    handleDragStopped(available.y)
+                    return available
+                }
+                return Velocity.Zero
+            }
+
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                if (available.y > 0f || offsetY.value > 0f) {
+                    handleDragStopped(available.y)
+                    return available
+                }
+                return Velocity.Zero
+            }
+        }
     }
 
     Column(
         modifier = modifier
             .fillMaxWidth()
             .fillMaxHeight(0.92f)
+            .offset { IntOffset(0, offsetY.value.roundToInt().coerceAtLeast(0)) }
+            .onGloballyPositioned { coordinates ->
+                sheetHeightPx = coordinates.size.height.toFloat()
+            }
+            .nestedScroll(nestedScrollConnection)
             .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
             .background(sheetBg)
             .padding(horizontal = 18.dp, vertical = 12.dp)
@@ -236,12 +494,18 @@ fun HostAppAiSheetContent(
         if (showDragHandle) {
             Box(
                 modifier = Modifier
-                    .align(Alignment.CenterHorizontally)
-                    .padding(top = 2.dp, bottom = 12.dp)
-                    .size(width = 36.dp, height = 4.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(if (isDark) Color(0xFF383838) else Color(0xFFD6D6D4))
-            )
+                    .fillMaxWidth()
+                    .height(28.dp)
+                    .then(dragModifier),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(width = 36.dp, height = 4.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(if (isDark) Color(0xFF383838) else Color(0xFFD6D6D4))
+                )
+            }
         }
 
         // Native Hinge Header: Candidate Identity & Single Dismiss Control
@@ -254,7 +518,9 @@ fun HostAppAiSheetContent(
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier
+                        .weight(1f)
+                        .then(dragModifier)
                 ) {
                     val photoUrl = candidate.photos.firstOrNull()
                     if (photoUrl != null) {
@@ -278,7 +544,7 @@ fun HostAppAiSheetContent(
                             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                 Text(
                                     text = candidate.firstName.take(1).ifBlank { "?" },
-                                    fontFamily = FontFamily.Serif,
+                                    fontFamily = modernEraBold,
                                     fontSize = 20.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = textPrimary
@@ -300,21 +566,13 @@ fun HostAppAiSheetContent(
                             }
                             Text(
                                 text = title,
-                                fontFamily = FontFamily.Serif,
+                                fontFamily = modernEraBold,
                                 fontSize = 21.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = textPrimary,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
-                            if (candidate.isSelfieVerified) {
-                                Icon(
-                                    imageVector = Icons.Default.CheckCircle,
-                                    contentDescription = "Verified Profile",
-                                    tint = HingeDesignTokens.VerifiedBlue,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
                         }
 
                         val subtitle = listOfNotNull(
@@ -325,7 +583,7 @@ fun HostAppAiSheetContent(
                         if (subtitle.isNotBlank()) {
                             Text(
                                 text = subtitle,
-                                fontFamily = FontFamily.SansSerif,
+                                fontFamily = modernEraRegular,
                                 fontSize = 13.sp,
                                 color = textSecondary,
                                 maxLines = 1,
@@ -337,10 +595,13 @@ fun HostAppAiSheetContent(
             } else {
                 Text(
                     text = "AI Wingman",
-                    fontFamily = FontFamily.Serif,
+                    fontFamily = modernEraBold,
                     fontSize = 21.sp,
                     fontWeight = FontWeight.Bold,
-                    color = textPrimary
+                    color = textPrimary,
+                    modifier = Modifier
+                        .weight(1f)
+                        .then(dragModifier)
                 )
             }
 
@@ -352,7 +613,7 @@ fun HostAppAiSheetContent(
                 modifier = Modifier.size(36.dp)
             ) {
                 IconButton(
-                    onClick = onDismiss,
+                    onClick = { dismissWithAnimation() },
                     modifier = Modifier.fillMaxSize()
                 ) {
                     Icon(
@@ -367,52 +628,13 @@ fun HostAppAiSheetContent(
 
         Spacer(Modifier.height(14.dp))
 
-        // Hinge Tone Selector Bar (Capsule Pill Tags)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            tones.forEach { (label, toneValue) ->
-                val isSelected = currentTone == toneValue
-                Surface(
-                    shape = RoundedCornerShape(50),
-                    color = if (isSelected) actionBtnBg else pillBg,
-                    border = if (isSelected) null else BorderStroke(1.dp, pillBorder),
-                    modifier = Modifier
-                        .height(34.dp)
-                        .clickable {
-                            currentTone = toneValue
-                            prefs.aiResponseTone = toneValue
-                            requestWingmanGeneration()
-                        }
-                ) {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier.padding(horizontal = 14.dp)
-                    ) {
-                        Text(
-                            text = label,
-                            fontFamily = FontFamily.SansSerif,
-                            fontSize = 13.sp,
-                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
-                            color = if (isSelected) actionBtnText else textSecondary
-                        )
-                    }
-                }
-            }
-        }
-
-        Spacer(Modifier.height(14.dp))
-
         // Loading State: Reading candidate from SQLite database
         if (isLoadingCandidate) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f),
+                    .weight(1f)
+                    .then(dragModifier),
                 contentAlignment = Alignment.Center
             ) {
                 Column(
@@ -426,7 +648,7 @@ fun HostAppAiSheetContent(
                     )
                     Text(
                         text = "Reading active candidate...",
-                        fontFamily = FontFamily.SansSerif,
+                        fontFamily = modernEraRegular,
                         fontSize = 14.sp,
                         color = textSecondary
                     )
@@ -440,7 +662,8 @@ fun HostAppAiSheetContent(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f),
+                    .weight(1f)
+                    .then(dragModifier),
                 contentAlignment = Alignment.Center
             ) {
                 Surface(
@@ -464,14 +687,14 @@ fun HostAppAiSheetContent(
                         )
                         Text(
                             text = "No candidate on screen",
-                            fontFamily = FontFamily.Serif,
+                            fontFamily = modernEraBold,
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Bold,
                             color = textPrimary
                         )
                         Text(
                             text = "Navigate to Hinge's Discover or Likes You feed, then tap the AI button to load openers for the active profile.",
-                            fontFamily = FontFamily.SansSerif,
+                            fontFamily = modernEraRegular,
                             fontSize = 13.5.sp,
                             color = textSecondary,
                             textAlign = TextAlign.Center,
@@ -500,7 +723,7 @@ fun HostAppAiSheetContent(
                 ) {
                     Text(
                         text = "SETUP REQUIRED",
-                        fontFamily = FontFamily.SansSerif,
+                        fontFamily = modernEraBold,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
                         letterSpacing = 0.8.sp,
@@ -508,15 +731,15 @@ fun HostAppAiSheetContent(
                     )
                     Text(
                         text = "Connect your AI API token to craft tailored openers.",
-                        fontFamily = FontFamily.Serif,
-                        fontSize = 19.sp,
-                        fontWeight = FontWeight.Medium,
+                        fontFamily = modernEraBold,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
                         color = textPrimary,
-                        lineHeight = 25.sp
+                        lineHeight = 24.sp
                     )
                     Text(
                         text = "Configure your ${prefs.aiProvider} token in Unhinge Settings to generate conversation starters for ${candidate.firstName.ifBlank { "this profile" }}.",
-                        fontFamily = FontFamily.SansSerif,
+                        fontFamily = modernEraRegular,
                         fontSize = 13.sp,
                         color = textSecondary,
                         lineHeight = 18.sp
@@ -534,7 +757,7 @@ fun HostAppAiSheetContent(
                     ) {
                         Text(
                             text = "Configure in Settings",
-                            fontFamily = FontFamily.SansSerif,
+                            fontFamily = modernEraMedium,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -551,6 +774,35 @@ fun HostAppAiSheetContent(
             verticalArrangement = Arrangement.spacedBy(14.dp),
             contentPadding = PaddingValues(bottom = 16.dp)
         ) {
+            // Custom Ask AI interactions
+            items(
+                items = customInteractions,
+                key = { it.id }
+            ) { item ->
+                CustomAiResponseCard(
+                    interaction = item,
+                    cardBg = cardBg,
+                    cardBorder = cardBorder,
+                    textPrimary = textPrimary,
+                    textSecondary = textSecondary,
+                    actionBtnBg = actionBtnBg,
+                    actionBtnText = actionBtnText,
+                    commentBg = commentBg,
+                    onCopy = { text ->
+                        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        cm.setPrimaryClip(ClipData.newPlainText("Unhinge AI Response", text))
+                        Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                    },
+                    onRegenerate = {
+                        customInteractions.removeAll { it.id == item.id }
+                        submitAskAi(item.query)
+                    },
+                    onDismiss = {
+                        customInteractions.removeAll { it.id == item.id }
+                    }
+                )
+            }
+
             // Case 1: Candidate has no text prompts (bio overview card)
             if (candidate.prompts.isEmpty()) {
                 item(key = "overview_card") {
@@ -568,12 +820,11 @@ fun HostAppAiSheetContent(
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             Text(
-                                text = "ABOUT ${candidate.firstName.ifBlank { "CANDIDATE" }.uppercase()}",
-                                fontFamily = FontFamily.SansSerif,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                letterSpacing = 0.8.sp,
-                                color = textSecondary
+                                text = "About ${candidate.firstName.ifBlank { "Candidate" }}",
+                                fontFamily = modernEraBold,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = textPrimary
                             )
 
                             val bioText = listOfNotNull(
@@ -586,14 +837,15 @@ fun HostAppAiSheetContent(
 
                             Text(
                                 text = bioText.ifBlank { "Active candidate in Hinge feed" },
-                                fontFamily = FontFamily.Serif,
-                                fontSize = 19.sp,
+                                fontFamily = tiemposRegular,
+                                fontSize = 24.sp,
                                 fontWeight = FontWeight.Normal,
-                                lineHeight = 26.sp,
+                                lineHeight = 32.sp,
                                 color = textPrimary
                             )
 
                             NativeHingeCommentBubble(
+                                entry = fallbackEntry,
                                 replyText = reply,
                                 status = status,
                                 isCopied = copiedIndex == 0,
@@ -602,8 +854,8 @@ fun HostAppAiSheetContent(
                                 textSecondary = textSecondary,
                                 actionBtnBg = actionBtnBg,
                                 actionBtnText = actionBtnText,
-                                onCopy = { if (!reply.isNullOrBlank()) copyOpener(0, reply!!) },
-                                onRegenerate = { fallbackEntry?.let { requestWingmanGeneration(listOf(it)) } },
+                                onCopy = { copyOpener(0, it) },
+                                onRegenerate = { fallbackEntry?.let { requestWingmanGeneration(listOf(it), forceRefresh = true) } },
                                 onOpenSettings = { launchUnhingeSettings(context) }
                             )
                         }
@@ -629,24 +881,24 @@ fun HostAppAiSheetContent(
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             Text(
-                                text = promptItem.question.uppercase(),
-                                fontFamily = FontFamily.SansSerif,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                letterSpacing = 0.8.sp,
-                                color = textSecondary
+                                text = promptItem.question,
+                                fontFamily = modernEraBold,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = textPrimary
                             )
 
                             Text(
-                                text = promptItem.answer,
-                                fontFamily = FontFamily.Serif,
-                                fontSize = 21.sp,
+                                text = promptItem.answer.replace("\\n", "\n"),
+                                fontFamily = tiemposRegular,
+                                fontSize = 26.sp,
                                 fontWeight = FontWeight.Normal,
-                                lineHeight = 28.sp,
+                                lineHeight = 34.sp,
                                 color = textPrimary
                             )
 
                             NativeHingeCommentBubble(
+                                entry = entry,
                                 replyText = reply,
                                 status = status,
                                 isCopied = copiedIndex == index,
@@ -655,8 +907,8 @@ fun HostAppAiSheetContent(
                                 textSecondary = textSecondary,
                                 actionBtnBg = actionBtnBg,
                                 actionBtnText = actionBtnText,
-                                onCopy = { if (!reply.isNullOrBlank()) copyOpener(index, reply!!) },
-                                onRegenerate = { entry?.let { requestWingmanGeneration(listOf(it)) } },
+                                onCopy = { copyOpener(index, it) },
+                                onRegenerate = { entry?.let { requestWingmanGeneration(listOf(it), forceRefresh = true) } },
                                 onOpenSettings = { launchUnhingeSettings(context) }
                             )
                         }
@@ -665,62 +917,308 @@ fun HostAppAiSheetContent(
             }
         }
 
-        // Native Hinge Bottom Action Bar (Capsule Button)
+        // Native Hinge Bottom Action Bar ("Ask AI" Input Bar)
         Surface(
             color = Color.Transparent,
             modifier = Modifier
                 .fillMaxWidth()
+                .imePadding()
                 .padding(top = 8.dp, bottom = 4.dp)
         ) {
-            val isGenerating = status is AiWingmanHelper.WingmanStatus.Generating
-
-            Button(
-                onClick = {
-                    val key = if (prefs.aiProvider == "DeepL") prefs.deeplApiKey else prefs.openRouterApiKey
-                    if (key.isBlank()) {
-                        launchUnhingeSettings(context)
-                        return@Button
-                    }
-                    requestWingmanGeneration()
-                },
-                enabled = !isGenerating,
-                shape = RoundedCornerShape(50),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = actionBtnBg,
-                    contentColor = actionBtnText,
-                    disabledContainerColor = actionBtnBg.copy(alpha = 0.6f),
-                    disabledContentColor = actionBtnText.copy(alpha = 0.6f)
-                ),
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(52.dp)
+                    .clip(RoundedCornerShape(26.dp))
+                    .background(if (isDark) Color(0xFF242424) else Color(0xFFEFEFEF))
+                    .border(
+                        BorderStroke(1.dp, if (isDark) Color(0xFF383838) else Color(0xFFE0E0DE)),
+                        RoundedCornerShape(26.dp)
+                    )
+                    .padding(start = 14.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                if (isGenerating) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(18.dp),
-                        strokeWidth = 2.dp,
-                        color = actionBtnText
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        text = "Crafting Openers...",
-                        fontFamily = FontFamily.SansSerif,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                } else {
+                Icon(
+                    imageVector = Icons.Default.AutoAwesome,
+                    contentDescription = "Ask AI",
+                    tint = if (askAiQuery.isNotBlank() || isAskAiGenerating) actionBtnBg else textSecondary.copy(alpha = 0.6f),
+                    modifier = Modifier.size(18.dp)
+                )
+
+                Spacer(Modifier.width(10.dp))
+
+                BasicTextField(
+                    value = askAiQuery,
+                    onValueChange = { askAiQuery = it },
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(vertical = 10.dp),
+                    textStyle = TextStyle(
+                        fontFamily = modernEraRegular,
+                        fontSize = 14.5.sp,
+                        color = textPrimary
+                    ),
+                    singleLine = false,
+                    maxLines = 3,
+                    cursorBrush = SolidColor(actionBtnBg),
+                    keyboardOptions = KeyboardOptions(
+                        imeAction = ImeAction.Send,
+                        keyboardType = KeyboardType.Text
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onSend = { submitAskAi() }
+                    ),
+                    decorationBox = { innerTextField ->
+                        if (askAiQuery.isEmpty()) {
+                            Text(
+                                text = "Ask AI",
+                                fontFamily = modernEraRegular,
+                                fontSize = 14.5.sp,
+                                color = textSecondary.copy(alpha = 0.7f)
+                            )
+                        }
+                        innerTextField()
+                    }
+                )
+
+                Spacer(Modifier.width(6.dp))
+
+                Surface(
+                    shape = CircleShape,
+                    color = if (askAiQuery.isNotBlank() && !isAskAiGenerating) actionBtnBg else Color.Transparent,
+                    modifier = Modifier.size(34.dp)
+                ) {
+                    IconButton(
+                        onClick = { submitAskAi() },
+                        enabled = askAiQuery.isNotBlank() && !isAskAiGenerating,
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        if (isAskAiGenerating) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = actionBtnBg
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.ArrowUpward,
+                                contentDescription = "Send",
+                                tint = if (askAiQuery.isNotBlank()) actionBtnText else textSecondary.copy(alpha = 0.4f),
+                                modifier = Modifier.size(17.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Interactive card displaying user's custom "Ask AI" prompt and the AI's generated response.
+ */
+@Composable
+private fun CustomAiResponseCard(
+    interaction: CustomAiInteraction,
+    cardBg: Color,
+    cardBorder: Color,
+    textPrimary: Color,
+    textSecondary: Color,
+    actionBtnBg: Color,
+    actionBtnText: Color,
+    commentBg: Color,
+    onCopy: (String) -> Unit,
+    onRegenerate: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    val modernEraRegular = remember(context) { HingeFonts.modernEraRegular(context) }
+    val modernEraMedium = remember(context) { HingeFonts.modernEraMedium(context) }
+    val modernEraBold = remember(context) { HingeFonts.modernEraBold(context) }
+
+    var isCopied by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
+
+    Surface(
+        shape = RoundedCornerShape(22.dp),
+        color = cardBg,
+        border = BorderStroke(1.dp, cardBorder),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Header: Sparkle tag + Query + Dismiss button
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.weight(1f, fill = false)
+                ) {
                     Icon(
                         imageVector = Icons.Default.AutoAwesome,
                         contentDescription = null,
-                        modifier = Modifier.size(18.dp)
+                        tint = actionBtnBg,
+                        modifier = Modifier.size(15.dp)
                     )
-                    Spacer(Modifier.width(8.dp))
                     Text(
-                        text = "Generate All Openers",
-                        fontFamily = FontFamily.SansSerif,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold
+                        text = "ASK AI",
+                        fontFamily = modernEraBold,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.8.sp,
+                        color = actionBtnBg
                     )
+                }
+
+                Surface(
+                    shape = CircleShape,
+                    color = Color.Transparent,
+                    modifier = Modifier.size(24.dp)
+                ) {
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Dismiss",
+                            tint = textSecondary.copy(alpha = 0.6f),
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                }
+            }
+
+            // User Prompt
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = commentBg.copy(alpha = 0.7f),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "“${interaction.query}”",
+                    fontFamily = modernEraMedium,
+                    fontSize = 13.5.sp,
+                    fontWeight = FontWeight.Medium,
+                    fontStyle = FontStyle.Italic,
+                    color = textPrimary,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                )
+            }
+
+            // AI Generated Output
+            when {
+                interaction.error != null -> {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            text = interaction.error,
+                            fontFamily = modernEraRegular,
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        TextButton(
+                            onClick = onRegenerate,
+                            contentPadding = PaddingValues(0.dp)
+                        ) {
+                            Text(
+                                text = "Retry",
+                                fontFamily = modernEraMedium,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = actionBtnBg
+                            )
+                        }
+                    }
+                }
+                interaction.isStreaming && interaction.reply.isBlank() -> {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(vertical = 4.dp)
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = actionBtnBg
+                        )
+                        Text(
+                            text = "Crafting custom response...",
+                            fontFamily = modernEraRegular,
+                            fontSize = 13.5.sp,
+                            color = textSecondary
+                        )
+                    }
+                }
+                else -> {
+                    Text(
+                        text = interaction.reply,
+                        fontFamily = modernEraMedium,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Normal,
+                        lineHeight = 23.sp,
+                        color = textPrimary
+                    )
+
+                    // Action Row: Copy & Regenerate
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(50),
+                            color = if (isCopied) HingeDesignTokens.VerifiedBlue else actionBtnBg,
+                            modifier = Modifier
+                                .height(34.dp)
+                                .clickable(enabled = interaction.reply.isNotBlank()) {
+                                    onCopy(interaction.reply)
+                                    isCopied = true
+                                    coroutineScope.launch {
+                                        delay(2000)
+                                        isCopied = false
+                                    }
+                                }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (isCopied) Icons.Default.Check else Icons.Default.ContentCopy,
+                                    contentDescription = null,
+                                    tint = actionBtnText,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text(
+                                    text = if (isCopied) "Copied!" else "Copy",
+                                    fontFamily = modernEraMedium,
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = actionBtnText
+                                )
+                            }
+                        }
+
+                        IconButton(
+                            onClick = onRegenerate,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Regenerate",
+                                tint = textSecondary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -732,6 +1230,7 @@ fun HostAppAiSheetContent(
  */
 @Composable
 private fun NativeHingeCommentBubble(
+    entry: PromptEntry?,
     replyText: String?,
     status: AiWingmanHelper.WingmanStatus,
     isCopied: Boolean,
@@ -740,10 +1239,21 @@ private fun NativeHingeCommentBubble(
     textSecondary: Color,
     actionBtnBg: Color,
     actionBtnText: Color,
-    onCopy: () -> Unit,
+    onCopy: (String) -> Unit,
     onRegenerate: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
+    val context = LocalContext.current
+    val modernEraRegular = remember(context) { HingeFonts.modernEraRegular(context) }
+    val modernEraMedium = remember(context) { HingeFonts.modernEraMedium(context) }
+    val modernEraBold = remember(context) { HingeFonts.modernEraBold(context) }
+
+    val replies by (entry?.repliesFlow?.collectAsState() ?: remember { mutableStateOf(emptyList()) })
+    val activeIndex by (entry?.activeReplyIndexFlow?.collectAsState() ?: remember { mutableIntStateOf(0) })
+    val isEntryGenerating by (entry?.isGeneratingFlow?.collectAsState() ?: remember { mutableStateOf(false) })
+
+    val activeReply = replies.getOrNull(activeIndex) ?: replyText
+
     Surface(
         shape = RoundedCornerShape(16.dp),
         color = commentBg,
@@ -770,7 +1280,7 @@ private fun NativeHingeCommentBubble(
                     )
                     Text(
                         text = "WINGMAN OPENER",
-                        fontFamily = FontFamily.SansSerif,
+                        fontFamily = modernEraBold,
                         fontSize = 10.5.sp,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 0.6.sp,
@@ -778,29 +1288,80 @@ private fun NativeHingeCommentBubble(
                     )
                 }
 
-                if (!replyText.isNullOrBlank()) {
-                    IconButton(
-                        onClick = onRegenerate,
-                        modifier = Modifier.size(24.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = "Regenerate opener",
-                            modifier = Modifier.size(15.dp),
-                            tint = textSecondary
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    if (replies.size > 1) {
+                        IconButton(
+                            onClick = { entry?.selectPreviousReply() },
+                            enabled = activeIndex > 0,
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ChevronLeft,
+                                contentDescription = "Previous opener",
+                                modifier = Modifier.size(16.dp),
+                                tint = if (activeIndex > 0) textPrimary else textSecondary.copy(alpha = 0.3f)
+                            )
+                        }
+
+                        Text(
+                            text = "${activeIndex + 1} of ${replies.size}",
+                            fontFamily = modernEraMedium,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = textSecondary
                         )
+
+                        IconButton(
+                            onClick = { entry?.selectNextReply() },
+                            enabled = activeIndex < replies.size - 1,
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ChevronRight,
+                                contentDescription = "Next opener",
+                                modifier = Modifier.size(16.dp),
+                                tint = if (activeIndex < replies.size - 1) textPrimary else textSecondary.copy(alpha = 0.3f)
+                            )
+                        }
+
+                        Spacer(Modifier.width(2.dp))
+                    }
+
+                    if (isEntryGenerating) {
+                        CircularProgressIndicator(
+                            modifier = Modifier
+                                .size(24.dp)
+                                .padding(4.dp),
+                            strokeWidth = 1.8.dp,
+                            color = actionBtnBg
+                        )
+                    } else if (!activeReply.isNullOrBlank() || replies.isNotEmpty()) {
+                        IconButton(
+                            onClick = onRegenerate,
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Regenerate opener",
+                                modifier = Modifier.size(15.dp),
+                                tint = textSecondary
+                            )
+                        }
                     }
                 }
             }
 
-            if (!replyText.isNullOrBlank()) {
+            if (!activeReply.isNullOrBlank()) {
                 Text(
-                    text = replyText,
-                    fontFamily = FontFamily.SansSerif,
+                    text = activeReply,
+                    fontFamily = modernEraMedium,
                     fontSize = 15.sp,
                     lineHeight = 22.sp,
                     color = textPrimary,
-                    modifier = Modifier.clickable { onCopy() }
+                    modifier = Modifier.clickable { onCopy(activeReply) }
                 )
 
                 Row(
@@ -815,7 +1376,7 @@ private fun NativeHingeCommentBubble(
                         color = btnBg,
                         modifier = Modifier
                             .height(34.dp)
-                            .clickable { onCopy() }
+                            .clickable { onCopy(activeReply) }
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -829,8 +1390,8 @@ private fun NativeHingeCommentBubble(
                                 modifier = Modifier.size(13.dp)
                             )
                             Text(
-                                text = if (isCopied) "Copied!" else "Copy Opener",
-                                fontFamily = FontFamily.SansSerif,
+                                text = if (isCopied) "Copied!" else "Copy",
+                                fontFamily = modernEraMedium,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = btnContent
@@ -853,7 +1414,7 @@ private fun NativeHingeCommentBubble(
                             )
                             Text(
                                 text = "Crafting reply...",
-                                fontFamily = FontFamily.SansSerif,
+                                fontFamily = modernEraRegular,
                                 fontSize = 13.sp,
                                 color = textSecondary
                             )
@@ -873,14 +1434,14 @@ private fun NativeHingeCommentBubble(
                         ) {
                             Text(
                                 text = errorMsg,
-                                fontFamily = FontFamily.SansSerif,
+                                fontFamily = modernEraRegular,
                                 fontSize = 13.sp,
                                 color = MaterialTheme.colorScheme.error
                             )
                             if (isAuthError) {
                                 Text(
                                     text = "Tap here to update your token in Settings",
-                                    fontFamily = FontFamily.SansSerif,
+                                    fontFamily = modernEraBold,
                                     fontSize = 11.5.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.error
@@ -890,8 +1451,8 @@ private fun NativeHingeCommentBubble(
                     }
                     else -> {
                         Text(
-                            text = "Tap 'Generate All Openers' below to craft conversation starters.",
-                            fontFamily = FontFamily.SansSerif,
+                            text = "Ask AI below or select a tone to craft conversation starters.",
+                            fontFamily = modernEraRegular,
                             fontSize = 13.sp,
                             color = textSecondary.copy(alpha = 0.8f)
                         )

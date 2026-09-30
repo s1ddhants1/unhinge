@@ -17,13 +17,13 @@ import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Link
-import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material.icons.outlined.TouchApp
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -49,6 +49,8 @@ import io.github.s1ddhants1.unhinge.ui.component.Material3SettingsGroup
 import io.github.s1ddhants1.unhinge.ui.component.Material3SettingsItem
 import io.github.s1ddhants1.unhinge.ui.component.TextFieldDialog
 import io.github.s1ddhants1.unhinge.util.PreferencesManager
+import java.util.Locale
+import kotlin.math.roundToInt
 
 @Composable
 fun AiWingmanSettingsPage(
@@ -62,8 +64,10 @@ fun AiWingmanSettingsPage(
 
     var deeplApiKey by rememberSaveable { mutableStateOf(prefs.deeplApiKey) }
     var deeplFormality by rememberSaveable { mutableStateOf(prefs.deeplFormality) }
-    var aiResponseTone by rememberSaveable { mutableStateOf(prefs.aiResponseTone) }
     var aiSystemPrompt by rememberSaveable { mutableStateOf(prefs.aiCustomSystemPrompt) }
+    var aiTemperature by rememberSaveable { mutableStateOf(prefs.aiTemperature) }
+    var aiTopP by rememberSaveable { mutableStateOf(prefs.aiTopP) }
+    var aiMaxTokens by rememberSaveable { mutableStateOf(prefs.aiMaxTokens) }
 
     val aiProviders =
         mapOf(
@@ -157,13 +161,6 @@ fun AiWingmanSettingsPage(
 
     val commonModels = modelsByProvider[aiProvider] ?: listOf()
 
-    val tones = listOf(
-        "Witty & Playful",
-        "Charming & Flirty",
-        "Intellectual & Curious",
-        "Sarcastic & Bold"
-    )
-
     var showProviderDialog by rememberSaveable { mutableStateOf(false) }
     var showProviderHelpDialog by rememberSaveable { mutableStateOf(false) }
     var showApiKeyDialog by rememberSaveable { mutableStateOf(false) }
@@ -173,7 +170,6 @@ fun AiWingmanSettingsPage(
     var showModelDialog by rememberSaveable { mutableStateOf(false) }
     var showCustomModelInput by rememberSaveable { mutableStateOf(false) }
 
-    var showToneDialog by rememberSaveable { mutableStateOf(false) }
     var showSystemPromptDialog by rememberSaveable { mutableStateOf(false) }
 
     if (showProviderHelpDialog) {
@@ -387,21 +383,6 @@ fun AiWingmanSettingsPage(
 
 
 
-    if (showToneDialog) {
-        EnumDialog(
-            onDismiss = { showToneDialog = false },
-            onSelect = {
-                aiResponseTone = it
-                prefs.aiResponseTone = it
-                showToneDialog = false
-            },
-            title = "Response Tone Persona",
-            current = aiResponseTone,
-            values = tones,
-            valueText = { it }
-        )
-    }
-
     if (showSystemPromptDialog) {
         TextFieldDialog(
             title = { Text("System prompt") },
@@ -577,16 +558,73 @@ fun AiWingmanSettingsPage(
 
         Spacer(modifier = Modifier.height(27.dp))
 
-        // Persona & Prompt Instructions
+        // Model Parameters Group
         Material3SettingsGroup(
-            title = "PERSONA & PROMPT INSTRUCTIONS",
+            title = "MODEL PARAMETERS",
             items = listOf(
                 Material3SettingsItem(
-                    imageVector = Icons.Outlined.Psychology,
-                    title = { Text("Response Tone Persona") },
-                    description = { Text(aiResponseTone) },
-                    onClick = { showToneDialog = true }
+                    imageVector = Icons.Outlined.Tune,
+                    title = { Text("Temperature") },
+                    description = { Text(String.format(Locale.US, "%.2f", aiTemperature)) },
+                    content = {
+                        Slider(
+                            value = aiTemperature,
+                            onValueChange = {
+                                aiTemperature = ((it / 0.05f).roundToInt() * 0.05f).coerceIn(0f, 1.5f)
+                            },
+                            valueRange = 0f..1.5f,
+                            onValueChangeFinished = {
+                                prefs.aiTemperature = aiTemperature
+                                prefs.saveToFallbackStorageAsync(context)
+                            }
+                        )
+                    }
                 ),
+                Material3SettingsItem(
+                    imageVector = Icons.Outlined.Tune,
+                    title = { Text("Top P") },
+                    description = { Text(String.format(Locale.US, "%.2f", aiTopP)) },
+                    content = {
+                        Slider(
+                            value = aiTopP,
+                            onValueChange = {
+                                aiTopP = ((it / 0.05f).roundToInt() * 0.05f).coerceIn(0.1f, 1f)
+                            },
+                            valueRange = 0.1f..1f,
+                            onValueChangeFinished = {
+                                prefs.aiTopP = aiTopP
+                                prefs.saveToFallbackStorageAsync(context)
+                            }
+                        )
+                    }
+                ),
+                Material3SettingsItem(
+                    imageVector = Icons.Outlined.Tune,
+                    title = { Text("Max Tokens") },
+                    description = { Text(aiMaxTokens.toString()) },
+                    content = {
+                        Slider(
+                            value = aiMaxTokens.toFloat(),
+                            onValueChange = {
+                                aiMaxTokens = ((it / 50f).roundToInt() * 50).coerceIn(50, 1000)
+                            },
+                            valueRange = 50f..1000f,
+                            onValueChangeFinished = {
+                                prefs.aiMaxTokens = aiMaxTokens
+                                prefs.saveToFallbackStorageAsync(context)
+                            }
+                        )
+                    }
+                )
+            )
+        )
+
+        Spacer(modifier = Modifier.height(27.dp))
+
+        // Prompt Instructions
+        Material3SettingsGroup(
+            title = "PROMPT INSTRUCTIONS",
+            items = listOf(
                 Material3SettingsItem(
                     imageVector = Icons.Outlined.Edit,
                     title = { Text("System prompt") },
