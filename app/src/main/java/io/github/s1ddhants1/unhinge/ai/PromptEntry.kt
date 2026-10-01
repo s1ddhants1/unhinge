@@ -9,7 +9,6 @@ data class PromptEntry(
     val activeReplyIndexFlow: MutableStateFlow<Int> = MutableStateFlow(0),
     val isGeneratingFlow: MutableStateFlow<Boolean> = MutableStateFlow(false)
 ) {
-    val translatedTextFlow: MutableStateFlow<String?> get() = suggestedReplyFlow
 
     fun addReply(reply: String, selectNew: Boolean = true) {
         val trimmed = reply.trim()

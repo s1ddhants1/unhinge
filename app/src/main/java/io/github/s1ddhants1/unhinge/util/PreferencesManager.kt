@@ -281,13 +281,9 @@ class PreferencesManager(
 
     // AI Wingman & Theme Preferences
     var aiProvider by stringPreference(Consts.PREF_AI_PROVIDER, "OpenRouter")
-    var deeplApiKey by stringPreference(Consts.PREF_DEEPL_API_KEY, "")
-    var deeplFormality by stringPreference(Consts.PREF_DEEPL_FORMALITY, "default")
     var openRouterApiKey by stringPreference(Consts.PREF_OPENROUTER_API_KEY, "")
     var openRouterBaseUrl by stringPreference(Consts.PREF_OPENROUTER_BASE_URL, Consts.OPENROUTER_DEFAULT_BASE_URL)
     var openRouterModel by stringPreference(Consts.PREF_OPENROUTER_MODEL, Consts.OPENROUTER_DEFAULT_MODEL)
-    var translateMode by stringPreference("translateMode", "Literal")
-    var translateLanguage by stringPreference("translateLanguage", "en")
     var aiCustomSystemPrompt by stringPreference(Consts.PREF_AI_CUSTOM_SYSTEM_PROMPT, "")
     var aiOverrideSystemPrompt by booleanPreference(Consts.PREF_AI_OVERRIDE_SYSTEM_PROMPT, false)
     var showHostAppFab by booleanPreference(Consts.PREF_SHOW_HOST_APP_FAB, true)
@@ -370,8 +366,6 @@ class PreferencesManager(
                 if (providerInStorage.isNotBlank()) {
                     aiProvider = providerInStorage
                 }
-                deeplApiKey = localPrefs.getString(Consts.PREF_DEEPL_API_KEY, deeplApiKey) ?: deeplApiKey
-                deeplFormality = localPrefs.getString(Consts.PREF_DEEPL_FORMALITY, deeplFormality) ?: deeplFormality
             }
         }
     }
@@ -402,8 +396,6 @@ class PreferencesManager(
                         .putBoolean(Consts.PREF_BLOCK_GMS_MEASUREMENT, blockGmsMeasurement)
                         .putBoolean(Consts.PREF_BLOCK_DATATRANSPORT, blockDataTransport)
                         .putString(Consts.PREF_AI_PROVIDER, aiProvider)
-                        .putString(Consts.PREF_DEEPL_API_KEY, deeplApiKey)
-                        .putString(Consts.PREF_DEEPL_FORMALITY, deeplFormality)
                         .putString(Consts.PREF_OPENROUTER_API_KEY, openRouterApiKey)
                         .putString(Consts.PREF_OPENROUTER_BASE_URL, openRouterBaseUrl)
                         .putString(Consts.PREF_OPENROUTER_MODEL, openRouterModel)
@@ -438,8 +430,6 @@ class PreferencesManager(
                                 .putBoolean(Consts.PREF_BLOCK_GMS_MEASUREMENT, blockGmsMeasurement)
                                 .putBoolean(Consts.PREF_BLOCK_DATATRANSPORT, blockDataTransport)
                                 .putString(Consts.PREF_AI_PROVIDER, aiProvider)
-                                .putString(Consts.PREF_DEEPL_API_KEY, deeplApiKey)
-                                .putString(Consts.PREF_DEEPL_FORMALITY, deeplFormality)
                                 .putString(Consts.PREF_OPENROUTER_API_KEY, openRouterApiKey)
                                 .putString(Consts.PREF_OPENROUTER_BASE_URL, openRouterBaseUrl)
                                 .putString(Consts.PREF_OPENROUTER_MODEL, openRouterModel)

@@ -25,7 +25,7 @@ import java.util.concurrent.TimeUnit
 
 const val OpenRouterDefaultBaseUrl = "https://openrouter.ai/api/v1/chat/completions"
 
-private val translationJson = Json { ignoreUnknownKeys = true }
+private val wingmanJson = Json { ignoreUnknownKeys = true }
 
 object OpenRouterService {
     private val client =
@@ -37,15 +37,14 @@ object OpenRouterService {
             .build()
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
-    suspend fun translate(
+    suspend fun generate(
         text: String,
-        targetLanguage: String,
         apiKey: String,
         baseUrl: String,
         model: String,
-        mode: String,
         maxRetries: Int = 3,
         customSystemPrompt: String = "",
+        profileBlock: String = "",
         avoidReplies: List<String> = emptyList(),
         temperature: Float = Consts.DEFAULT_AI_TEMPERATURE,
         topP: Float = Consts.DEFAULT_AI_TOP_P,
@@ -57,12 +56,11 @@ object OpenRouterService {
             repeat(maxRetries) { attempt ->
                 try {
                     val body =
-                        buildTranslationRequest(
+                        buildGenerationRequest(
                             text = text,
-                            targetLanguage = targetLanguage,
                             model = model,
-                            mode = mode,
                             customSystemPrompt = customSystemPrompt,
+                            profileBlock = profileBlock,
                             baseUrl = baseUrl.ifBlank { OpenRouterDefaultBaseUrl },
                             avoidReplies = avoidReplies,
                             temperature = temperature,
@@ -86,11 +84,11 @@ object OpenRouterService {
                         if (!response.isSuccessful) {
                             val error = apiErrorMessage(responseBody, response.code, response.message)
                             if (response.code >= 500) throw Exception(error)
-                            return@withContext Result.failure(Exception("Translation failed: $error"))
+                            return@withContext Result.failure(Exception("Generation failed: $error"))
                         }
 
                         val content =
-                            translationJson
+                            wingmanJson
                                 .parseToJsonElement(responseBody)
                                 .jsonObject["choices"]
                                 ?.jsonArray
@@ -102,7 +100,7 @@ object OpenRouterService {
                                 ?.jsonPrimitive
                                 ?.contentOrNull
                                 .orEmpty()
-                        return@withContext parseTranslationContent(content, text.lines().size)
+                        return@withContext parseGeneratedContent(content, text.lines().size)
                     }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
@@ -116,12 +114,11 @@ object OpenRouterService {
         }
 }
 
-internal fun buildTranslationRequest(
+internal fun buildGenerationRequest(
     text: String,
-    targetLanguage: String,
     model: String,
-    mode: String,
     customSystemPrompt: String,
+    profileBlock: String = "",
     baseUrl: String = OpenRouterDefaultBaseUrl,
     stream: Boolean = false,
     avoidReplies: List<String> = emptyList(),
@@ -130,109 +127,8 @@ internal fun buildTranslationRequest(
     maxTokens: Int = Consts.DEFAULT_AI_MAX_TOKENS,
 ): JsonObject {
     val lineCount = text.lines().size
-    val isWingmanMode = mode !in listOf("Romanized", "Transcribed", "Translated")
-    val systemPrompt =
-        customSystemPrompt.takeIf(String::isNotBlank)?.replace("{lineCount}", lineCount.toString())
-            ?: if (isWingmanMode) {
-                """You are an exceptionally witty, charming, and perceptive dating wingman AI assistant.
-Your task is to analyze dating app candidate prompts (from Hinge) and craft irresistible, authentic, high-converting opening replies.
-
-CRITICAL RULES:
-1. Output ONLY a valid JSON object of the form: {"lines": ["reply1", "reply2"]}
-2. NO explanations, NO questions, NO conversational filler
-3. Each input line maps to exactly one witty/charming opening reply in the "lines" array
-4. Match replies must feel natural, clever, and spark a genuine conversation
-5. The "lines" array must contain EXACTLY $lineCount items"""
-            } else {
-                """You are a precise translation assistant. Your output must ALWAYS be a valid JSON object of the form {"lines": ["line1", "line2", "line3"]}.
-
-CRITICAL RULES:
-1. Output ONLY the JSON object: {"lines": ["line1", "line2", "line3"]}
-2. NO explanations, NO questions, NO additional text
-3. Each input line maps to exactly one entry in the "lines" array
-4. Preserve empty lines as empty strings ""
-5. The "lines" array must contain EXACTLY $lineCount items
-6. If uncertain, provide best approximation but maintain line count"""
-            }
-
-    val userPrompt =
-        when (mode) {
-            "Romanized" -> {
-                """Romanize/transliterate the following $lineCount lines into simple Latin script using ONLY basic English letters (a-z, A-Z).
-
-CRITICAL REQUIREMENTS:
-- Use ONLY simple ASCII characters (a-z, A-Z, 0-9, basic punctuation)
-- NO special characters like ā, ī, ū, ñ, ç, etc.
-- NO diacritics or accent marks
-- If text is already in Latin script, return it UNCHANGED
-- For non-Latin scripts (Hindi, Chinese, Japanese, Korean, Cyrillic, etc.), provide simple romanization
-- DO NOT translate meaning, only convert script to simple English letters
-- Keep all punctuation and formatting
-- Preserve line-by-line structure exactly
-
-Examples of correct simple romanization:
-- Sanskrit/Hindi "आ" → "aa" (not "ā")
-- Japanese "東京" → "toukyou" or "tokyo" (not "tōkyō")
-- Korean "서울" → "seoul" (not "sŏul")
-
-Input ($lineCount lines):
-$text
-
-Output MUST be a JSON object {"lines": [...]} with EXACTLY $lineCount strings using ONLY simple ASCII characters."""
-            }
-
-            "Transcribed" -> {
-                """Transcribe/transliterate the following $lineCount lines phonetically into $targetLanguage script.
-
-CRITICAL REQUIREMENTS:
-- Convert the SOUND/PRONUNCIATION of the original text into $targetLanguage script
-- DO NOT translate the meaning - only represent how the original words SOUND
-- Use the native script of $targetLanguage (e.g., Devanagari for Hindi, Hangul for Korean, etc.)
-- Preserve the original pronunciation as closely as possible in the target script
-- Keep punctuation and formatting
-- Preserve line-by-line structure exactly
-- If text is already in $targetLanguage script, return it UNCHANGED
-
-Examples:
-- Japanese "こんにちは" to Hindi → "कोन्निचिवा" (phonetic, not translation)
-- English "Hello" to Hindi → "हेलो" (phonetic)
-- Korean "안녕하세요" to Hindi → "अन्न्योंग हासेयो" (phonetic)
-
-Input ($lineCount lines):
-$text
-
-Output MUST be a JSON object {"lines": [...]} with EXACTLY $lineCount strings in $targetLanguage script."""
-            }
-
-            "Translated" -> {
-                """Translate the following $lineCount lines to $targetLanguage.
-
-IMPORTANT:
-- Provide natural, accurate translation
-- Maintain flow and meaning
-- Keep punctuation appropriate for target language
-- Preserve line-by-line structure exactly
-
-Input ($lineCount lines):
-$text
-
-Output MUST be a JSON object {"lines": [...]} with EXACTLY $lineCount strings."""
-            }
-
-            else -> {
-                val avoidInstruction = if (avoidReplies.isNotEmpty()) {
-                    "\n\nPreviously generated replies (generate a completely fresh, creative, and DIFFERENT opener; do NOT repeat or use similar jokes/angles):\n" +
-                            avoidReplies.joinToString("\n") { "- \"$it\"" }
-                } else ""
-
-                """Generate charismatic, personalized dating app opening replies for the following candidate prompts.$avoidInstruction
-
-Candidate Prompts ($lineCount items):
-$text
-
-Output MUST be a JSON object {"lines": [...]} with EXACTLY $lineCount opening replies."""
-            }
-        }
+    val systemPrompt = WingmanPrompts.openerSystemPrompt(lineCount, customSystemPrompt)
+    val userPrompt = WingmanPrompts.openerUserPrompt(text, avoidReplies, profileBlock)
 
     return buildJsonObject {
         put(
@@ -253,9 +149,9 @@ Output MUST be a JSON object {"lines": [...]} with EXACTLY $lineCount opening re
             },
         )
         if (model.isNotBlank()) put("model", model)
-        put("temperature", if (isWingmanMode) temperature.toDouble() else 0.3)
-        put("top_p", if (isWingmanMode) topP.toDouble() else 1.0)
-        put("max_tokens", if (isWingmanMode) maxTokens else (lineCount * 100))
+        put("temperature", temperature.toDouble())
+        put("top_p", topP.toDouble())
+        put("max_tokens", maxTokens)
         put(
             "response_format",
             buildJsonObject {
@@ -278,7 +174,7 @@ Output MUST be a JSON object {"lines": [...]} with EXACTLY $lineCount opening re
                                                 put("type", "array")
                                                 put(
                                                     "description",
-                                                    "Translated lines, one per input line, empty lines preserved as empty strings",
+                                                    "Opening replies, one per input prompt",
                                                 )
                                                 put(
                                                     "items",
@@ -317,7 +213,7 @@ Output MUST be a JSON object {"lines": [...]} with EXACTLY $lineCount opening re
     }
 }
 
-internal fun parseTranslationContent(
+internal fun parseGeneratedContent(
     content: String,
     expectedLineCount: Int,
 ): Result<List<String>> =
@@ -329,20 +225,20 @@ internal fun parseTranslationContent(
                 .substringBeforeLast(']', "")
                 .takeIf(String::isNotEmpty)
                 ?.let { "[$it]" }
-        val translatedLines =
+        val generatedLines =
             sequenceOf(content.trim(), cleaned, bracketed)
                 .filterNotNull()
                 .mapNotNull { candidate ->
-                    runCatching { extractLines(translationJson.parseToJsonElement(candidate)) }.getOrNull()
+                    runCatching { extractLines(wingmanJson.parseToJsonElement(candidate)) }.getOrNull()
                 }.firstOrNull()
                 ?: cleaned
                     .lines()
                     .filter(String::isNotBlank)
                     .map { it.trim().removeSurrounding("\"").removeSurrounding("'") }
                     .takeIf(List<String>::isNotEmpty)
-                ?: error("Failed to parse translation")
+                ?: error("Failed to parse response")
 
-        translatedLines.take(expectedLineCount) + List((expectedLineCount - translatedLines.size).coerceAtLeast(0)) { "" }
+        generatedLines.take(expectedLineCount) + List((expectedLineCount - generatedLines.size).coerceAtLeast(0)) { "" }
     }
 
 private fun extractLines(element: JsonElement): List<String>? =
@@ -360,7 +256,7 @@ internal fun apiErrorMessage(
     message: String,
 ): String =
     runCatching {
-        translationJson
+        wingmanJson
             .parseToJsonElement(body.orEmpty())
             .jsonObject["error"]
             ?.jsonObject

@@ -62,8 +62,6 @@ fun AiWingmanSettingsPage(
     var openRouterBaseUrl by rememberSaveable { mutableStateOf(prefs.openRouterBaseUrl) }
     var openRouterModel by rememberSaveable { mutableStateOf(prefs.openRouterModel) }
 
-    var deeplApiKey by rememberSaveable { mutableStateOf(prefs.deeplApiKey) }
-    var deeplFormality by rememberSaveable { mutableStateOf(prefs.deeplFormality) }
     var aiSystemPrompt by rememberSaveable { mutableStateOf(prefs.aiCustomSystemPrompt) }
     var aiTemperature by rememberSaveable { mutableStateOf(prefs.aiTemperature) }
     var aiTopP by rememberSaveable { mutableStateOf(prefs.aiTopP) }
@@ -79,7 +77,6 @@ fun AiWingmanSettingsPage(
             "XAi" to "https://api.x.ai/v1/chat/completions",
             "Mistral" to "https://api.mistral.ai/v1/chat/completions",
             "Inception" to "https://api.inceptionlabs.ai/v1/chat/completions",
-            "DeepL" to "https://api.deepl.com/v2/translate",
             "Custom" to "",
         )
 
@@ -93,7 +90,6 @@ fun AiWingmanSettingsPage(
             "XAi" to stringResource(R.string.ai_provider_xai_help),
             "Mistral" to stringResource(R.string.ai_provider_mistral_help),
             "Inception" to stringResource(R.string.ai_provider_inception_help),
-            "DeepL" to stringResource(R.string.ai_provider_deepl_help),
             "Custom" to "",
         )
 
@@ -155,7 +151,6 @@ fun AiWingmanSettingsPage(
                 listOf(
                     "mercury-2",
                 ),
-            "DeepL" to listOf(),
             "Custom" to listOf(),
         )
 
@@ -164,8 +159,6 @@ fun AiWingmanSettingsPage(
     var showProviderDialog by rememberSaveable { mutableStateOf(false) }
     var showProviderHelpDialog by rememberSaveable { mutableStateOf(false) }
     var showApiKeyDialog by rememberSaveable { mutableStateOf(false) }
-    var showDeeplApiKeyDialog by rememberSaveable { mutableStateOf(false) }
-    var showDeeplFormalityDialog by rememberSaveable { mutableStateOf(false) }
     var showBaseUrlDialog by rememberSaveable { mutableStateOf(false) }
     var showModelDialog by rememberSaveable { mutableStateOf(false) }
     var showCustomModelInput by rememberSaveable { mutableStateOf(false) }
@@ -244,11 +237,7 @@ fun AiWingmanSettingsPage(
             onSelect = {
                 aiProvider = it
                 prefs.aiProvider = it
-                if (it != "Custom" && it != "DeepL") {
-                    val url = aiProviders[it] ?: ""
-                    openRouterBaseUrl = url
-                    prefs.openRouterBaseUrl = url
-                } else if (it == "DeepL") {
+                if (it != "Custom") {
                     val url = aiProviders[it] ?: ""
                     openRouterBaseUrl = url
                     prefs.openRouterBaseUrl = url
@@ -287,44 +276,6 @@ fun AiWingmanSettingsPage(
                 showApiKeyDialog = false
             },
             onDismiss = { showApiKeyDialog = false },
-        )
-    }
-
-    if (showDeeplApiKeyDialog) {
-        TextFieldDialog(
-            title = { Text("DeepL ${stringResource(R.string.ai_api_key)}") },
-            icon = { Icon(Icons.Outlined.Key, null) },
-            initialTextFieldValue = TextFieldValue(text = deeplApiKey),
-            onDone = {
-                val trimmed = it.trim()
-                deeplApiKey = trimmed
-                prefs.deeplApiKey = trimmed
-                prefs.saveToFallbackStorageAsync(context)
-                showDeeplApiKeyDialog = false
-            },
-            onDismiss = { showDeeplApiKeyDialog = false },
-        )
-    }
-
-    if (showDeeplFormalityDialog) {
-        EnumDialog(
-            onDismiss = { showDeeplFormalityDialog = false },
-            onSelect = {
-                deeplFormality = it
-                prefs.deeplFormality = it
-                showDeeplFormalityDialog = false
-            },
-            title = stringResource(R.string.ai_deepl_formality),
-            current = deeplFormality,
-            values = listOf("default", "more", "less"),
-            valueText = {
-                when (it) {
-                    "default" -> stringResource(R.string.ai_deepl_formality_default)
-                    "more" -> stringResource(R.string.ai_deepl_formality_more)
-                    "less" -> stringResource(R.string.ai_deepl_formality_less)
-                    else -> it
-                }
-            },
         )
     }
 
@@ -451,7 +402,7 @@ fun AiWingmanSettingsPage(
 
         Spacer(modifier = Modifier.height(27.dp))
 
-        // Metrolist AI Provider Group
+        // AI Provider Group
         Material3SettingsGroup(
             title = stringResource(R.string.ai_provider),
             items =
@@ -486,72 +437,32 @@ fun AiWingmanSettingsPage(
 
         Spacer(modifier = Modifier.height(27.dp))
 
-        // Metrolist API Credentials Group
+        // API Credentials Group
         Material3SettingsGroup(
             title = stringResource(R.string.ai_setup_guide),
             items =
-                buildList {
-                    if (aiProvider == "DeepL") {
-                        add(
-                            Material3SettingsItem(
-                                imageVector = Icons.Outlined.Key,
-                                title = { Text("DeepL ${stringResource(R.string.ai_api_key)}") },
-                                description = {
-                                    Text(
-                                        if (deeplApiKey.isNotEmpty()) {
-                                            "•".repeat(minOf(deeplApiKey.length, 8))
-                                        } else {
-                                            stringResource(R.string.ai_not_set)
-                                        },
-                                    )
+                listOf(
+                    Material3SettingsItem(
+                        imageVector = Icons.Outlined.Key,
+                        title = { Text(stringResource(R.string.ai_api_key)) },
+                        description = {
+                            Text(
+                                if (openRouterApiKey.isNotEmpty()) {
+                                    "•".repeat(minOf(openRouterApiKey.length, 8))
+                                } else {
+                                    stringResource(R.string.ai_not_set)
                                 },
-                                onClick = { showDeeplApiKeyDialog = true },
-                            ),
-                        )
-                        add(
-                            Material3SettingsItem(
-                                imageVector = Icons.Outlined.Tune,
-                                title = { Text(stringResource(R.string.ai_deepl_formality)) },
-                                description = {
-                                    Text(
-                                        when (deeplFormality) {
-                                            "default" -> stringResource(R.string.ai_deepl_formality_default)
-                                            "more" -> stringResource(R.string.ai_deepl_formality_more)
-                                            "less" -> stringResource(R.string.ai_deepl_formality_less)
-                                            else -> deeplFormality
-                                        },
-                                    )
-                                },
-                                onClick = { showDeeplFormalityDialog = true },
-                            ),
-                        )
-                    } else {
-                        add(
-                            Material3SettingsItem(
-                                imageVector = Icons.Outlined.Key,
-                                title = { Text(stringResource(R.string.ai_api_key)) },
-                                description = {
-                                    Text(
-                                        if (openRouterApiKey.isNotEmpty()) {
-                                            "•".repeat(minOf(openRouterApiKey.length, 8))
-                                        } else {
-                                            stringResource(R.string.ai_not_set)
-                                        },
-                                    )
-                                },
-                                onClick = { showApiKeyDialog = true },
-                            ),
-                        )
-                        add(
-                            Material3SettingsItem(
-                                imageVector = Icons.Outlined.Tune,
-                                title = { Text(stringResource(R.string.ai_model)) },
-                                description = { Text(openRouterModel.ifBlank { stringResource(R.string.ai_not_set) }) },
-                                onClick = { showModelDialog = true },
-                            ),
-                        )
-                    }
-                },
+                            )
+                        },
+                        onClick = { showApiKeyDialog = true },
+                    ),
+                    Material3SettingsItem(
+                        imageVector = Icons.Outlined.Tune,
+                        title = { Text(stringResource(R.string.ai_model)) },
+                        description = { Text(openRouterModel.ifBlank { stringResource(R.string.ai_not_set) }) },
+                        onClick = { showModelDialog = true },
+                    ),
+                ),
         )
 
 

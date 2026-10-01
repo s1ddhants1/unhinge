@@ -45,9 +45,8 @@ Unhinge operates across two strictly isolated Android processes:
 |  [MainViewModel.kt] ----> StateFlow coordinator for candidate feeds & telemetry metrics  |
 |  [CandidateArchiveDb] --> Local SQLite persistence of visited candidate dossiers        |
 |  [SuStorageReader] -----> Root-based fallback extractor for out-of-process sync         |
-|  [OpenRouterService] ---> OpenRouter JSON-Schema prompt & translation engine             |
+|  [OpenRouterService] ---> OpenRouter JSON-Schema opener generation engine                 |
 |  [OpenRouterStreaming] -> OpenRouter SSE streaming chunk parser                          |
-|  [DeepLService] --------> DeepL Free/Pro translation engine with line preservation       |
 |  [AiWingmanHelper] -----> Central AI coordinator, in-memory cache & UI StateFlow stream  |
 |  [PreferencesManager] --> Centralized preference management & fallback persistence      |
 +-----------------------------------------------------------------------------------------+

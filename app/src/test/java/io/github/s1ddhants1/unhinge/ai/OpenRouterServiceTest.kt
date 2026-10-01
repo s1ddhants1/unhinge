@@ -10,29 +10,27 @@ import org.junit.Test
 
 class OpenRouterServiceTest {
     @Test
-    fun translationParsingHandlesFencedAndShortResponses() {
+    fun generationParsingHandlesFencedAndShortResponses() {
         assertEquals(
             listOf("uno", ""),
-            parseTranslationContent("```json\n[\"uno\"]\n```", 2).getOrThrow(),
+            parseGeneratedContent("```json\n[\"uno\"]\n```", 2).getOrThrow(),
         )
     }
 
     @Test
-    fun translationParsingHandlesTheStructuredOutputObjectShape() {
+    fun generationParsingHandlesTheStructuredOutputObjectShape() {
         assertEquals(
             listOf("uno", "dos"),
-            parseTranslationContent("""{"lines": ["uno", "dos"]}""", 2).getOrThrow(),
+            parseGeneratedContent("""{"lines": ["uno", "dos"]}""", 2).getOrThrow(),
         )
     }
 
     @Test
     fun requestUsesStructuredOutputsWithALinesSchemaAndStrictParameterRouting() {
         val request =
-            buildTranslationRequest(
+            buildGenerationRequest(
                 text = "one\ntwo",
-                targetLanguage = "Spanish",
                 model = "model",
-                mode = "Translated",
                 customSystemPrompt = "",
             )
 
@@ -49,11 +47,9 @@ class OpenRouterServiceTest {
     @Test
     fun openrouterOnlyProviderRoutingIsOmittedForDirectProviders() {
         val request =
-            buildTranslationRequest(
+            buildGenerationRequest(
                 text = "one",
-                targetLanguage = "Spanish",
                 model = "mercury-2",
-                mode = "Translated",
                 customSystemPrompt = "",
                 baseUrl = "https://api.inceptionlabs.ai/v1/chat/completions",
             )
@@ -63,13 +59,11 @@ class OpenRouterServiceTest {
     }
 
     @Test
-    fun streamingRomanizationUsesTheRomanizationPrompt() {
+    fun streamingRequestUsesTheWingmanPrompt() {
         val request =
-            buildTranslationRequest(
-                text = "東京",
-                targetLanguage = "English",
+            buildGenerationRequest(
+                text = "I love hiking: I climb every weekend",
                 model = "model",
-                mode = "Romanized",
                 customSystemPrompt = "",
                 stream = true,
             )
@@ -83,7 +77,21 @@ class OpenRouterServiceTest {
                 .getValue("content")
                 .jsonPrimitive
                 .content
-                .startsWith("Romanize"),
+                .startsWith("Generate opening replies"),
         )
+    }
+
+    @Test
+    fun customSystemPromptMergesAsMiddleTierKeepingJsonContract() {
+        val request =
+            buildGenerationRequest(
+                text = "one\ntwo",
+                model = "model",
+                customSystemPrompt = "Custom instructions for {lineCount} prompts",
+            )
+
+        val system = request.getValue("messages").jsonArray[0].jsonObject.getValue("content").jsonPrimitive.content
+        assertTrue(system.contains("Custom instructions for 2 prompts"))
+        assertTrue(system.contains("EXACTLY 2 opening replies"))
     }
 }

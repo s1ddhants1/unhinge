@@ -76,7 +76,7 @@ Refer to the dedicated modular documentation files in `docs/` for deep technical
 - **[Reverse Engineering Field Manual & Target Analysis](docs/REVERSE_ENGINEERING.md)**:
   Target application profile, decompilation workflows, R8 obfuscation layout, internal SQLite database schemas, and anti-tamper security defenses.
 - **[AI Prompt Wingman Architecture](docs/AI_WINGMAN.md)**:
-  Floating Action Button mechanics, touch physics, snap-to-edge docking, ViewTree owner bridging, in-process candidate SQLite extraction, and production AI wingman architecture (`DeepLService`, `OpenRouterService`, `OpenRouterStreamingService`, `AiWingmanHelper`, `PromptEntry`).
+  Floating Action Button mechanics, touch physics, snap-to-edge docking, ViewTree owner bridging, in-process candidate SQLite extraction, and production AI wingman architecture (`OpenRouterService`, `OpenRouterStreamingService`, `AiWingmanHelper`, `PromptEntry`).
 - **[Database, Storage & Archival Systems](docs/DATABASE_AND_STORAGE.md)**:
   Companion application SQLite persistence (`candidate_archive.db`, version 3), root-assisted fallback extraction engine (`SuStorageReader`), and serialized candidate data models.
 - **[Telemetry, Privacy & Surveillance Analysis](docs/TELEMETRY_AND_PRIVACY.md)**:

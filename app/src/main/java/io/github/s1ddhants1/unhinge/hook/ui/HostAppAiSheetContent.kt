@@ -64,6 +64,7 @@ import coil3.compose.setSingletonImageLoaderFactory
 import io.github.s1ddhants1.unhinge.ai.AiWingmanHelper
 import io.github.s1ddhants1.unhinge.ai.OpenRouterStreamingService
 import io.github.s1ddhants1.unhinge.ai.PromptEntry
+import io.github.s1ddhants1.unhinge.ai.WingmanPrompts
 import io.github.s1ddhants1.unhinge.data.HostCandidateReader
 import io.github.s1ddhants1.unhinge.model.CachedCandidateProfile
 import io.github.s1ddhants1.unhinge.ui.theme.HingeFonts
@@ -115,6 +116,36 @@ private fun launchUnhingeSettings(context: Context) {
     } catch (_: Exception) {
         Toast.makeText(context, "Open Unhinge to configure AI settings", Toast.LENGTH_SHORT).show()
     }
+}
+
+/**
+ * Curated text dossier for opener generation. Deliberately excludes sensitive or
+ * unit-ambiguous columns (height units unknown; ethnicity, religion, politics,
+ * drugs, kids, family plans stay out of opener context).
+ */
+private fun openerProfileBlock(candidate: CachedCandidateProfile): String {
+    val work = listOf(candidate.jobTitle, candidate.employer).filter { it.isNotBlank() }.joinToString(" at ")
+    val habits = listOf(
+        candidate.smoking.takeIf { it.isNotBlank() }?.let { "Smoking: $it" },
+        candidate.drinking.takeIf { it.isNotBlank() }?.let { "Drinking: $it" },
+        candidate.marijuana.takeIf { it.isNotBlank() }?.let { "Marijuana: $it" },
+    ).filterNotNull().joinToString(", ")
+    return listOfNotNull(
+        buildString {
+            append(candidate.firstName.ifBlank { "Candidate" })
+            if (candidate.age > 0) append(", ${candidate.age}")
+        }.toString().takeIf { candidate.firstName.isNotBlank() || candidate.age > 0 },
+        work.takeIf { it.isNotBlank() }?.let { "Work: $it" },
+        candidate.school.takeIf { it.isNotBlank() }?.let { "School: $it" },
+        candidate.location.takeIf { it.isNotBlank() }?.let { "Location: $it" },
+        candidate.hometown.takeIf { it.isNotBlank() }?.let { "Hometown: $it" },
+        candidate.datingIntention.takeIf { it.isNotBlank() }?.let { "Dating intention: $it" },
+        candidate.relationshipType.takeIf { it.isNotBlank() }?.let { "Relationship type: $it" },
+        habits.takeIf { it.isNotBlank() },
+        candidate.pet.takeIf { it.isNotBlank() }?.let { "Pet: $it" },
+        candidate.zodiac.takeIf { it.isNotBlank() }?.let { "Zodiac: $it" },
+        "Just joined Hinge".takeIf { candidate.isNewHere },
+    ).joinToString("\n")
 }
 
 data class CustomAiInteraction(
@@ -212,22 +243,18 @@ fun HostAppAiSheetContent(
         targets: List<PromptEntry> = promptEntries,
         forceRefresh: Boolean = false
     ) {
-        val key = if (prefs.aiProvider == "DeepL") prefs.deeplApiKey else prefs.openRouterApiKey
-        if (key.isBlank() || targets.isEmpty()) return
+        if (prefs.openRouterApiKey.isBlank() || targets.isEmpty()) return
         AiWingmanHelper.generateReplies(
             prompts = targets,
-            targetLanguage = "English",
             apiKey = prefs.openRouterApiKey,
             baseUrl = prefs.openRouterBaseUrl,
             model = prefs.openRouterModel,
             scope = coroutineScope,
             context = context,
             provider = prefs.aiProvider,
-            deeplApiKey = prefs.deeplApiKey,
-            deeplFormality = prefs.deeplFormality,
             useStreaming = true,
-            candidateId = candidate?.userId.orEmpty(),
             systemPrompt = prefs.aiCustomSystemPrompt,
+            profileBlock = candidate?.let(::openerProfileBlock).orEmpty(),
             forceRefresh = forceRefresh,
             temperature = prefs.aiTemperature,
             topP = prefs.aiTopP,
@@ -235,9 +262,8 @@ fun HostAppAiSheetContent(
         )
     }
 
-    LaunchedEffect(candidate?.userId, prefs.openRouterApiKey, prefs.deeplApiKey) {
-        val key = if (prefs.aiProvider == "DeepL") prefs.deeplApiKey else prefs.openRouterApiKey
-        if (key.isNotBlank() && promptEntries.isNotEmpty()) {
+    LaunchedEffect(candidate?.userId, prefs.openRouterApiKey) {
+        if (prefs.openRouterApiKey.isNotBlank() && promptEntries.isNotEmpty()) {
             requestWingmanGeneration()
         }
     }
@@ -269,13 +295,9 @@ fun HostAppAiSheetContent(
         val query = queryText.trim()
         if (query.isBlank()) return
 
-        val activeKey = if (prefs.aiProvider == "DeepL") prefs.deeplApiKey else prefs.openRouterApiKey
+        val activeKey = prefs.openRouterApiKey
         if (activeKey.isBlank()) {
             launchUnhingeSettings(context)
-            return
-        }
-        if (prefs.aiProvider == "DeepL") {
-            Toast.makeText(context, "Ask AI requires an LLM provider (OpenRouter or Gemini)", Toast.LENGTH_LONG).show()
             return
         }
 
@@ -307,17 +329,10 @@ fun HostAppAiSheetContent(
             }
         }
 
-        val systemPrompt = buildString {
-            append("You are an exceptionally clever, charming, authentic dating wingman AI assistant for Hinge.\n")
-            append("Candidate Profile:\n$candidateProfileSummary\n\n")
-            append("INSTRUCTIONS:\n")
-            append("- Respond directly to the user's prompt or request.\n")
-            append("- Craft natural, witty, charming openers or personalized advice tailored to the candidate.\n")
-            append("- Do NOT include conversational filler like 'Sure!' or 'Here are some ideas:'. Output the customized openers, answers, or lines directly so they can be immediately read or copied.")
-            if (prefs.aiCustomSystemPrompt.isNotBlank()) {
-                append("\nAdditional System Instructions:\n${prefs.aiCustomSystemPrompt}")
-            }
-        }
+        val systemPrompt = WingmanPrompts.askAiSystemPrompt(
+            profileSummary = candidateProfileSummary,
+            custom = prefs.aiCustomSystemPrompt,
+        )
 
         coroutineScope.launch {
             try {
@@ -707,8 +722,7 @@ fun HostAppAiSheetContent(
         }
 
         // Setup Required Card: Missing API Token
-        val activeApiKey = if (prefs.aiProvider == "DeepL") prefs.deeplApiKey else prefs.openRouterApiKey
-        if (activeApiKey.isBlank()) {
+        if (prefs.openRouterApiKey.isBlank()) {
             Surface(
                 shape = RoundedCornerShape(22.dp),
                 color = cardBg,

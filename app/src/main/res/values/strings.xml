@@ -14,24 +14,12 @@
     <string name="ai_provider_gemini_help">Visit https://aistudio.google.com/apikey</string>
     <string name="ai_provider_perplexity_help">Visit https://perplexity.ai/settings/api</string>
     <string name="ai_provider_xai_help">Visit https://console.x.ai</string>
-    <string name="ai_provider_deepl_help">Visit https://deepl.com/pro-api for free and paid keys</string>
     <string name="ai_provider_mistral_help">Visit https://console.mistral.ai/api-keys</string>
     <string name="ai_provider_inception_help">Visit https://platform.inceptionlabs.ai for API keys</string>
-    <string name="ai_deepl_formality">Formality</string>
-    <string name="ai_deepl_formality_default">Default</string>
-    <string name="ai_deepl_formality_more">More formal</string>
-    <string name="ai_deepl_formality_less">Less formal</string>
     <string name="ai_not_set">Not set</string>
     <string name="ai_error_api_key_required">API key is required</string>
     <string name="ai_error_no_prompts">No prompts available</string>
     <string name="ai_error_prompts_empty">Prompts are empty</string>
-    <string name="ai_error_language_required">Target language is required</string>
     <string name="ai_error_unknown">An unknown error occurred</string>
-    <string name="ai_error_translation_failed">Translation failed</string>
-    <string name="ai_translation_mode">Translation mode</string>
-    <string name="ai_translation_literal">Literal</string>
-    <string name="ai_translation_literal_desc">Translate text directly while maintaining meaning</string>
-    <string name="ai_translation_transcribed">Transcribed</string>
-    <string name="ai_translation_transcribed_desc">Convert the sound of words into the target script phonetically</string>
-    <string name="ai_target_language">Target language</string>
+    <string name="ai_error_generation_failed">Generation failed</string>
 </resources>

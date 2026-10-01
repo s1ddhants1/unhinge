@@ -37,8 +37,6 @@ This document provides a technical breakdown of the **AI Prompt Wingman** subsys
 |                    +---> [OpenRouterStreamingService] (Server-Sent Events SSE Stream)   |
 |                    |     OR                                                             |
 |                    +---> [OpenRouterService] (JSON-Schema Completion Engine)            |
-|                    |     OR                                                             |
-|                    +---> [DeepLService] (DeepL Free/Pro Translation Engine)             |
 |                    |                                                                    |
 |                    v                                                                    |
 |         [Streaming Suggestions Rendered in Compose Sheet]                               |
@@ -141,18 +139,24 @@ The AI pipeline in Unhinge is designed for high-performance dating prompt sugges
 
 3. **[OpenRouterService.kt](../app/src/main/java/io/github/s1ddhants1/unhinge/ai/OpenRouterService.kt)**:
    - Synchronous/standard HTTP client for OpenRouter and OpenAI-compatible API providers.
-   - Generates charismatic, tailored opening lines matching the selected candidate prompt and bio answers.
+   - Generates tailored opening lines matching the selected candidate prompt and bio answers.
    - Employs strict JSON-schema requests (`lines` array structure) with caller-supplied temperature, top-P, max tokens, system instructions, and provider routing.
    - Extracts detailed error diagnostics (`apiErrorMessage()`) when providers return rate limits or authentication failures.
 
-4. **[DeepLService.kt](../app/src/main/java/io/github/s1ddhants1/unhinge/ai/DeepLService.kt)**:
-   - Optional DeepL REST API client supporting both DeepL Free (`:fx` API domain auto-detection to `api-free.deepl.com`) and DeepL Pro (`api.deepl.com`).
-   - Built-in exponential backoff retry for transient 5xx server errors.
+4. **[LlmProtocol.kt](../app/src/main/java/io/github/s1ddhants1/unhinge/ai/LlmProtocol.kt)**:
+   - Wire-protocol enum (`openai-chat-completions`, `google-openai`); brand labels only decide endpoint/model defaults.
+   - `infer(provider, apiKey)` resolves the protocol explicitly — a pasted Gemini key (`AIzaSy…`) routes to Google's OpenAI-compatible bridge even when the brand selector lags.
 
-5. **[PromptEntry.kt](../app/src/main/java/io/github/s1ddhants1/unhinge/ai/PromptEntry.kt)**:
+5. **[WingmanPrompts.kt](../app/src/main/java/io/github/s1ddhants1/unhinge/ai/WingmanPrompts.kt)**:
+   - Two-tier prompts: stable tier (role + JSON contract, always present) plus custom middle tier and volatile per-request candidate data.
+   - Single home for all hardcoded LLM prompts, shared by opener generation and Ask-AI chat.
+   - Opener requests carry a curated `Profile:` dossier (name, age, work, school, location, intentions, habits, pet, zodiac) as non-counted context; sensitive or unit-ambiguous columns (height, ethnicity, religion, politics, drugs, kids, family plans) are excluded.
+   - The user tier encodes reply best practices from dating-app consensus: specific detail first, comment + single easy question, under 25 words, playful but never mean/sexual/looks-only, mirror their energy, no hey-only opens.
+
+6. **[PromptEntry.kt](../app/src/main/java/io/github/s1ddhants1/unhinge/ai/PromptEntry.kt)**:
    - Clean data carrier encapsulating prompt text and reactive `suggestedReplyFlow` for candidate suggestions.
 
-6. **[Timber.kt](../app/src/main/java/io/github/s1ddhants1/unhinge/ai/Timber.kt)**:
+7. **[Timber.kt](../app/src/main/java/io/github/s1ddhants1/unhinge/ai/Timber.kt)**:
    - Lightweight, zero-dependency Android `Log` proxy allowing structured logging without external runtime dependencies.
 
 ---

@@ -32,14 +32,13 @@ object OpenRouterStreamingService {
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
     private val json = Json { ignoreUnknownKeys = true }
 
-    fun streamTranslation(
+    fun streamGeneration(
         text: String,
-        targetLanguage: String,
         apiKey: String,
         baseUrl: String,
         model: String,
-        mode: String,
         customSystemPrompt: String = "",
+        profileBlock: String = "",
         avoidReplies: List<String> = emptyList(),
         temperature: Float = Consts.DEFAULT_AI_TEMPERATURE,
         topP: Float = Consts.DEFAULT_AI_TOP_P,
@@ -53,12 +52,11 @@ object OpenRouterStreamingService {
 
             try {
                 val body =
-                    buildTranslationRequest(
+                    buildGenerationRequest(
                         text = text,
-                        targetLanguage = targetLanguage,
                         model = model,
-                        mode = mode,
                         customSystemPrompt = customSystemPrompt,
+                        profileBlock = profileBlock,
                         baseUrl = baseUrl.ifBlank { OpenRouterDefaultBaseUrl },
                         stream = true,
                         avoidReplies = avoidReplies,
@@ -78,16 +76,16 @@ object OpenRouterStreamingService {
                         .post(body.toString().toRequestBody(jsonMediaType))
                         .build()
 
-                Timber.d("streamTranslation: url=${request.url}, model=$model, keyLen=${apiKey.length}")
+                Timber.d("streamGeneration: url=${request.url}, model=$model, keyLen=${apiKey.length}")
                 client.newCall(request).execute().use { response ->
                     val responseBody = response.body
-                    Timber.d("streamTranslation response: code=${response.code}, msg=${response.message}")
+                    Timber.d("streamGeneration response: code=${response.code}, msg=${response.message}")
                     if (!response.isSuccessful) {
                         val rawBody = responseBody.string()
-                        Timber.e("streamTranslation failed (HTTP ${response.code}): $rawBody")
+                        Timber.e("streamGeneration failed (HTTP ${response.code}): $rawBody")
                         emit(
                             StreamChunk.Error(
-                                "Translation failed: ${apiErrorMessage(rawBody, response.code, response.message)}",
+                                "Generation failed: ${apiErrorMessage(rawBody, response.code, response.message)}",
                             ),
                         )
                         return@flow
@@ -120,14 +118,14 @@ object OpenRouterStreamingService {
                         }
                     }
 
-                    parseTranslationContent(content.toString(), text.lines().size)
+                    parseGeneratedContent(content.toString(), text.lines().size)
                         .onSuccess { emit(StreamChunk.Complete(it)) }
                         .onFailure { emit(StreamChunk.Error(it.message ?: "Parsing failed")) }
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
-                Timber.e(error, "Streaming translation failed")
+                Timber.e(error, "Streaming generation failed")
                 emit(StreamChunk.Error(error.message ?: "Unknown error"))
             }
         }.flowOn(Dispatchers.IO)
@@ -238,7 +236,7 @@ object OpenRouterStreamingService {
         ) : StreamChunk
 
         data class Complete(
-            val translatedLines: List<String>,
+            val generatedLines: List<String>,
         ) : StreamChunk
 
         data class Error(

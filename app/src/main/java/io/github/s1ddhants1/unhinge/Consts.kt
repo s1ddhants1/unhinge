@@ -38,8 +38,6 @@ object Consts {
 
     // AI Wingman & Theme Preference Keys
     const val PREF_AI_PROVIDER = "ai_provider"
-    const val PREF_DEEPL_API_KEY = "deepl_api_key"
-    const val PREF_DEEPL_FORMALITY = "deepl_formality"
     const val PREF_OPENROUTER_API_KEY = "openrouter_api_key"
     const val PREF_OPENROUTER_BASE_URL = "openrouter_base_url"
     const val PREF_OPENROUTER_MODEL = "openrouter_model"
@@ -61,13 +59,7 @@ object Consts {
     const val DEFAULT_AI_MAX_TOKENS = 250
 
     val DEFAULT_AI_SYSTEM_PROMPT = """
-You are an exceptionally witty, charming, and perceptive dating wingman AI assistant.
-Your task is to analyze dating app candidate profiles (from Hinge) and generate irresistible, authentic, high-converting replies tailored to each of their prompts.
-
-GUIDELINES FOR RESPONSES:
-- Each reply must directly reference details from their prompt or profile.
-- Sound like a real, confident, high-value person with personality. Avoid generic cliché pickup lines (e.g. "did it hurt when you fell from heaven").
-- Keep responses concise and punchy (1-2 sentences max, 10-30 words).
-- Deliver creative, distinct angles that spark curiosity and make starting a conversation effortless.
+You are a dating wingman AI assistant for Hinge.
+Generate opening replies tailored to each candidate prompt.
 """.trimIndent()
 }

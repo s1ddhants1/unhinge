@@ -13,11 +13,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * AI wingman helper coordinating prompt reply generation, streaming, and in-memory caching.
+ * AI wingman helper coordinating opener generation, streaming, and in-memory caching.
  */
 object AiWingmanHelper {
     private val _status = MutableStateFlow<WingmanStatus>(WingmanStatus.Idle)
@@ -37,31 +36,6 @@ object AiWingmanHelper {
 
     // In-memory cache to prevent duplicate model queries during the active session
     private val replyCache = ConcurrentHashMap<String, List<String>>()
-
-    val LanguageCodeToName = mapOf(
-        "en" to "English",
-        "es" to "Spanish",
-        "fr" to "French",
-        "de" to "German",
-        "it" to "Italian",
-        "pt" to "Portuguese",
-        "ru" to "Russian",
-        "ja" to "Japanese",
-        "ko" to "Korean",
-        "zh" to "Chinese",
-        "ar" to "Arabic",
-        "hi" to "Hindi",
-        "bn" to "Bengali",
-        "pa" to "Punjabi",
-        "tr" to "Turkish",
-        "vi" to "Vietnamese",
-        "th" to "Thai",
-        "id" to "Indonesian",
-        "pl" to "Polish",
-        "nl" to "Dutch",
-        "sv" to "Swedish",
-        "uk" to "Ukrainian"
-    )
 
     fun setCompositionActive(active: Boolean) {
         isCompositionActive = active
@@ -85,12 +59,13 @@ object AiWingmanHelper {
 
     private fun getCacheKey(
         text: String,
-        targetLanguage: String,
+        profileBlock: String,
+        systemPrompt: String,
         temperature: Float,
         topP: Float,
         maxTokens: Int,
     ): String {
-        return "${text.hashCode()}_${targetLanguage}_${temperature}_${topP}_${maxTokens}"
+        return "${text.hashCode()}_${profileBlock.hashCode()}_${systemPrompt.hashCode()}_${temperature}_${topP}_${maxTokens}"
     }
 
     /**
@@ -112,17 +87,13 @@ object AiWingmanHelper {
         apiKey: String,
         baseUrl: String,
         model: String,
-    ): Triple<String, String, String> {
-        val effectiveApiKey = apiKey.trim()
-        val effectiveProvider = if (effectiveApiKey.startsWith("AQ.") || effectiveApiKey.startsWith("AIzaSy")) {
-            "Gemini"
-        } else {
-            provider
-        }
+    ): Triple<LlmProtocol, String, String> {
+        val protocol = LlmProtocol.infer(provider, apiKey)
+        val effectiveProvider = if (protocol == LlmProtocol.GoogleOpenAi) "Gemini" else provider
 
         val effectiveBaseUrl = when {
             effectiveProvider.equals("Gemini", ignoreCase = true) && (baseUrl.isBlank() || baseUrl.contains("openrouter.ai")) ->
-                "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+                LlmProtocol.GoogleOpenAi.defaultEndpoint()
             effectiveProvider.equals("OpenAI", ignoreCase = true) && (baseUrl.isBlank() || baseUrl.contains("openrouter.ai")) ->
                 "https://api.openai.com/v1/chat/completions"
             effectiveProvider.equals("Claude", ignoreCase = true) && (baseUrl.isBlank() || baseUrl.contains("openrouter.ai")) ->
@@ -144,7 +115,7 @@ object AiWingmanHelper {
             model.ifBlank { io.github.s1ddhants1.unhinge.Consts.OPENROUTER_DEFAULT_MODEL }
         }
 
-        return Triple(effectiveProvider, effectiveBaseUrl, effectiveModel)
+        return Triple(protocol, effectiveBaseUrl, effectiveModel)
     }
 
     fun streamCustomChat(
@@ -173,20 +144,15 @@ object AiWingmanHelper {
 
     fun generateReplies(
         prompts: List<PromptEntry>,
-        targetLanguage: String = "English",
         apiKey: String,
         baseUrl: String,
         model: String,
-        mode: String = "Wingman",
         scope: CoroutineScope,
         context: Context,
         provider: String = "OpenRouter",
-        deeplApiKey: String = "",
-        deeplFormality: String = "default",
         useStreaming: Boolean = true,
-        candidateId: String = "",
-        database: Any? = null,
         systemPrompt: String = "",
+        profileBlock: String = "",
         forceRefresh: Boolean = false,
         temperature: Float = io.github.s1ddhants1.unhinge.Consts.DEFAULT_AI_TEMPERATURE,
         topP: Float = io.github.s1ddhants1.unhinge.Consts.DEFAULT_AI_TOP_P,
@@ -204,16 +170,15 @@ object AiWingmanHelper {
 
         generationJob = scope.launch(Dispatchers.IO) {
             try {
-                val effectiveApiKey = if (provider == "DeepL") deeplApiKey else apiKey
-                if (effectiveApiKey.isBlank()) {
+                if (apiKey.isBlank()) {
                     _status.value = WingmanStatus.Error(context.getString(R.string.ai_error_api_key_required))
                     return@launch
                 }
 
-                val (effectiveProvider, effectiveBaseUrl, effectiveModel) =
-                    resolveEffectiveEndpoint(provider, effectiveApiKey, baseUrl, model)
+                val (protocol, effectiveBaseUrl, effectiveModel) =
+                    resolveEffectiveEndpoint(provider, apiKey, baseUrl, model)
 
-                Timber.d("generateReplies: provider=$effectiveProvider, baseUrl=$effectiveBaseUrl, model=$effectiveModel, keyLen=${effectiveApiKey.length}, forceRefresh=$forceRefresh")
+                Timber.d("generateReplies: protocol=${protocol.wireId}, baseUrl=$effectiveBaseUrl, model=$effectiveModel, keyLen=${apiKey.length}, forceRefresh=$forceRefresh")
 
                 if (prompts.isEmpty()) {
                     _status.value = WingmanStatus.Error(context.getString(R.string.ai_error_no_prompts))
@@ -231,7 +196,7 @@ object AiWingmanHelper {
 
                 val fullText = nonEmptyEntries.joinToString("\n") { it.second.text }
 
-                val cacheKey = getCacheKey(fullText, targetLanguage, temperature, topP, maxTokens)
+                val cacheKey = getCacheKey(fullText, profileBlock, systemPrompt, temperature, topP, maxTokens)
                 if (!forceRefresh) {
                     val cachedReplies = replyCache[cacheKey]
                     if (cachedReplies != null && cachedReplies.size >= nonEmptyEntries.size) {
@@ -253,44 +218,22 @@ object AiWingmanHelper {
                     replyCache.remove(cacheKey)
                 }
 
-                if (targetLanguage.isBlank()) {
-                    _status.value = WingmanStatus.Error(context.getString(R.string.ai_error_language_required))
-                    return@launch
-                }
-
-                val fullLanguageName = LanguageCodeToName[targetLanguage]
-                    ?: try {
-                        Locale.forLanguageTag(targetLanguage).displayLanguage.takeIf { it.isNotBlank() && it != targetLanguage }
-                    } catch (e: Exception) {
-                        null
-                    }
-                    ?: targetLanguage
-
                 val avoidReplies = if (prompts.size == 1) prompts[0].repliesFlow.value else emptyList()
 
-                val result = if (provider == "DeepL") {
-                    Timber.d("Using DeepL for translation")
-                    DeepLService.translate(
-                        text = fullText,
-                        targetLanguage = targetLanguage,
-                        apiKey = deeplApiKey,
-                        formality = deeplFormality,
-                    )
-                } else if (useStreaming && provider != "Custom") {
+                val result = if (useStreaming && provider != "Custom") {
                     Timber.d("Using streaming for wingman generation with provider: $provider")
                     var generatedLines: List<String>? = null
                     var hasError = false
                     var errorMessage = ""
                     val contentAccumulator = StringBuilder()
 
-                    OpenRouterStreamingService.streamTranslation(
+                    OpenRouterStreamingService.streamGeneration(
                         text = fullText,
-                        targetLanguage = fullLanguageName,
-                        apiKey = effectiveApiKey,
+                        apiKey = apiKey,
                         baseUrl = effectiveBaseUrl,
                         model = effectiveModel,
-                        mode = mode,
                         customSystemPrompt = systemPrompt,
+                        profileBlock = profileBlock,
                         avoidReplies = avoidReplies,
                         temperature = temperature,
                         topP = topP,
@@ -313,8 +256,8 @@ object AiWingmanHelper {
                             }
 
                             is OpenRouterStreamingService.StreamChunk.Complete -> {
-                                Timber.d("Streaming complete with ${chunk.translatedLines.size} lines")
-                                generatedLines = chunk.translatedLines
+                                Timber.d("Streaming complete with ${chunk.generatedLines.size} lines")
+                                generatedLines = chunk.generatedLines
                             }
 
                             is OpenRouterStreamingService.StreamChunk.Error -> {
@@ -334,14 +277,13 @@ object AiWingmanHelper {
                     }
                 } else {
                     Timber.d("Using non-streaming for wingman generation")
-                    OpenRouterService.translate(
+                    OpenRouterService.generate(
                         text = fullText,
-                        targetLanguage = fullLanguageName,
-                        apiKey = effectiveApiKey,
+                        apiKey = apiKey,
                         baseUrl = effectiveBaseUrl,
                         model = effectiveModel,
-                        mode = mode,
                         customSystemPrompt = systemPrompt,
+                        profileBlock = profileBlock,
                         avoidReplies = avoidReplies,
                         temperature = temperature,
                         topP = topP,
@@ -353,7 +295,7 @@ object AiWingmanHelper {
                     if (!isCompositionActive) return@onSuccess
 
                     if (!forceRefresh) {
-                        val cacheKey = getCacheKey(fullText, targetLanguage, temperature, topP, maxTokens)
+                        val cacheKey = getCacheKey(fullText, profileBlock, systemPrompt, temperature, topP, maxTokens)
                         replyCache[cacheKey] = replies
                     }
 
@@ -390,7 +332,7 @@ object AiWingmanHelper {
                 }
             } catch (e: Exception) {
                 if (e !is kotlinx.coroutines.CancellationException && isCompositionActive) {
-                    val errorMessage = e.message ?: context.getString(R.string.ai_error_translation_failed)
+                    val errorMessage = e.message ?: context.getString(R.string.ai_error_generation_failed)
                     _status.value = WingmanStatus.Error(errorMessage)
                 }
             } finally {
