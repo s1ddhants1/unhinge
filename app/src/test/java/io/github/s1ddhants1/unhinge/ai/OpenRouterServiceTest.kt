@@ -26,7 +26,7 @@ class OpenRouterServiceTest {
     }
 
     @Test
-    fun requestUsesStructuredOutputsWithALinesSchemaAndStrictParameterRouting() {
+    fun requestUsesLenientStructuredOutputsWithoutStrictParameterRouting() {
         val request =
             buildGenerationRequest(
                 text = "one\ntwo",
@@ -41,7 +41,55 @@ class OpenRouterServiceTest {
         val lines = schema.getValue("properties").jsonObject.getValue("lines").jsonObject
         assertEquals("array", lines.getValue("type").jsonPrimitive.content)
         assertEquals("string", lines.getValue("items").jsonObject.getValue("type").jsonPrimitive.content)
-        assertTrue(request.getValue("provider").jsonObject.getValue("require_parameters").jsonPrimitive.boolean)
+        assertTrue("provider" !in request)
+    }
+
+    @Test
+    fun lenientRequestOmitsStructuredOutputsWhenDisabled() {
+        val request =
+            buildGenerationRequest(
+                text = "one",
+                model = "model",
+                customSystemPrompt = "",
+                structured = false,
+            )
+
+        assertTrue("response_format" !in request)
+        assertTrue("provider" !in request)
+    }
+
+    @Test
+    fun sanitizeModelIdStripsTildeArtifacts() {
+        assertEquals("deepseek/deepseek-v4-flash-latest", sanitizeModelId("~deepseek/deepseek-v4-flash-latest"))
+        assertEquals("model", sanitizeModelId("  model  "))
+        assertEquals("", sanitizeModelId("   "))
+    }
+
+    @Test
+    fun transientCodesCoverUpstreamOverload() {
+        assertTrue(isTransientHttpCode(500))
+        assertTrue(isTransientHttpCode(502))
+        assertTrue(isTransientHttpCode(503))
+        assertTrue(isTransientHttpCode(529))
+        assertTrue(!isTransientHttpCode(400))
+        assertTrue(!isTransientHttpCode(401))
+        assertTrue(!isTransientHttpCode(429))
+    }
+
+    @Test
+    fun structuredOutputRejectionDetectsEmptyProviderPool() {
+        assertTrue(isStructuredOutputError("""{"error":{"message":"No available model provider"}}""", 503))
+        assertTrue(isStructuredOutputError("""{"error":{"message":"No endpoints found with response_format support"}}""", 400))
+        assertTrue(!isStructuredOutputError("""{"error":{"message":"Invalid API key"}}""", 401))
+        assertTrue(!isStructuredOutputError("HTTP 503: Service Unavailable", 503))
+    }
+
+    @Test
+    fun friendlyErrorHintsAtRetryOrModelSwitchFor503() {
+        val message = friendlyGenerationError("""{"error":{"message":"No available model provider"}}""", 503, "Service Unavailable")
+        assertTrue(message.contains("503"))
+        assertTrue(message.contains("Retry or switch model"))
+        assertTrue(friendlyGenerationError(null, 401, "Unauthorized").contains("API key"))
     }
 
     @Test

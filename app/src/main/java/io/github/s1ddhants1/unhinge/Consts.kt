@@ -52,7 +52,9 @@ object Consts {
     const val PREF_THEME_MODE = "theme_mode"
 
     const val OPENROUTER_DEFAULT_BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
-    const val OPENROUTER_DEFAULT_MODEL = "google/gemini-2.5-flash-lite"
+    const val OPENROUTER_DEFAULT_MODEL = "inception/mercury-2.5-preview"
+    // Pre-Oct-2026 default retained for one-way migration of stored prefs.
+    const val LEGACY_OPENROUTER_DEFAULT_MODEL = "google/gemini-2.5-flash-lite"
     const val DEFAULT_THEME_COLOR = 0xFFED5564L
     const val DEFAULT_AI_TEMPERATURE = 0.85f
     const val DEFAULT_AI_TOP_P = 0.95f

@@ -109,10 +109,15 @@ object AiWingmanHelper {
             else -> baseUrl.ifBlank { OpenRouterDefaultBaseUrl }
         }
 
-        val effectiveModel = if (effectiveProvider.equals("Gemini", ignoreCase = true) && (model.isBlank() || model.contains("gemini-2.5-flash-lite"))) {
+        val sanitizedModel = sanitizeModelId(model)
+        val effectiveModel = if (effectiveProvider.equals("Gemini", ignoreCase = true) && (sanitizedModel.isBlank() || sanitizedModel.contains("gemini-2.5-flash-lite"))) {
             "gemini-flash-lite-latest"
+        } else if (sanitizedModel.isBlank() || sanitizedModel == io.github.s1ddhants1.unhinge.Consts.LEGACY_OPENROUTER_DEFAULT_MODEL) {
+            // One-way migration: pre-Oct-2026 stored default no longer ships in the
+            // model list and 503s on OpenRouter; move to the current default.
+            io.github.s1ddhants1.unhinge.Consts.OPENROUTER_DEFAULT_MODEL
         } else {
-            model.ifBlank { io.github.s1ddhants1.unhinge.Consts.OPENROUTER_DEFAULT_MODEL }
+            sanitizedModel
         }
 
         return Triple(protocol, effectiveBaseUrl, effectiveModel)
@@ -269,7 +274,23 @@ object AiWingmanHelper {
                     }
 
                     if (hasError) {
-                        Result.failure(Exception(errorMessage))
+                        if (isFallbackWorthy(errorMessage)) {
+                            Timber.d("Streaming failed transiently, falling back to non-streaming")
+                            OpenRouterService.generate(
+                                text = fullText,
+                                apiKey = apiKey,
+                                baseUrl = effectiveBaseUrl,
+                                model = effectiveModel,
+                                customSystemPrompt = systemPrompt,
+                                profileBlock = profileBlock,
+                                avoidReplies = avoidReplies,
+                                temperature = temperature,
+                                topP = topP,
+                                maxTokens = maxTokens,
+                            )
+                        } else {
+                            Result.failure(Exception(errorMessage))
+                        }
                     } else if (generatedLines != null) {
                         Result.success(generatedLines)
                     } else {
@@ -339,6 +360,16 @@ object AiWingmanHelper {
                 prompts.forEach { it.isGeneratingFlow.value = false }
             }
         }
+    }
+
+    private fun isFallbackWorthy(message: String): Boolean {
+        val lower = message.lowercase()
+        return lower.contains("503") ||
+            lower.contains("502") ||
+            lower.contains("529") ||
+            lower.contains("temporarily unavailable") ||
+            lower.contains("no available model provider") ||
+            lower.contains("no endpoints")
     }
 
     sealed class WingmanStatus {

@@ -101,10 +101,10 @@ fun AiWingmanSettingsPage(
                     "meta/muse-spark-1.3",
                     "z-ai/glm-5.3-flash",
                     "qwen/qwen3.8-flash",
-                    "~deepseek/deepseek-v4-flash-latest",
-                    "~openai/gpt-mini-latest",
+                    "deepseek/deepseek-v4-flash-latest",
+                    "openai/gpt-mini-latest",
                     "openai/gpt-oss-120b",
-                    "~google/gemini-flash-latest",
+                    "google/gemini-flash-latest",
                 ),
             "OpenAI" to
                 listOf(

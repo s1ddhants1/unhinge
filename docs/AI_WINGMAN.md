@@ -133,15 +133,17 @@ The AI pipeline in Unhinge is designed for high-performance dating prompt sugges
    - Accepts caller-supplied `temperature`, `topP`, and `maxTokens` (defaults `0.85` / `0.95` / `250`, adjustable via Settings → Model Parameters) instead of fixed tone presets.
 
 2. **[OpenRouterStreamingService.kt](../app/src/main/java/io/github/s1ddhants1/unhinge/ai/OpenRouterStreamingService.kt)**:
-   - OkHttp-backed Server-Sent Events (SSE) streaming client.
+   - OkHttp-backed Server-Sent Events (SSE) streaming client with the same lenient structured-output policy as above.
    - Emits structured `StreamChunk` events (`Content(delta)`, `Complete(fullText)`, `Error(throwable)`).
+   - Retries transient HTTP failures (500/502/503/529) with exponential backoff and retries structured-output rejections once without `response_format`; `streamChat` retries transient failures identically. `AiWingmanHelper` falls back from streaming to non-streaming on empty-provider-pool 5xx before surfacing an error.
    - Ingests streaming chunks, parses JSON deltas, validates JSON-schema line outputs, and falls back to text parsing if needed.
 
 3. **[OpenRouterService.kt](../app/src/main/java/io/github/s1ddhants1/unhinge/ai/OpenRouterService.kt)**:
    - Synchronous/standard HTTP client for OpenRouter and OpenAI-compatible API providers.
    - Generates tailored opening lines matching the selected candidate prompt and bio answers.
-   - Employs strict JSON-schema requests (`lines` array structure) with caller-supplied temperature, top-P, max tokens, system instructions, and provider routing.
-   - Extracts detailed error diagnostics (`apiErrorMessage()`) when providers return rate limits or authentication failures.
+   - Sends `response_format` JSON-schema requests (`lines` array) with caller-supplied temperature, top-P, max tokens, and system instructions, but omits `provider.require_parameters` (forcing it shrinks OpenRouter's provider pool and surfaces as HTTP 503 "No available model provider"; the parser already handles bare-array / plain-text fallbacks, so availability wins).
+   - Retries transient 5xx (500/502/503/529) with exponential backoff; structured-output rejections get one lenient retry without `response_format`. Model IDs are sanitized (leading `~` artifacts stripped) and the pre-Oct-2026 stored default migrates to the current default.
+   - Extracts detailed error diagnostics (`apiErrorMessage()` + `friendlyGenerationError()`) mapping 401/404/429/5xx to actionable Settings hints.
 
 4. **[LlmProtocol.kt](../app/src/main/java/io/github/s1ddhants1/unhinge/ai/LlmProtocol.kt)**:
    - Wire-protocol enum (`openai-chat-completions`, `google-openai`); brand labels only decide endpoint/model defaults.

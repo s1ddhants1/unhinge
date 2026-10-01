@@ -49,16 +49,19 @@ object OpenRouterService {
         temperature: Float = Consts.DEFAULT_AI_TEMPERATURE,
         topP: Float = Consts.DEFAULT_AI_TOP_P,
         maxTokens: Int = Consts.DEFAULT_AI_MAX_TOKENS,
+        structured: Boolean = true,
     ): Result<List<String>> =
         withContext(Dispatchers.IO) {
             if (text.isBlank()) return@withContext Result.failure(Exception("Input text is empty"))
 
+            val safeModel = sanitizeModelId(model)
+            var useStructured = structured
             repeat(maxRetries) { attempt ->
                 try {
                     val body =
                         buildGenerationRequest(
                             text = text,
-                            model = model,
+                            model = safeModel,
                             customSystemPrompt = customSystemPrompt,
                             profileBlock = profileBlock,
                             baseUrl = baseUrl.ifBlank { OpenRouterDefaultBaseUrl },
@@ -66,6 +69,7 @@ object OpenRouterService {
                             temperature = temperature,
                             topP = topP,
                             maxTokens = maxTokens,
+                            structured = useStructured,
                         )
                     val request =
                         Request
@@ -82,9 +86,17 @@ object OpenRouterService {
                     client.newCall(request).execute().use { response ->
                         val responseBody = response.body.string()
                         if (!response.isSuccessful) {
-                            val error = apiErrorMessage(responseBody, response.code, response.message)
-                            if (response.code >= 500) throw Exception(error)
-                            return@withContext Result.failure(Exception("Generation failed: $error"))
+                            val structuredRejection = isStructuredOutputError(responseBody, response.code)
+                            if (useStructured && structuredRejection) {
+                                useStructured = false
+                            }
+                            val error = friendlyGenerationError(responseBody, response.code, response.message)
+                            // Retry transient 5xx with backoff; structured-output rejections get
+                            // one lenient retry without response_format instead of failing fast.
+                            val retryable = isTransientHttpCode(response.code) ||
+                                (structuredRejection && attempt < maxRetries - 1)
+                            if (retryable) throw Exception(error)
+                            return@withContext Result.failure(Exception(error))
                         }
 
                         val content =
@@ -106,7 +118,7 @@ object OpenRouterService {
                     throw cancelled
                 } catch (error: Exception) {
                     if (attempt == maxRetries - 1) return@withContext Result.failure(error)
-                    delay(1000L * (attempt + 1))
+                    delay(1000L * (1 shl attempt))
                 }
             }
 
@@ -125,10 +137,12 @@ internal fun buildGenerationRequest(
     temperature: Float = Consts.DEFAULT_AI_TEMPERATURE,
     topP: Float = Consts.DEFAULT_AI_TOP_P,
     maxTokens: Int = Consts.DEFAULT_AI_MAX_TOKENS,
+    structured: Boolean = true,
 ): JsonObject {
     val lineCount = text.lines().size
     val systemPrompt = WingmanPrompts.openerSystemPrompt(lineCount, customSystemPrompt)
     val userPrompt = WingmanPrompts.openerUserPrompt(text, avoidReplies, profileBlock)
+    val safeModel = sanitizeModelId(model)
 
     return buildJsonObject {
         put(
@@ -148,68 +162,100 @@ internal fun buildGenerationRequest(
                 )
             },
         )
-        if (model.isNotBlank()) put("model", model)
+        if (safeModel.isNotBlank()) put("model", safeModel)
         put("temperature", temperature.toDouble())
         put("top_p", topP.toDouble())
         put("max_tokens", maxTokens)
-        put(
-            "response_format",
-            buildJsonObject {
-                put("type", "json_schema")
-                put(
-                    "json_schema",
-                    buildJsonObject {
-                        put("name", "generated_replies")
-                        put("strict", true)
-                        put(
-                            "schema",
-                            buildJsonObject {
-                                put("type", "object")
-                                put(
-                                    "properties",
-                                    buildJsonObject {
-                                        put(
-                                            "lines",
-                                            buildJsonObject {
-                                                put("type", "array")
-                                                put(
-                                                    "description",
-                                                    "Opening replies, one per input prompt",
-                                                )
-                                                put(
-                                                    "items",
-                                                    buildJsonObject {
-                                                        put("type", "string")
-                                                    },
-                                                )
-                                            },
-                                        )
-                                    },
-                                )
-                                put(
-                                    "required",
-                                    buildJsonArray {
-                                        add("lines")
-                                    },
-                                )
-                                put("additionalProperties", false)
-                            },
-                        )
-                    },
-                )
-            },
-        )
-        // OpenRouter-only routing preference; fail instead of silently degrading to
-        // unvalidated JSON on endpoints without structured-output support
-        if (baseUrl.contains("openrouter.ai")) {
+        if (structured) {
             put(
-                "provider",
+                "response_format",
                 buildJsonObject {
-                    put("require_parameters", true)
+                    put("type", "json_schema")
+                    put(
+                        "json_schema",
+                        buildJsonObject {
+                            put("name", "generated_replies")
+                            put("strict", true)
+                            put(
+                                "schema",
+                                buildJsonObject {
+                                    put("type", "object")
+                                    put(
+                                        "properties",
+                                        buildJsonObject {
+                                            put(
+                                                "lines",
+                                                buildJsonObject {
+                                                    put("type", "array")
+                                                    put(
+                                                        "description",
+                                                        "Opening replies, one per input prompt",
+                                                    )
+                                                    put(
+                                                        "items",
+                                                        buildJsonObject {
+                                                            put("type", "string")
+                                                        },
+                                                    )
+                                                },
+                                            )
+                                        },
+                                    )
+                                    put(
+                                        "required",
+                                        buildJsonArray {
+                                            add("lines")
+                                        },
+                                    )
+                                    put("additionalProperties", false)
+                                },
+                            )
+                        },
+                    )
                 },
             )
         }
+        // Lenient routing: no provider.require_parameters. Forcing it shrinks the
+        // OpenRouter provider pool to models with strict structured-output support
+        // and surfaces as HTTP 503 "No available model provider". Parsing below
+        // already handles bare-array / plain-text fallbacks, so prefer availability.
         if (stream) put("stream", true)
+    }
+}
+
+/** Strips UI-list artifacts (leading `~`) and surrounding whitespace from model IDs. */
+fun sanitizeModelId(model: String): String = model.trim().trimStart('~').trim()
+
+/** Transient upstream codes worth retrying with backoff (OpenRouter uses 529 for overloaded). */
+fun isTransientHttpCode(code: Int): Boolean = code == 500 || code == 502 || code == 503 || code == 529
+
+/**
+ * True when the failure plausibly blames structured outputs: explicit schema
+ * keywords, or OpenRouter's empty-provider-pool signal on 4xx/5xx.
+ */
+fun isStructuredOutputError(body: String?, code: Int): Boolean {
+    val text = body.orEmpty()
+    val mentionsStructured = text.contains("response_format", ignoreCase = true) ||
+        text.contains("json_schema", ignoreCase = true) ||
+        text.contains("require_parameters", ignoreCase = true) ||
+        text.contains("structured", ignoreCase = true) ||
+        text.contains("No available model provider", ignoreCase = true) ||
+        text.contains("No endpoints", ignoreCase = true)
+    return mentionsStructured && (code in 400..499 || isTransientHttpCode(code))
+}
+
+internal fun friendlyGenerationError(
+    body: String?,
+    code: Int,
+    message: String,
+): String {
+    val detail = apiErrorMessage(body, code, message)
+    return when (code) {
+        401, 403 -> "Invalid API key ($detail). Check the key in Settings."
+        404 -> "Model not found ($detail). Pick another model in Settings."
+        429 -> "Rate limited ($detail). Wait a minute and retry."
+        500, 502, 503, 529 -> "Model temporarily unavailable (HTTP $code: $detail). Retry or switch model in Settings."
+        else -> "Generation failed: $detail"
     }
 }
 
