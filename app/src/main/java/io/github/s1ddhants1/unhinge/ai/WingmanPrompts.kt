@@ -52,7 +52,9 @@ Output MUST be a JSON object {"lines": [...]} with EXACTLY $lineCount opening re
             appendLine("Candidate Profile:")
             appendLine(profileSummary)
             appendLine()
-            append("Respond directly with natural, human-sounding openers or advice. Text casually like a real person, never like an AI bot. No filler, no theater-kid preambles ('bold claim', 'you look like', 'challenge accepted').")
+            appendLine("Respond directly with natural, human-sounding openers or advice. Text casually like a real person, never like an AI bot. No filler, no theater-kid preambles ('bold claim', 'you look like', 'challenge accepted').")
+            appendLine("- If suggesting openers: Strict length under 25 words (sweet spot 8-16 words, max 250 characters). Anchor to a specific noun. Never open with just hey/hi.")
+            append("- If giving advice or vibe checks: Be concise, perceptive, and direct in 2-3 short bullet points.")
             if (custom.isNotBlank()) append("\nAdditional System Instructions:\n$custom")
         }
 }

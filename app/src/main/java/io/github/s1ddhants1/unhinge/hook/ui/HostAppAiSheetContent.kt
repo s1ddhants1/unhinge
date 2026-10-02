@@ -32,9 +32,12 @@ import kotlin.math.roundToInt
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -134,7 +137,7 @@ private fun openerProfileBlock(candidate: CachedCandidateProfile): String {
         buildString {
             append(candidate.firstName.ifBlank { "Candidate" })
             if (candidate.age > 0) append(", ${candidate.age}")
-        }.toString().takeIf { candidate.firstName.isNotBlank() || candidate.age > 0 },
+        }.takeIf { candidate.firstName.isNotBlank() || candidate.age > 0 },
         work.takeIf { it.isNotBlank() }?.let { "Work: $it" },
         candidate.school.takeIf { it.isNotBlank() }?.let { "School: $it" },
         candidate.location.takeIf { it.isNotBlank() }?.let { "Location: $it" },
@@ -287,8 +290,21 @@ fun HostAppAiSheetContent(
     var isAskAiGenerating by remember { mutableStateOf(false) }
     val customInteractions = remember { mutableStateListOf<CustomAiInteraction>() }
 
+    val promptCardsCount = remember(candidate?.userId, candidate?.prompts, promptEntries.size) {
+        if (candidate?.prompts.isNullOrEmpty()) {
+            if (promptEntries.isNotEmpty()) 1 else 0
+        } else {
+            candidate.prompts.size
+        }
+    }
+    val totalCards = (promptCardsCount + customInteractions.size).coerceAtLeast(1)
+    val pagerState = rememberPagerState(initialPage = 0) { totalCards }
+
     LaunchedEffect(candidate?.userId) {
         customInteractions.clear()
+        if (pagerState.currentPage != 0) {
+            pagerState.scrollToPage(0)
+        }
     }
 
     fun submitAskAi(queryText: String = askAiQuery) {
@@ -304,8 +320,16 @@ fun HostAppAiSheetContent(
         askAiQuery = ""
 
         val newInteraction = CustomAiInteraction(query = query, isStreaming = true)
-        customInteractions.add(0, newInteraction)
+        customInteractions.add(newInteraction)
         isAskAiGenerating = true
+
+        coroutineScope.launch {
+            delay(50)
+            val targetPage = promptCardsCount + customInteractions.size - 1
+            if (targetPage >= 0) {
+                pagerState.animateScrollToPage(targetPage)
+            }
+        }
 
         val candidateProfileSummary = buildString {
             if (candidate != null) {
@@ -496,7 +520,7 @@ fun HostAppAiSheetContent(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .fillMaxHeight(0.92f)
+            .fillMaxHeight(0.90f)
             .offset { IntOffset(0, offsetY.value.roundToInt().coerceAtLeast(0)) }
             .onGloballyPositioned { coordinates ->
                 sheetHeightPx = coordinates.size.height.toFloat()
@@ -504,13 +528,14 @@ fun HostAppAiSheetContent(
             .nestedScroll(nestedScrollConnection)
             .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
             .background(sheetBg)
-            .padding(horizontal = 18.dp, vertical = 12.dp)
+            .padding(top = 10.dp, bottom = 8.dp)
     ) {
         if (showDragHandle) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(28.dp)
+                    .padding(horizontal = 18.dp)
                     .then(dragModifier),
                 contentAlignment = Alignment.Center
             ) {
@@ -525,7 +550,9 @@ fun HostAppAiSheetContent(
 
         // Native Hinge Header: Candidate Identity & Single Dismiss Control
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -649,6 +676,7 @@ fun HostAppAiSheetContent(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
+                    .padding(horizontal = 18.dp)
                     .then(dragModifier),
                 contentAlignment = Alignment.Center
             ) {
@@ -678,6 +706,7 @@ fun HostAppAiSheetContent(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
+                    .padding(horizontal = 18.dp)
                     .then(dragModifier),
                 contentAlignment = Alignment.Center
             ) {
@@ -685,9 +714,7 @@ fun HostAppAiSheetContent(
                     shape = RoundedCornerShape(22.dp),
                     color = cardBg,
                     border = BorderStroke(1.dp, cardBorder),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp)
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -729,7 +756,7 @@ fun HostAppAiSheetContent(
                 border = BorderStroke(1.dp, cardBorder),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 12.dp)
+                    .padding(start = 18.dp, end = 18.dp, bottom = 12.dp)
             ) {
                 Column(
                     modifier = Modifier.padding(18.dp),
@@ -780,83 +807,68 @@ fun HostAppAiSheetContent(
             }
         }
 
-        // Candidate Prompt Cards Feed
-        LazyColumn(
+        // Horizontal Carousel: Candidate Prompt Cards & Ask AI Interactions
+        HorizontalPager(
+            state = pagerState,
+            contentPadding = PaddingValues(horizontal = 28.dp),
+            pageSpacing = 14.dp,
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-            contentPadding = PaddingValues(bottom = 16.dp)
-        ) {
-            // Custom Ask AI interactions
-            items(
-                items = customInteractions,
-                key = { it.id }
-            ) { item ->
-                CustomAiResponseCard(
-                    interaction = item,
-                    cardBg = cardBg,
-                    cardBorder = cardBorder,
-                    textPrimary = textPrimary,
-                    textSecondary = textSecondary,
-                    actionBtnBg = actionBtnBg,
-                    actionBtnText = actionBtnText,
-                    commentBg = commentBg,
-                    onCopy = { text ->
-                        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        cm.setPrimaryClip(ClipData.newPlainText("Unhinge AI Response", text))
-                        Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
-                    },
-                    onRegenerate = {
-                        customInteractions.removeAll { it.id == item.id }
-                        submitAskAi(item.query)
-                    },
-                    onDismiss = {
-                        customInteractions.removeAll { it.id == item.id }
-                    }
-                )
-            }
-
-            // Case 1: Candidate has no text prompts (bio overview card)
-            if (candidate.prompts.isEmpty()) {
-                item(key = "overview_card") {
+                .weight(1f)
+        ) { page ->
+            if (page < promptCardsCount) {
+                if (candidate.prompts.isEmpty()) {
+                    // Case 1: Candidate has no text prompts (bio overview card)
                     val fallbackEntry = promptEntries.firstOrNull()
                     val reply by (fallbackEntry?.suggestedReplyFlow?.collectAsState() ?: remember { mutableStateOf(null) })
 
                     Surface(
                         shape = RoundedCornerShape(22.dp),
                         color = cardBg,
-                        border = BorderStroke(1.dp, cardBorder),
-                        modifier = Modifier.fillMaxWidth()
+                        border = BorderStroke(
+                            width = if (pagerState.currentPage == page) 1.5.dp else 1.dp,
+                            color = if (pagerState.currentPage == page) (if (isDark) Color(0xFF4A4A4A) else Color(0xFFC0C0BE)) else cardBorder
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .fillMaxHeight()
                     ) {
                         Column(
-                            modifier = Modifier.padding(18.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(18.dp)
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text(
-                                text = "About ${candidate.firstName.ifBlank { "Candidate" }}",
-                                fontFamily = modernEraBold,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = textPrimary
-                            )
+                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Text(
+                                    text = "ABOUT ${candidate.firstName.uppercase().ifBlank { "CANDIDATE" }}",
+                                    fontFamily = modernEraBold,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.8.sp,
+                                    color = textSecondary
+                                )
 
-                            val bioText = listOfNotNull(
-                                candidate.jobTitle.takeIf { it.isNotBlank() }?.let { "Works as $it" },
-                                candidate.school.takeIf { it.isNotBlank() }?.let { "Studied at $it" },
-                                candidate.hometown.takeIf { it.isNotBlank() }?.let { "From $it" },
-                                candidate.location.takeIf { it.isNotBlank() }?.let { "Lives in $it" },
-                                candidate.datingIntention.takeIf { it.isNotBlank() }?.let { "Looking for $it" }
-                            ).joinToString("\n")
+                                val bioText = listOfNotNull(
+                                    candidate.jobTitle.takeIf { it.isNotBlank() }?.let { "Works as $it" },
+                                    candidate.school.takeIf { it.isNotBlank() }?.let { "Studied at $it" },
+                                    candidate.hometown.takeIf { it.isNotBlank() }?.let { "From $it" },
+                                    candidate.location.takeIf { it.isNotBlank() }?.let { "Lives in $it" },
+                                    candidate.datingIntention.takeIf { it.isNotBlank() }?.let { "Looking for $it" }
+                                ).joinToString("\n")
 
-                            Text(
-                                text = bioText.ifBlank { "Active candidate in Hinge feed" },
-                                fontFamily = tiemposRegular,
-                                fontSize = 24.sp,
-                                fontWeight = FontWeight.Normal,
-                                lineHeight = 32.sp,
-                                color = textPrimary
-                            )
+                                Text(
+                                    text = bioText.ifBlank { "Active candidate in Hinge feed" },
+                                    fontFamily = tiemposRegular,
+                                    fontSize = 24.sp,
+                                    fontWeight = FontWeight.Normal,
+                                    lineHeight = 32.sp,
+                                    color = textPrimary
+                                )
+                            }
+
+                            Spacer(Modifier.height(14.dp))
 
                             NativeHingeCommentBubble(
                                 entry = fallbackEntry,
@@ -874,60 +886,251 @@ fun HostAppAiSheetContent(
                             )
                         }
                     }
-                }
-            } else {
-                // Case 2: Candidate has prompts
-                itemsIndexed(
-                    items = candidate.prompts,
-                    key = { _, item -> "${item.question}_${item.answer}" }
-                ) { index, promptItem ->
-                    val entry = promptEntries.getOrNull(index)
+                } else {
+                    // Case 2: Candidate has prompt items
+                    val promptItem = candidate.prompts.getOrNull(page)
+                    val entry = promptEntries.getOrNull(page)
                     val reply by (entry?.suggestedReplyFlow?.collectAsState() ?: remember { mutableStateOf(null) })
 
-                    Surface(
-                        shape = RoundedCornerShape(22.dp),
-                        color = cardBg,
-                        border = BorderStroke(1.dp, cardBorder),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(18.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                    if (promptItem != null) {
+                        Surface(
+                            shape = RoundedCornerShape(22.dp),
+                            color = cardBg,
+                            border = BorderStroke(
+                                width = if (pagerState.currentPage == page) 1.5.dp else 1.dp,
+                                color = if (pagerState.currentPage == page) (if (isDark) Color(0xFF4A4A4A) else Color(0xFFC0C0BE)) else cardBorder
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .fillMaxHeight()
                         ) {
-                            Text(
-                                text = promptItem.question,
-                                fontFamily = modernEraBold,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = textPrimary
-                            )
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(18.dp)
+                                    .verticalScroll(rememberScrollState()),
+                                verticalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "PROMPT ${page + 1} OF $promptCardsCount",
+                                            fontFamily = modernEraBold,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            letterSpacing = 0.8.sp,
+                                            color = textSecondary
+                                        )
 
-                            Text(
-                                text = promptItem.answer.replace("\\n", "\n"),
-                                fontFamily = tiemposRegular,
-                                fontSize = 26.sp,
-                                fontWeight = FontWeight.Normal,
-                                lineHeight = 34.sp,
-                                color = textPrimary
-                            )
+                                        Surface(
+                                            shape = RoundedCornerShape(50),
+                                            color = pillBg,
+                                            border = BorderStroke(1.dp, pillBorder),
+                                            modifier = Modifier.clickable {
+                                                submitAskAi("Focus on her prompt \"${promptItem.question}\": \"${promptItem.answer}\" and give me a sharp, funny angle.")
+                                            }
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.AutoAwesome,
+                                                    contentDescription = null,
+                                                    tint = textSecondary,
+                                                    modifier = Modifier.size(11.dp)
+                                                )
+                                                Text(
+                                                    text = "Ask AI",
+                                                    fontFamily = modernEraMedium,
+                                                    fontSize = 11.sp,
+                                                    color = textSecondary
+                                                )
+                                            }
+                                        }
+                                    }
 
-                            NativeHingeCommentBubble(
-                                entry = entry,
-                                replyText = reply,
-                                status = status,
-                                isCopied = copiedIndex == index,
-                                commentBg = commentBg,
-                                textPrimary = textPrimary,
-                                textSecondary = textSecondary,
-                                actionBtnBg = actionBtnBg,
-                                actionBtnText = actionBtnText,
-                                onCopy = { copyOpener(index, it) },
-                                onRegenerate = { entry?.let { requestWingmanGeneration(listOf(it), forceRefresh = true) } },
-                                onOpenSettings = { launchUnhingeSettings(context) }
-                            )
+                                    Text(
+                                        text = promptItem.question,
+                                        fontFamily = modernEraBold,
+                                        fontSize = 15.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = textPrimary
+                                    )
+
+                                    Text(
+                                        text = promptItem.answer.replace("\\n", "\n"),
+                                        fontFamily = tiemposRegular,
+                                        fontSize = 24.sp,
+                                        fontWeight = FontWeight.Normal,
+                                        lineHeight = 32.sp,
+                                        color = textPrimary
+                                    )
+                                }
+
+                                Spacer(Modifier.height(14.dp))
+
+                                NativeHingeCommentBubble(
+                                    entry = entry,
+                                    replyText = reply,
+                                    status = status,
+                                    isCopied = copiedIndex == page,
+                                    commentBg = commentBg,
+                                    textPrimary = textPrimary,
+                                    textSecondary = textSecondary,
+                                    actionBtnBg = actionBtnBg,
+                                    actionBtnText = actionBtnText,
+                                    onCopy = { copyOpener(page, it) },
+                                    onRegenerate = { entry?.let { requestWingmanGeneration(listOf(it), forceRefresh = true) } },
+                                    onOpenSettings = { launchUnhingeSettings(context) }
+                                )
+                            }
                         }
                     }
                 }
+            } else {
+                // Case 3: Custom Ask AI interaction cards
+                val interactionIndex = page - promptCardsCount
+                val item = customInteractions.getOrNull(interactionIndex)
+                if (item != null) {
+                    CustomAiResponseCard(
+                        interaction = item,
+                        index = interactionIndex + 1,
+                        isSelected = pagerState.currentPage == page,
+                        cardBg = cardBg,
+                        cardBorder = cardBorder,
+                        textPrimary = textPrimary,
+                        textSecondary = textSecondary,
+                        actionBtnBg = actionBtnBg,
+                        actionBtnText = actionBtnText,
+                        commentBg = commentBg,
+                        pillBg = pillBg,
+                        pillBorder = pillBorder,
+                        onCopy = { text ->
+                            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            cm.setPrimaryClip(ClipData.newPlainText("Unhinge AI Response", text))
+                            Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                        },
+                        onRegenerate = {
+                            customInteractions.removeAll { it.id == item.id }
+                            submitAskAi(item.query)
+                        },
+                        onDismiss = {
+                            val removedIdx = customInteractions.indexOfFirst { it.id == item.id }
+                            customInteractions.removeAll { it.id == item.id }
+                            if (removedIdx != -1) {
+                                coroutineScope.launch {
+                                    val maxPage = (promptCardsCount + customInteractions.size - 1).coerceAtLeast(0)
+                                    if (pagerState.currentPage > maxPage) {
+                                        pagerState.animateScrollToPage(maxPage)
+                                    }
+                                }
+                            }
+                        },
+                        onRefine = { refinementQuery ->
+                            submitAskAi(refinementQuery)
+                        }
+                    )
+                }
+            }
+        }
+
+        // Pager Indicator Dots (Hinge Carousel Dots)
+        if (totalCards > 1) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 10.dp, bottom = 8.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                for (i in 0 until totalCards) {
+                    val isSelected = pagerState.currentPage == i
+                    Box(
+                        modifier = Modifier
+                            .padding(horizontal = 3.5.dp)
+                            .height(6.5.dp)
+                            .width(if (isSelected) 18.dp else 6.5.dp)
+                            .clip(RoundedCornerShape(50))
+                            .background(
+                                if (isSelected) actionBtnBg
+                                else (if (isDark) Color(0xFF383838) else Color(0xFFD6D6D4))
+                            )
+                            .clickable {
+                                coroutineScope.launch { pagerState.animateScrollToPage(i) }
+                            }
+                    )
+                }
+            }
+        } else {
+            Spacer(Modifier.height(8.dp))
+        }
+
+        // Quick Action Suggestion Chips
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 18.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            QuickActionChip(
+                label = "✨ Vibe check",
+                bg = pillBg,
+                border = pillBorder,
+                textColor = textPrimary,
+                font = modernEraMedium
+            ) {
+                val candidateName = candidate.firstName.ifBlank { "her" }
+                submitAskAi("Give me a sharp, 2-sentence vibe check and best conversational angle for $candidateName.")
+            }
+
+            QuickActionChip(
+                label = "🌶️ Playful roast",
+                bg = pillBg,
+                border = pillBorder,
+                textColor = textPrimary,
+                font = modernEraMedium
+            ) {
+                submitAskAi("Give me a light, teasing roast about one of her prompt answers that invites a laugh.")
+            }
+
+            QuickActionChip(
+                label = "🍸 First date pitch",
+                bg = pillBg,
+                border = pillBorder,
+                textColor = textPrimary,
+                font = modernEraMedium
+            ) {
+                val candidateName = candidate.firstName.ifBlank { "her" }
+                submitAskAi("Suggest a low-pressure, tailored first date idea based on $candidateName's bio and interests.")
+            }
+
+            QuickActionChip(
+                label = "🔍 Hidden hook",
+                bg = pillBg,
+                border = pillBorder,
+                textColor = textPrimary,
+                font = modernEraMedium
+            ) {
+                val candidateName = candidate.firstName.ifBlank { "her" }
+                submitAskAi("Spot an understated, witty detail in $candidateName's answers that most matches miss.")
+            }
+
+            QuickActionChip(
+                label = "🚩 Green & red flags",
+                bg = pillBg,
+                border = pillBorder,
+                textColor = textPrimary,
+                font = modernEraMedium
+            ) {
+                val candidateName = candidate.firstName.ifBlank { "her" }
+                submitAskAi("Highlight 2 major green flags and any subtle friction points in $candidateName's profile.")
             }
         }
 
@@ -937,7 +1140,7 @@ fun HostAppAiSheetContent(
             modifier = Modifier
                 .fillMaxWidth()
                 .imePadding()
-                .padding(top = 8.dp, bottom = 4.dp)
+                .padding(horizontal = 18.dp, vertical = 4.dp)
         ) {
             Row(
                 modifier = Modifier
@@ -1028,11 +1231,13 @@ fun HostAppAiSheetContent(
 }
 
 /**
- * Interactive card displaying user's custom "Ask AI" prompt and the AI's generated response.
+ * Interactive card displaying user's custom "Ask AI" prompt and the AI's generated response in the carousel.
  */
 @Composable
 private fun CustomAiResponseCard(
     interaction: CustomAiInteraction,
+    index: Int,
+    isSelected: Boolean,
     cardBg: Color,
     cardBorder: Color,
     textPrimary: Color,
@@ -1040,9 +1245,12 @@ private fun CustomAiResponseCard(
     actionBtnBg: Color,
     actionBtnText: Color,
     commentBg: Color,
+    pillBg: Color,
+    pillBorder: Color,
     onCopy: (String) -> Unit,
     onRegenerate: () -> Unit,
     onDismiss: () -> Unit,
+    onRefine: (String) -> Unit,
 ) {
     val context = LocalContext.current
     val modernEraRegular = remember(context) { HingeFonts.modernEraRegular(context) }
@@ -1055,134 +1263,175 @@ private fun CustomAiResponseCard(
     Surface(
         shape = RoundedCornerShape(22.dp),
         color = cardBg,
-        border = BorderStroke(1.dp, cardBorder),
-        modifier = Modifier.fillMaxWidth()
+        border = BorderStroke(
+            width = if (isSelected) 1.5.dp else 1.dp,
+            color = if (isSelected) (if (isSystemInDarkTheme()) Color(0xFF4A4A4A) else Color(0xFFC0C0BE)) else cardBorder
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .fillMaxHeight()
     ) {
         Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(18.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // Header: Sparkle tag + Query + Dismiss button
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                // Header: Sparkle tag + Query index + Dismiss button
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.weight(1f, fill = false)
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.AutoAwesome,
-                        contentDescription = null,
-                        tint = actionBtnBg,
-                        modifier = Modifier.size(15.dp)
-                    )
-                    Text(
-                        text = "ASK AI",
-                        fontFamily = modernEraBold,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.8.sp,
-                        color = actionBtnBg
-                    )
-                }
-
-                Surface(
-                    shape = CircleShape,
-                    color = Color.Transparent,
-                    modifier = Modifier.size(24.dp)
-                ) {
-                    IconButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.fillMaxSize()
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.weight(1f, fill = false)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Dismiss",
-                            tint = textSecondary.copy(alpha = 0.6f),
-                            modifier = Modifier.size(14.dp)
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = null,
+                            tint = actionBtnBg,
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Text(
+                            text = "ASK AI #$index",
+                            fontFamily = modernEraBold,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.8.sp,
+                            color = actionBtnBg
                         )
                     }
-                }
-            }
 
-            // User Prompt
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = commentBg.copy(alpha = 0.7f),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = "“${interaction.query}”",
-                    fontFamily = modernEraMedium,
-                    fontSize = 13.5.sp,
-                    fontWeight = FontWeight.Medium,
-                    fontStyle = FontStyle.Italic,
-                    color = textPrimary,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
-                )
-            }
-
-            // AI Generated Output
-            when {
-                interaction.error != null -> {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(
-                            text = interaction.error,
-                            fontFamily = modernEraRegular,
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                        TextButton(
-                            onClick = onRegenerate,
-                            contentPadding = PaddingValues(0.dp)
+                    Surface(
+                        shape = CircleShape,
+                        color = Color.Transparent,
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        IconButton(
+                            onClick = onDismiss,
+                            modifier = Modifier.fillMaxSize()
                         ) {
-                            Text(
-                                text = "Retry",
-                                fontFamily = modernEraMedium,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = actionBtnBg
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Dismiss",
+                                tint = textSecondary.copy(alpha = 0.6f),
+                                modifier = Modifier.size(14.dp)
                             )
                         }
                     }
                 }
-                interaction.isStreaming && interaction.reply.isBlank() -> {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.padding(vertical = 4.dp)
-                    ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.dp,
-                            color = actionBtnBg
-                        )
+
+                // User Prompt
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = commentBg.copy(alpha = 0.7f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "“${interaction.query}”",
+                        fontFamily = modernEraMedium,
+                        fontSize = 13.5.sp,
+                        fontWeight = FontWeight.Medium,
+                        fontStyle = FontStyle.Italic,
+                        color = textPrimary,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                    )
+                }
+
+                // AI Generated Output
+                when {
+                    interaction.error != null -> {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                text = interaction.error,
+                                fontFamily = modernEraRegular,
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                            TextButton(
+                                onClick = onRegenerate,
+                                contentPadding = PaddingValues(0.dp)
+                            ) {
+                                Text(
+                                    text = "Retry",
+                                    fontFamily = modernEraMedium,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = actionBtnBg
+                                )
+                            }
+                        }
+                    }
+                    interaction.isStreaming && interaction.reply.isBlank() -> {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.padding(vertical = 6.dp)
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = actionBtnBg
+                            )
+                            Text(
+                                text = "Crafting custom response...",
+                                fontFamily = modernEraRegular,
+                                fontSize = 13.5.sp,
+                                color = textSecondary
+                            )
+                        }
+                    }
+                    else -> {
                         Text(
-                            text = "Crafting custom response...",
-                            fontFamily = modernEraRegular,
-                            fontSize = 13.5.sp,
-                            color = textSecondary
+                            text = interaction.reply,
+                            fontFamily = modernEraMedium,
+                            fontSize = 15.5.sp,
+                            fontWeight = FontWeight.Normal,
+                            lineHeight = 22.sp,
+                            color = textPrimary
                         )
                     }
                 }
-                else -> {
-                    Text(
-                        text = interaction.reply,
-                        fontFamily = modernEraMedium,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Normal,
-                        lineHeight = 23.sp,
-                        color = textPrimary
-                    )
+            }
+
+            // Bottom Actions & Refinement Pills
+            if (interaction.reply.isNotBlank() && interaction.error == null) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Refinement pills
+                    if (!interaction.isStreaming) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            RefinePill("🤏 Shorter", pillBg, pillBorder, textPrimary, modernEraMedium) {
+                                onRefine("Make this shorter and under 12 words: \"${interaction.reply}\"")
+                            }
+                            RefinePill("🔥 Bolder", pillBg, pillBorder, textPrimary, modernEraMedium) {
+                                onRefine("Make this bolder, flirtier, and more playful: \"${interaction.reply}\"")
+                            }
+                            RefinePill("😂 Teasing", pillBg, pillBorder, textPrimary, modernEraMedium) {
+                                onRefine("Add playful teasing and dry humor to this: \"${interaction.reply}\"")
+                            }
+                            RefinePill("🍸 Date Pitch", pillBg, pillBorder, textPrimary, modernEraMedium) {
+                                onRefine("Convert this into a smooth, low-pressure first date invitation: \"${interaction.reply}\"")
+                            }
+                        }
+                    }
 
                     // Action Row: Copy & Regenerate
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 4.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -1236,6 +1485,58 @@ private fun CustomAiResponseCard(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun QuickActionChip(
+    label: String,
+    bg: Color,
+    border: Color,
+    textColor: Color,
+    font: FontFamily,
+    onClick: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(50),
+        color = bg,
+        border = BorderStroke(1.dp, border),
+        modifier = Modifier.clickable { onClick() }
+    ) {
+        Text(
+            text = label,
+            fontFamily = font,
+            fontSize = 12.5.sp,
+            fontWeight = FontWeight.Medium,
+            color = textColor,
+            modifier = Modifier.padding(horizontal = 13.dp, vertical = 6.dp)
+        )
+    }
+}
+
+@Composable
+private fun RefinePill(
+    label: String,
+    bg: Color,
+    border: Color,
+    textColor: Color,
+    font: FontFamily,
+    onClick: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(50),
+        color = bg,
+        border = BorderStroke(1.dp, border),
+        modifier = Modifier.clickable { onClick() }
+    ) {
+        Text(
+            text = label,
+            fontFamily = font,
+            fontSize = 11.5.sp,
+            fontWeight = FontWeight.Medium,
+            color = textColor,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+        )
     }
 }
 
