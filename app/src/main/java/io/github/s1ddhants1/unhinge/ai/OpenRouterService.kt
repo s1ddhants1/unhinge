@@ -264,7 +264,9 @@ internal fun friendlyGenerationError(
 ): String {
     val detail = apiErrorMessage(body, code, message)
     return when (code) {
-        401, 403 -> "Invalid API key ($detail). Check the key in Settings."
+        401 -> "Invalid API key ($detail). Check the key in Settings (openrouter.ai/keys, starts with sk-or-)."
+        402 -> "Insufficient credits ($detail). Free models (:free) still need a valid key; add credits or raise the key limit."
+        403 -> "Request forbidden ($detail). Key is valid but blocked by guardrail/moderation/permissions."
         404 -> "Model not found ($detail). Pick another model in Settings."
         429 -> "Rate limited ($detail). Wait a minute and retry."
         500, 502, 503, 529 -> "Model temporarily unavailable (HTTP $code: $detail). Retry or switch model in Settings."

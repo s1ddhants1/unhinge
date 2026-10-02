@@ -143,7 +143,7 @@ The AI pipeline in Unhinge is designed for high-performance dating prompt sugges
    - Generates tailored opening lines matching the selected candidate prompt and bio answers.
    - Sends `response_format` JSON-schema requests (`lines` array) with caller-supplied temperature, top-P, max tokens, and system instructions, but omits `provider.require_parameters` (forcing it shrinks OpenRouter's provider pool and surfaces as HTTP 503 "No available model provider"; the parser already handles bare-array / plain-text fallbacks, so availability wins).
    - Retries transient 5xx (500/502/503/529) with exponential backoff; structured-output rejections get one lenient retry without `response_format`. Model IDs are sanitized (leading `~` artifacts stripped) and the pre-Oct-2026 stored default migrates to the current default.
-   - Extracts detailed error diagnostics (`apiErrorMessage()` + `friendlyGenerationError()`) mapping 401/404/429/5xx to actionable Settings hints.
+   - Extracts detailed error diagnostics (`apiErrorMessage()` + `friendlyGenerationError()`) mapping 401/402/403/404/429/5xx to actionable Settings hints (401 invalid key, 402 insufficient credits, 403 guardrail/moderation block).
 
 4. **[LlmProtocol.kt](../app/src/main/java/io/github/s1ddhants1/unhinge/ai/LlmProtocol.kt)**:
    - Wire-protocol enum (`openai-chat-completions`, `google-openai`); brand labels only decide endpoint/model defaults.
