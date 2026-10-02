@@ -204,12 +204,12 @@ The AI pipeline in Unhinge is designed for high-performance dating prompt sugges
    - **Elimination of Gaze Jump**: When a user submits an Ask AI query or quick action, the generated analysis is appended cleanly as a new card in `customInteractions` rather than prepending at the top of the screen.
    - A `LaunchedEffect` smoothly scrolls the pager (`pagerState.animateScrollToPage`) to the newly created interaction card.
    - **Quick Action Suggestion Chips**: Horizontal scroll row above the input bar offering high-converting one-tap dating analyses:
-     - `✨ Vibe check`
-     - `🌶️ Playful roast`
-     - `🍸 First date pitch`
-     - `🔍 Hidden hook`
-     - `🚩 Green & red flags`
-   - **Interactive Refinement Pills**: Generated custom AI cards feature quick follow-up refinement action pills (`[🤏 Shorter]`, `[🔥 Bolder]`, `[😂 Teasing]`, `[🍸 Date Pitch]`), allowing immediate tone tuning without typing.
+     - `Vibe check`
+     - `Playful roast`
+     - `First date pitch`
+     - `Hidden hook`
+     - `Green & red flags`
+   - **Interactive Refinement Pills**: Generated custom AI cards feature quick follow-up refinement action pills (`[Shorter]`, `[Bolder]`, `[Teasing]`, `[Date pitch]`), allowing immediate tone tuning without typing.
    - Streaming responses render live via `OpenRouterStreamingService.streamChat` / `AiWingmanHelper.streamCustomChat` directly inside the active card.
 
 5. **Interactive "Ask AI" Input Bar**:
@@ -228,7 +228,7 @@ The AI pipeline in Unhinge is designed for high-performance dating prompt sugges
 7. **Clean Header & Visual Discipline**:
    - Candidate identity header displays candidate first name and age in Modern Era Bold, with photo thumbnail and subtitle (work, location) without selfie verification badges for an uncluttered layout.
    - Opener action button cleanly labeled "Copy" with temporary confirmation state.
-   - Zero emojis across all core Hinge UI tokens, badges, and toasts; tasteful icons on quick-action chips.
+   - Zero emojis across all UI copy, chips, pills, badges, toasts, and comments.
    - Zero haptic feedback vibrations for clean, distraction-free interactions.
 
 8. **System Bar & Window Isolation**:

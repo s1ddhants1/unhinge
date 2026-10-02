@@ -1080,7 +1080,7 @@ fun HostAppAiSheetContent(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             QuickActionChip(
-                label = "✨ Vibe check",
+                label = "Vibe check",
                 bg = pillBg,
                 border = pillBorder,
                 textColor = textPrimary,
@@ -1091,7 +1091,7 @@ fun HostAppAiSheetContent(
             }
 
             QuickActionChip(
-                label = "🌶️ Playful roast",
+                label = "Playful roast",
                 bg = pillBg,
                 border = pillBorder,
                 textColor = textPrimary,
@@ -1101,7 +1101,7 @@ fun HostAppAiSheetContent(
             }
 
             QuickActionChip(
-                label = "🍸 First date pitch",
+                label = "First date pitch",
                 bg = pillBg,
                 border = pillBorder,
                 textColor = textPrimary,
@@ -1112,7 +1112,7 @@ fun HostAppAiSheetContent(
             }
 
             QuickActionChip(
-                label = "🔍 Hidden hook",
+                label = "Hidden hook",
                 bg = pillBg,
                 border = pillBorder,
                 textColor = textPrimary,
@@ -1123,7 +1123,7 @@ fun HostAppAiSheetContent(
             }
 
             QuickActionChip(
-                label = "🚩 Green & red flags",
+                label = "Green & red flags",
                 bg = pillBg,
                 border = pillBorder,
                 textColor = textPrimary,
@@ -1414,16 +1414,16 @@ private fun CustomAiResponseCard(
                                 .horizontalScroll(rememberScrollState()),
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            RefinePill("🤏 Shorter", pillBg, pillBorder, textPrimary, modernEraMedium) {
+                            RefinePill("Shorter", pillBg, pillBorder, textPrimary, modernEraMedium) {
                                 onRefine("Make this shorter and under 12 words: \"${interaction.reply}\"")
                             }
-                            RefinePill("🔥 Bolder", pillBg, pillBorder, textPrimary, modernEraMedium) {
+                            RefinePill("Bolder", pillBg, pillBorder, textPrimary, modernEraMedium) {
                                 onRefine("Make this bolder, flirtier, and more playful: \"${interaction.reply}\"")
                             }
-                            RefinePill("😂 Teasing", pillBg, pillBorder, textPrimary, modernEraMedium) {
+                            RefinePill("Teasing", pillBg, pillBorder, textPrimary, modernEraMedium) {
                                 onRefine("Add playful teasing and dry humor to this: \"${interaction.reply}\"")
                             }
-                            RefinePill("🍸 Date Pitch", pillBg, pillBorder, textPrimary, modernEraMedium) {
+                            RefinePill("Date pitch", pillBg, pillBorder, textPrimary, modernEraMedium) {
                                 onRefine("Convert this into a smooth, low-pressure first date invitation: \"${interaction.reply}\"")
                             }
                         }
