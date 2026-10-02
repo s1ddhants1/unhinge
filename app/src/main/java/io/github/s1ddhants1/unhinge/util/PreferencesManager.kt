@@ -280,10 +280,11 @@ class PreferencesManager(
     var blockDataTransport by booleanPreference(Consts.PREF_BLOCK_DATATRANSPORT, true)
 
     // AI Wingman & Theme Preferences
-    var aiProvider by stringPreference(Consts.PREF_AI_PROVIDER, "OpenRouter")
+    // Zen free tier needs no credentials, so a fresh install is AI-ready without onboarding.
+    var aiProvider by stringPreference(Consts.PREF_AI_PROVIDER, "Zen")
     var openRouterApiKey by stringPreference(Consts.PREF_OPENROUTER_API_KEY, "")
-    var openRouterBaseUrl by stringPreference(Consts.PREF_OPENROUTER_BASE_URL, Consts.OPENROUTER_DEFAULT_BASE_URL)
-    var openRouterModel by stringPreference(Consts.PREF_OPENROUTER_MODEL, Consts.OPENROUTER_DEFAULT_MODEL)
+    var openRouterBaseUrl by stringPreference(Consts.PREF_OPENROUTER_BASE_URL, Consts.ZEN_DEFAULT_BASE_URL)
+    var openRouterModel by stringPreference(Consts.PREF_OPENROUTER_MODEL, Consts.ZEN_DEFAULT_MODEL)
     var aiCustomSystemPrompt by stringPreference(Consts.PREF_AI_CUSTOM_SYSTEM_PROMPT, "")
     var aiOverrideSystemPrompt by booleanPreference(Consts.PREF_AI_OVERRIDE_SYSTEM_PROMPT, false)
     var showHostAppFab by booleanPreference(Consts.PREF_SHOW_HOST_APP_FAB, true)

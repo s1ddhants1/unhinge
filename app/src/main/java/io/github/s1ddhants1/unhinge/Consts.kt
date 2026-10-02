@@ -55,6 +55,8 @@ object Consts {
     const val OPENROUTER_DEFAULT_MODEL = "inception/mercury-2.5-preview"
     // Pre-Oct-2026 default retained for one-way migration of stored prefs.
     const val LEGACY_OPENROUTER_DEFAULT_MODEL = "google/gemini-2.5-flash-lite"
+    const val ZEN_DEFAULT_BASE_URL = "https://opencode.ai/zen/v1/responses"
+    const val ZEN_DEFAULT_MODEL = "muse-spark-1.3-contributor-free"
     const val DEFAULT_THEME_COLOR = 0xFFED5564L
     const val DEFAULT_AI_TEMPERATURE = 0.85f
     const val DEFAULT_AI_TOP_P = 0.95f

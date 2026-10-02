@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="io.github.s1ddhants1.unhinge.ai.OpenRouterServiceTest" tests="11" skipped="0" failures="0" errors="0" timestamp="2026-10-02T16:00:16.974Z" hostname="localhost" time="0.053">
+  <properties/>
+  <testcase name="generationParsingHandlesTheStructuredOutputObjectShape" classname="io.github.s1ddhants1.unhinge.ai.OpenRouterServiceTest" time="0.038"/>
+  <testcase name="lenientRequestOmitsStructuredOutputsWhenDisabled" classname="io.github.s1ddhants1.unhinge.ai.OpenRouterServiceTest" time="0.009"/>
+  <testcase name="sanitizeModelIdStripsTildeArtifacts" classname="io.github.s1ddhants1.unhinge.ai.OpenRouterServiceTest" time="0.001"/>
+  <testcase name="customSystemPromptMergesAsMiddleTierKeepingJsonContract" classname="io.github.s1ddhants1.unhinge.ai.OpenRouterServiceTest" time="0.001"/>
+  <testcase name="openrouterOnlyProviderRoutingIsOmittedForDirectProviders" classname="io.github.s1ddhants1.unhinge.ai.OpenRouterServiceTest" time="0.0"/>
+  <testcase name="requestUsesLenientStructuredOutputsWithoutStrictParameterRouting" classname="io.github.s1ddhants1.unhinge.ai.OpenRouterServiceTest" time="0.0"/>
+  <testcase name="streamingRequestUsesTheWingmanPrompt" classname="io.github.s1ddhants1.unhinge.ai.OpenRouterServiceTest" time="0.001"/>
+  <testcase name="transientCodesCoverUpstreamOverload" classname="io.github.s1ddhants1.unhinge.ai.OpenRouterServiceTest" time="0.0"/>
+  <testcase name="generationParsingHandlesFencedAndShortResponses" classname="io.github.s1ddhants1.unhinge.ai.OpenRouterServiceTest" time="0.001"/>
+  <testcase name="structuredOutputRejectionDetectsEmptyProviderPool" classname="io.github.s1ddhants1.unhinge.ai.OpenRouterServiceTest" time="0.0"/>
+  <testcase name="friendlyErrorHintsAtRetryOrModelSwitchFor503" classname="io.github.s1ddhants1.unhinge.ai.OpenRouterServiceTest" time="0.002"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

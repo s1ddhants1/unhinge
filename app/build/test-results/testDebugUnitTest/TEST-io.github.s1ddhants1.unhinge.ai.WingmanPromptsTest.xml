@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="io.github.s1ddhants1.unhinge.ai.WingmanPromptsTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-10-02T16:00:17.030Z" hostname="localhost" time="0.002">
+  <properties/>
+  <testcase name="askAiPromptOmitsCustomBlockWhenBlank" classname="io.github.s1ddhants1.unhinge.ai.WingmanPromptsTest" time="0.0"/>
+  <testcase name="openerUserPromptIncludesProfileBlockBeforePrompts" classname="io.github.s1ddhants1.unhinge.ai.WingmanPromptsTest" time="0.0"/>
+  <testcase name="openerSystemPromptIsMinimalWithoutCustom" classname="io.github.s1ddhants1.unhinge.ai.WingmanPromptsTest" time="0.0"/>
+  <testcase name="openerUserPromptEncodesReplyBestPractices" classname="io.github.s1ddhants1.unhinge.ai.WingmanPromptsTest" time="0.0"/>
+  <testcase name="customPromptMergesAsMiddleTier" classname="io.github.s1ddhants1.unhinge.ai.WingmanPromptsTest" time="0.0"/>
+  <testcase name="openerUserPromptIncludesAvoidList" classname="io.github.s1ddhants1.unhinge.ai.WingmanPromptsTest" time="0.001"/>
+  <testcase name="openerUserPromptOmitsProfileSectionWhenBlank" classname="io.github.s1ddhants1.unhinge.ai.WingmanPromptsTest" time="0.0"/>
+  <testcase name="askAiPromptAppendsCustomInstructions" classname="io.github.s1ddhants1.unhinge.ai.WingmanPromptsTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

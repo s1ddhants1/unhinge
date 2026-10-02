@@ -1,0 +1,30 @@
+<variant
+    name="release"
+    package="io.github.s1ddhants1.unhinge"
+    minSdkVersion="26"
+    targetSdkVersion="37.0"
+    mergedManifest="build/intermediates/merged_manifest/release/processReleaseMainManifest/AndroidManifest.xml"
+    manifestMergeReport="build/outputs/logs/manifest-merger-release-report.txt"
+    proguardFiles="build/intermediates/default_proguard_files/global/proguard-android-optimize.txt-9.4.1:proguard-rules.pro"
+    partialResultsDir="build/intermediates/lint_vital_partial_results/release/lintVitalAnalyzeRelease/out">
+  <buildFeatures/>
+  <sourceProviders>
+    <sourceProvider
+        manifests="src/main/AndroidManifest.xml"
+        javaDirectories="src/main/java:src/release/java:src/main/kotlin:src/release/kotlin"
+        resDirectories="src/main/res:src/release/res"
+        assetsDirectories="src/main/assets:src/release/assets"
+        keepRulesDirectories="src/main/keepRules:src/release/keepRules"/>
+  </sourceProviders>
+  <testSourceProviders>
+  </testSourceProviders>
+  <testFixturesSourceProviders>
+  </testFixturesSourceProviders>
+  <artifact
+      classOutputs="build/intermediates/javac/release/compileReleaseJavaWithJavac/classes:build/intermediates/built_in_kotlinc/release/compileReleaseKotlin/classes:build/intermediates/compile_r_class_jar/release/generateReleaseRFile/R.jar"
+      type="MAIN"
+      applicationId="io.github.s1ddhants1.unhinge"
+      generatedSourceFolders="build/generated/ap_generated_sources/release/out:build/generated/source/buildConfig/release"
+      desugaredMethodsFiles="/data/data/com.termux/files/home/.gradle/caches/9.7.1/transforms/0ba207f6bb3a51f17c4a0bc8c645ea45/transformed/D8BackportedDesugaredMethods.txt">
+  </artifact>
+</variant>

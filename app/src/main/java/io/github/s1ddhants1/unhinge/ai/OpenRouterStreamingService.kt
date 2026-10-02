@@ -72,12 +72,17 @@ object OpenRouterStreamingService {
                             maxTokens = maxTokens,
                             structured = useStructured,
                         )
+                    val targetUrl = baseUrl.ifBlank { OpenRouterDefaultBaseUrl }
                     val request =
                         Request
                             .Builder()
-                            .url(baseUrl.ifBlank { OpenRouterDefaultBaseUrl })
+                            .url(targetUrl)
                             .apply {
-                                if (apiKey.isNotBlank()) addHeader("Authorization", "Bearer ${apiKey.trim()}")
+                                if (ZenRouter.isZenUrl(targetUrl)) {
+                                    ZenRouter.injectZenHeaders(this, apiKey)
+                                } else if (apiKey.isNotBlank()) {
+                                    addHeader("Authorization", "Bearer ${apiKey.trim()}")
+                                }
                             }.addHeader("Content-Type", "application/json")
                             .addHeader("HTTP-Referer", "https://github.com/s1ddhants1/unhinge")
                             .addHeader("X-Title", "Unhinge")
@@ -198,6 +203,12 @@ object OpenRouterStreamingService {
                             })
                         })
                         put("stream", JsonPrimitive(true))
+                        if (ZenRouter.isZenUrl(baseUrl)) {
+                            put("stream_options", buildJsonObject { put("include_usage", true) })
+                            if (effectiveModel == "big-pickle" || effectiveModel.contains("pickle")) {
+                                put("tools", ZenRouter.DefaultZenChatTools)
+                            }
+                        }
                     }
 
                     val targetUrl = baseUrl.ifBlank { OpenRouterDefaultBaseUrl }
@@ -206,7 +217,11 @@ object OpenRouterStreamingService {
                             .Builder()
                             .url(targetUrl)
                             .apply {
-                                if (apiKey.isNotBlank()) addHeader("Authorization", "Bearer ${apiKey.trim()}")
+                                if (ZenRouter.isZenUrl(targetUrl)) {
+                                    ZenRouter.injectZenHeaders(this, apiKey)
+                                } else if (apiKey.isNotBlank()) {
+                                    addHeader("Authorization", "Bearer ${apiKey.trim()}")
+                                }
                             }.addHeader("Content-Type", "application/json")
                             .addHeader("HTTP-Referer", "https://github.com/s1ddhants1/unhinge")
                             .addHeader("X-Title", "Unhinge")

@@ -82,12 +82,40 @@ object AiWingmanHelper {
             }
     }
 
+    fun isApiKeyRequired(provider: String, model: String): Boolean {
+        if (provider.equals("Zen", ignoreCase = true)) {
+            return !ZenRouter.isFreeModel(model)
+        }
+        return true
+    }
+
     fun resolveEffectiveEndpoint(
         provider: String,
         apiKey: String,
         baseUrl: String,
         model: String,
     ): Triple<LlmProtocol, String, String> {
+        if (provider.equals("Zen", ignoreCase = true)) {
+            val trimmed = baseUrl.trim()
+            // Only a genuine third-party proxy overrides per-model routing. URLs left behind by
+            // another provider (Zen URLs, or an OpenRouter default predating the provider switch)
+            // must not hijack the request, mirroring the non-Zen `openrouter.ai` swap below.
+            val isCustomProxy =
+                trimmed.isNotBlank() &&
+                    !ZenRouter.isZenUrl(trimmed) &&
+                    !trimmed.contains("openrouter.ai", ignoreCase = true)
+            if (isCustomProxy) {
+                val protocol = when {
+                    trimmed.endsWith("/responses") -> LlmProtocol.OpenAiResponses
+                    trimmed.endsWith("/messages") -> LlmProtocol.AnthropicMessages
+                    trimmed.contains("/models/") -> LlmProtocol.GoogleGemini
+                    else -> LlmProtocol.OpenAiChatCompletions
+                }
+                val resolvedModel = sanitizeModelId(model).ifBlank { io.github.s1ddhants1.unhinge.Consts.ZEN_DEFAULT_MODEL }
+                return Triple(protocol, trimmed, resolvedModel)
+            }
+            return ZenRouter.resolve(model)
+        }
         val protocol = LlmProtocol.infer(provider, apiKey)
         val effectiveProvider = if (protocol == LlmProtocol.GoogleOpenAi) "Gemini" else provider
 
@@ -134,17 +162,32 @@ object AiWingmanHelper {
         topP: Float = io.github.s1ddhants1.unhinge.Consts.DEFAULT_AI_TOP_P,
         maxTokens: Int = io.github.s1ddhants1.unhinge.Consts.DEFAULT_AI_MAX_TOKENS,
     ): Flow<OpenRouterStreamingService.ChatStreamChunk> {
-        val (_, effectiveBaseUrl, effectiveModel) = resolveEffectiveEndpoint(provider, apiKey, baseUrl, model)
-        return OpenRouterStreamingService.streamChat(
-            systemPrompt = systemPrompt,
-            userPrompt = userPrompt,
-            apiKey = apiKey,
-            baseUrl = effectiveBaseUrl,
-            model = effectiveModel,
-            temperature = temperature,
-            topP = topP,
-            maxTokens = maxTokens,
-        )
+        val (protocol, effectiveBaseUrl, effectiveModel) = resolveEffectiveEndpoint(provider, apiKey, baseUrl, model)
+        return when (protocol) {
+            LlmProtocol.OpenAiResponses ->
+                OpenAiResponsesService.streamChat(
+                    systemPrompt, userPrompt, apiKey, effectiveBaseUrl, effectiveModel, temperature, topP, maxTokens,
+                )
+            LlmProtocol.AnthropicMessages ->
+                AnthropicMessagesService.streamChat(
+                    systemPrompt, userPrompt, apiKey, effectiveBaseUrl, effectiveModel, temperature, topP, maxTokens,
+                )
+            LlmProtocol.GoogleGemini ->
+                GoogleGeminiService.streamChat(
+                    systemPrompt, userPrompt, apiKey, effectiveBaseUrl, effectiveModel, temperature, topP, maxTokens,
+                )
+            else ->
+                OpenRouterStreamingService.streamChat(
+                    systemPrompt = systemPrompt,
+                    userPrompt = userPrompt,
+                    apiKey = apiKey,
+                    baseUrl = effectiveBaseUrl,
+                    model = effectiveModel,
+                    temperature = temperature,
+                    topP = topP,
+                    maxTokens = maxTokens,
+                )
+        }
     }
 
     fun generateReplies(
@@ -175,8 +218,13 @@ object AiWingmanHelper {
 
         generationJob = scope.launch(Dispatchers.IO) {
             try {
-                if (apiKey.isBlank()) {
-                    _status.value = WingmanStatus.Error(context.getString(R.string.ai_error_api_key_required))
+                if (isApiKeyRequired(provider, model) && apiKey.isBlank()) {
+                    val err = if (provider.equals("Zen", ignoreCase = true)) {
+                        context.getString(R.string.ai_error_zen_paid_key_required)
+                    } else {
+                        context.getString(R.string.ai_error_api_key_required)
+                    }
+                    _status.value = WingmanStatus.Error(err)
                     return@launch
                 }
 
@@ -232,18 +280,7 @@ object AiWingmanHelper {
                     var errorMessage = ""
                     val contentAccumulator = StringBuilder()
 
-                    OpenRouterStreamingService.streamGeneration(
-                        text = fullText,
-                        apiKey = apiKey,
-                        baseUrl = effectiveBaseUrl,
-                        model = effectiveModel,
-                        customSystemPrompt = systemPrompt,
-                        profileBlock = profileBlock,
-                        avoidReplies = avoidReplies,
-                        temperature = temperature,
-                        topP = topP,
-                        maxTokens = maxTokens,
-                    ).collect { chunk ->
+                    streamingGeneration(protocol, fullText, apiKey, effectiveBaseUrl, effectiveModel, systemPrompt, profileBlock, avoidReplies, temperature, topP, maxTokens).collect { chunk ->
                         when (chunk) {
                             is OpenRouterStreamingService.StreamChunk.Content -> {
                                 contentAccumulator.append(chunk.text)
@@ -276,12 +313,13 @@ object AiWingmanHelper {
                     if (hasError) {
                         if (isFallbackWorthy(errorMessage)) {
                             Timber.d("Streaming failed transiently, falling back to non-streaming")
-                            OpenRouterService.generate(
+                            nonStreamingGeneration(
+                                protocol = protocol,
                                 text = fullText,
                                 apiKey = apiKey,
                                 baseUrl = effectiveBaseUrl,
                                 model = effectiveModel,
-                                customSystemPrompt = systemPrompt,
+                                systemPrompt = systemPrompt,
                                 profileBlock = profileBlock,
                                 avoidReplies = avoidReplies,
                                 temperature = temperature,
@@ -298,12 +336,13 @@ object AiWingmanHelper {
                     }
                 } else {
                     Timber.d("Using non-streaming for wingman generation")
-                    OpenRouterService.generate(
+                    nonStreamingGeneration(
+                        protocol = protocol,
                         text = fullText,
                         apiKey = apiKey,
                         baseUrl = effectiveBaseUrl,
                         model = effectiveModel,
-                        customSystemPrompt = systemPrompt,
+                        systemPrompt = systemPrompt,
                         profileBlock = profileBlock,
                         avoidReplies = avoidReplies,
                         temperature = temperature,
@@ -361,6 +400,142 @@ object AiWingmanHelper {
             }
         }
     }
+
+    private fun streamingGeneration(
+        protocol: LlmProtocol,
+        text: String,
+        apiKey: String,
+        baseUrl: String,
+        model: String,
+        systemPrompt: String,
+        profileBlock: String,
+        avoidReplies: List<String>,
+        temperature: Float,
+        topP: Float,
+        maxTokens: Int,
+    ): Flow<OpenRouterStreamingService.StreamChunk> =
+        when (protocol) {
+            LlmProtocol.OpenAiResponses ->
+                OpenAiResponsesService.streamGeneration(
+                    text = text,
+                    apiKey = apiKey,
+                    baseUrl = baseUrl,
+                    model = model,
+                    customSystemPrompt = systemPrompt,
+                    profileBlock = profileBlock,
+                    avoidReplies = avoidReplies,
+                    temperature = temperature,
+                    topP = topP,
+                    maxTokens = maxTokens,
+                )
+            LlmProtocol.AnthropicMessages ->
+                AnthropicMessagesService.streamGeneration(
+                    text = text,
+                    apiKey = apiKey,
+                    baseUrl = baseUrl,
+                    model = model,
+                    customSystemPrompt = systemPrompt,
+                    profileBlock = profileBlock,
+                    avoidReplies = avoidReplies,
+                    temperature = temperature,
+                    topP = topP,
+                    maxTokens = maxTokens,
+                )
+            LlmProtocol.GoogleGemini ->
+                GoogleGeminiService.streamGeneration(
+                    text = text,
+                    apiKey = apiKey,
+                    baseUrl = baseUrl,
+                    model = model,
+                    customSystemPrompt = systemPrompt,
+                    profileBlock = profileBlock,
+                    avoidReplies = avoidReplies,
+                    temperature = temperature,
+                    topP = topP,
+                    maxTokens = maxTokens,
+                )
+            else ->
+                OpenRouterStreamingService.streamGeneration(
+                    text = text,
+                    apiKey = apiKey,
+                    baseUrl = baseUrl,
+                    model = model,
+                    customSystemPrompt = systemPrompt,
+                    profileBlock = profileBlock,
+                    avoidReplies = avoidReplies,
+                    temperature = temperature,
+                    topP = topP,
+                    maxTokens = maxTokens,
+                )
+        }
+
+    private suspend fun nonStreamingGeneration(
+        protocol: LlmProtocol,
+        text: String,
+        apiKey: String,
+        baseUrl: String,
+        model: String,
+        systemPrompt: String,
+        profileBlock: String,
+        avoidReplies: List<String>,
+        temperature: Float,
+        topP: Float,
+        maxTokens: Int,
+    ): Result<List<String>> =
+        when (protocol) {
+            LlmProtocol.OpenAiResponses ->
+                OpenAiResponsesService.generate(
+                    text = text,
+                    apiKey = apiKey,
+                    baseUrl = baseUrl,
+                    model = model,
+                    customSystemPrompt = systemPrompt,
+                    profileBlock = profileBlock,
+                    avoidReplies = avoidReplies,
+                    temperature = temperature,
+                    topP = topP,
+                    maxTokens = maxTokens,
+                )
+            LlmProtocol.AnthropicMessages ->
+                AnthropicMessagesService.generate(
+                    text = text,
+                    apiKey = apiKey,
+                    baseUrl = baseUrl,
+                    model = model,
+                    customSystemPrompt = systemPrompt,
+                    profileBlock = profileBlock,
+                    avoidReplies = avoidReplies,
+                    temperature = temperature,
+                    topP = topP,
+                    maxTokens = maxTokens,
+                )
+            LlmProtocol.GoogleGemini ->
+                GoogleGeminiService.generate(
+                    text = text,
+                    apiKey = apiKey,
+                    baseUrl = baseUrl,
+                    model = model,
+                    customSystemPrompt = systemPrompt,
+                    profileBlock = profileBlock,
+                    avoidReplies = avoidReplies,
+                    temperature = temperature,
+                    topP = topP,
+                    maxTokens = maxTokens,
+                )
+            else ->
+                OpenRouterService.generate(
+                    text = text,
+                    apiKey = apiKey,
+                    baseUrl = baseUrl,
+                    model = model,
+                    customSystemPrompt = systemPrompt,
+                    profileBlock = profileBlock,
+                    avoidReplies = avoidReplies,
+                    temperature = temperature,
+                    topP = topP,
+                    maxTokens = maxTokens,
+                )
+        }
 
     private fun isFallbackWorthy(message: String): Boolean {
         val lower = message.lowercase()

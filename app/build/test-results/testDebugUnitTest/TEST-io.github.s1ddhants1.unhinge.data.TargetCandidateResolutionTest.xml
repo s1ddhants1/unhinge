@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="io.github.s1ddhants1.unhinge.data.TargetCandidateResolutionTest" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-10-02T16:00:17.073Z" hostname="localhost" time="0.015">
+  <properties/>
+  <testcase name="testIncomingLikeProfileScoring" classname="io.github.s1ddhants1.unhinge.data.TargetCandidateResolutionTest" time="0.009"/>
+  <testcase name="testDiscoverProfileScoring" classname="io.github.s1ddhants1.unhinge.data.TargetCandidateResolutionTest" time="0.001"/>
+  <testcase name="testContextAlignmentPenaltyAndBonus" classname="io.github.s1ddhants1.unhinge.data.TargetCandidateResolutionTest" time="0.001"/>
+  <testcase name="testStandoutsCarouselCardScoring" classname="io.github.s1ddhants1.unhinge.data.TargetCandidateResolutionTest" time="0.001"/>
+  <testcase name="testStandoutsFullProfileScoring" classname="io.github.s1ddhants1.unhinge.data.TargetCandidateResolutionTest" time="0.001"/>
+  <testcase name="testFuzzyPromptAnswerWordMatching" classname="io.github.s1ddhants1.unhinge.data.TargetCandidateResolutionTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

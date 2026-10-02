@@ -47,6 +47,8 @@ Unhinge operates across two strictly isolated Android processes:
 |  [SuStorageReader] -----> Root-based fallback extractor for out-of-process sync         |
 |  [OpenRouterService] ---> OpenRouter JSON-Schema opener generation engine                 |
 |  [OpenRouterStreaming] -> OpenRouter SSE streaming chunk parser                          |
+|  [ZenRouter] -----------> OpenCode Zen router & free-tier client emulator               |
+|  [Multi-Protocol LLM] --> OpenAiResponses, AnthropicMessages & GoogleGemini services    |
 |  [AiWingmanHelper] -----> Central AI coordinator, in-memory cache & UI StateFlow stream  |
 |  [PreferencesManager] --> Centralized preference management & fallback persistence      |
 +-----------------------------------------------------------------------------------------+

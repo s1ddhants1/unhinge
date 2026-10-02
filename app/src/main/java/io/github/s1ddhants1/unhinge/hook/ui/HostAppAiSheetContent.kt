@@ -242,11 +242,14 @@ fun HostAppAiSheetContent(
         }
     }
 
+    val isApiKeyRequired = AiWingmanHelper.isApiKeyRequired(prefs.aiProvider, prefs.openRouterModel)
+    val isAiReady = !isApiKeyRequired || prefs.openRouterApiKey.isNotBlank()
+
     fun requestWingmanGeneration(
         targets: List<PromptEntry> = promptEntries,
         forceRefresh: Boolean = false
     ) {
-        if (prefs.openRouterApiKey.isBlank() || targets.isEmpty()) return
+        if (!isAiReady || targets.isEmpty()) return
         AiWingmanHelper.generateReplies(
             prompts = targets,
             apiKey = prefs.openRouterApiKey,
@@ -265,8 +268,8 @@ fun HostAppAiSheetContent(
         )
     }
 
-    LaunchedEffect(candidate?.userId, prefs.openRouterApiKey) {
-        if (prefs.openRouterApiKey.isNotBlank() && promptEntries.isNotEmpty()) {
+    LaunchedEffect(candidate?.userId, prefs.openRouterApiKey, prefs.aiProvider, prefs.openRouterModel) {
+        if (isAiReady && promptEntries.isNotEmpty()) {
             requestWingmanGeneration()
         }
     }
@@ -312,7 +315,7 @@ fun HostAppAiSheetContent(
         if (query.isBlank()) return
 
         val activeKey = prefs.openRouterApiKey
-        if (activeKey.isBlank()) {
+        if (!isAiReady) {
             launchUnhingeSettings(context)
             return
         }
@@ -749,7 +752,7 @@ fun HostAppAiSheetContent(
         }
 
         // Setup Required Card: Missing API Token
-        if (prefs.openRouterApiKey.isBlank()) {
+        if (!isAiReady) {
             Surface(
                 shape = RoundedCornerShape(22.dp),
                 color = cardBg,
@@ -779,7 +782,11 @@ fun HostAppAiSheetContent(
                         lineHeight = 24.sp
                     )
                     Text(
-                        text = "Configure your ${prefs.aiProvider} token in Unhinge Settings to generate conversation starters for ${candidate.firstName.ifBlank { "this profile" }}.",
+                        text = if (prefs.aiProvider.equals("Zen", ignoreCase = true)) {
+                            "An API key is required for paid model ${prefs.openRouterModel}. Switch to a free model (e.g. muse-spark-1.3-contributor-free) or configure your key in Settings."
+                        } else {
+                            "Configure your ${prefs.aiProvider} token in Unhinge Settings to generate conversation starters for ${candidate.firstName.ifBlank { "this profile" }}."
+                        },
                         fontFamily = modernEraRegular,
                         fontSize = 13.sp,
                         color = textSecondary,

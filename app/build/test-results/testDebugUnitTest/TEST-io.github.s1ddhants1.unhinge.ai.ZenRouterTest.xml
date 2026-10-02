@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="io.github.s1ddhants1.unhinge.ai.ZenRouterTest" tests="21" skipped="0" failures="0" errors="0" timestamp="2026-10-02T16:00:17.035Z" hostname="localhost" time="0.035">
+  <properties/>
+  <testcase name="freeModelsRecognizedAsFree" classname="io.github.s1ddhants1.unhinge.ai.ZenRouterTest" time="0.0"/>
+  <testcase name="aiWingmanHelperAllowsCustomBaseUrlOverrideForZen" classname="io.github.s1ddhants1.unhinge.ai.ZenRouterTest" time="0.0"/>
+  <testcase name="storedZenBaseUrlDoesNotOverridePerModelRouting" classname="io.github.s1ddhants1.unhinge.ai.ZenRouterTest" time="0.0"/>
+  <testcase name="resolvesDefaultWhenBlank" classname="io.github.s1ddhants1.unhinge.ai.ZenRouterTest" time="0.0"/>
+  <testcase name="isZenUrlIdentifiesZenDomains" classname="io.github.s1ddhants1.unhinge.ai.ZenRouterTest" time="0.0"/>
+  <testcase name="traceparentFormatMatchesW3cSpec" classname="io.github.s1ddhants1.unhinge.ai.ZenRouterTest" time="0.006"/>
+  <testcase name="resolvesFreeResponsesModel" classname="io.github.s1ddhants1.unhinge.ai.ZenRouterTest" time="0.0"/>
+  <testcase name="responsesPayloadBuildingAndExtraction" classname="io.github.s1ddhants1.unhinge.ai.ZenRouterTest" time="0.001"/>
+  <testcase name="resolvesGeminiModels" classname="io.github.s1ddhants1.unhinge.ai.ZenRouterTest" time="0.001"/>
+  <testcase name="messagesPayloadBuildingAndExtraction" classname="io.github.s1ddhants1.unhinge.ai.ZenRouterTest" time="0.001"/>
+  <testcase name="staleOpenRouterBaseUrlCannotHijackZenRouting" classname="io.github.s1ddhants1.unhinge.ai.ZenRouterTest" time="0.0"/>
+  <testcase name="sessionIdFormatMatchesOpenCodeSpecification" classname="io.github.s1ddhants1.unhinge.ai.ZenRouterTest" time="0.0"/>
+  <testcase name="geminiPayloadBuildingAndExtraction" classname="io.github.s1ddhants1.unhinge.ai.ZenRouterTest" time="0.001"/>
+  <testcase name="zenFreeModelsDoNotRequireApiKey" classname="io.github.s1ddhants1.unhinge.ai.ZenRouterTest" time="0.0"/>
+  <testcase name="injectZenHeadersSetsAllRequiredOpenCodeHeaders" classname="io.github.s1ddhants1.unhinge.ai.ZenRouterTest" time="0.022"/>
+  <testcase name="otherProvidersAlwaysRequireApiKey" classname="io.github.s1ddhants1.unhinge.ai.ZenRouterTest" time="0.0"/>
+  <testcase name="zenPaidModelsRequireApiKey" classname="io.github.s1ddhants1.unhinge.ai.ZenRouterTest" time="0.0"/>
+  <testcase name="resolvesFreeChatModels" classname="io.github.s1ddhants1.unhinge.ai.ZenRouterTest" time="0.0"/>
+  <testcase name="aiWingmanHelperResolvesZenEndpoints" classname="io.github.s1ddhants1.unhinge.ai.ZenRouterTest" time="0.0"/>
+  <testcase name="resolvesMessagesModels" classname="io.github.s1ddhants1.unhinge.ai.ZenRouterTest" time="0.0"/>
+  <testcase name="paidModelsRecognizedAsPaid" classname="io.github.s1ddhants1.unhinge.ai.ZenRouterTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

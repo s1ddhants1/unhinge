@@ -161,6 +161,60 @@ The AI pipeline in Unhinge is designed for high-performance dating prompt sugges
 7. **[Timber.kt](../app/src/main/java/io/github/s1ddhants1/unhinge/ai/Timber.kt)**:
    - Lightweight, zero-dependency Android `Log` proxy allowing structured logging without external runtime dependencies.
 
+8. **[ZenRouter.kt](../app/src/main/java/io/github/s1ddhants1/unhinge/ai/ZenRouter.kt)**:
+   - Canonical routing hub and OpenCode client emulator for Zen endpoints (`/v1/responses`, `/v1/chat/completions`, `/v1/messages`, `/v1/models/<id>`).
+   - Identifies free models (`big-pickle`, `space-bunny-free`, `muse-spark-1.3-contributor-free`, `glm-5-free`, `deepseek-v4-flash-free`, etc.) requiring zero API keys and automatically defaulting `Authorization: Bearer public`.
+   - Generates reverse-engineered OpenCode timestamp-encoded session IDs (`ses_` + 12 hex chars `~((now * 4096) + p)` + 14 random base62 chars), W3C traceparents, client header (`x-opencode-client: cli`), project identifier (`x-opencode-project: fbfbb8ecca77fbf4f585927700f1baa979cb6a94`), session affinity headers, and user-agent (`opencode/latest/2.0.12/cli`).
+   - Injects the required function tools schema (`DefaultZenChatTools`) for tool-expecting Zen chat models (such as `big-pickle`).
+
+9. **[OpenAiResponsesService.kt](../app/src/main/java/io/github/s1ddhants1/unhinge/ai/OpenAiResponsesService.kt)**:
+   - Client for OpenAI Responses API (`POST /v1/responses`) utilized by Muse Spark, GPT, and Grok on Zen.
+   - Handles `instructions` + `input` structure and parses `output[].content[].text`.
+
+10. **[AnthropicMessagesService.kt](../app/src/main/java/io/github/s1ddhants1/unhinge/ai/AnthropicMessagesService.kt)**:
+   - Client for Anthropic Messages API (`POST /v1/messages`) used by Claude and Qwen on Zen.
+   - Handles `system` + `messages` format, `anthropic-version: 2023-06-01`, and `x-api-key` alongside Bearer authorization.
+
+11. **[GoogleGeminiService.kt](../app/src/main/java/io/github/s1ddhants1/unhinge/ai/GoogleGeminiService.kt)**:
+   - Client for Google Gemini native API (`POST /v1/models/<id>:generateContent` and `:streamGenerateContent`) used for Gemini models on Zen.
+   - Handles `system_instruction` + `contents[].parts[].text` and parses `candidates[].content.parts[].text`.
+
+### 5.2 OpenCode Zen Free Model Emulation Mechanics
+
+1. **Free-Tier Authentication Gate**:
+   - Zen's reverse proxy enforces strict validation on free-tier model requests. Calling free models with standard generic headers results in `HTTP 403 FreeTierError: OpenCode's free tier can only be used from within OpenCode`.
+   - The validation checks:
+     - `Authorization`: Must be `Bearer public` when no user key is configured.
+     - `x-opencode-client`: `cli`.
+     - `x-opencode-project`: Stable SHA-1 workspace hash (`fbfbb8ecca77fbf4f585927700f1baa979cb6a94`).
+     - `x-opencode-session`: Must follow OpenCode's internal `XC(true)` encoding format within an active validity timestamp window.
+     - `x-session-affinity` & `x-session-id`: Mirrored session ID.
+     - `User-Agent`: `opencode/latest/2.0.12/cli`.
+     - `traceparent`: W3C distributed trace context (`00-{32hex}-{16hex}-01`).
+
+2. **Session ID Bitwise Algorithm (`ZenRouter.generateSessionId`)**:
+   - Formula reverse-engineered directly from OpenCode binary. The 6 timestamp bytes are emitted most-significant-first:
+     ```kotlin
+     val n = (System.currentTimeMillis() shl 12) + 1L
+     val a = n.inv() // bitwise NOT
+     // 6 hex bytes (12 hex characters), big-endian
+     val hexPrefix = (0 until 6).joinToString("") { m ->
+         String.format(Locale.US, "%02x", ((a shr (40 - 8 * m)) and 0xFF).toInt())
+     }
+     // 14 random base62 characters
+     val randomSuffix = ByteArray(14).map { BASE62[(it.toInt() and 0xFF) % 62] }.joinToString("")
+     return "ses_$hexPrefix$randomSuffix"
+     ```
+
+3. **Tool Capability Negotiation**:
+   - Models like `big-pickle` are declared in OpenCode metadata as tool-calling reasoning models. Zen's gateway rejects requests without function definitions in the payload.
+   - `ZenRouter.DefaultZenChatTools` attaches a dummy `submit_reply` tool alongside `stream_options: {"include_usage": true}` whenever dispatching chat completions to Zen, allowing the gateway to accept the stream while yielding pure conversational text in `delta.content`.
+
+4. **Zero-Configuration Out-of-the-Box UX**:
+   - `PreferencesManager` defaults to the `Zen` provider on `Consts.ZEN_DEFAULT_BASE_URL` / `Consts.ZEN_DEFAULT_MODEL` (`muse-spark-1.3-contributor-free`), so a fresh install generates openers and answers Ask AI queries without an account, key, or billing configuration. Stored values are untouched, so users who already picked a provider keep it.
+   - `AiWingmanSettingsPage` identifies Zen free models (`isFreeModel = true`), suppressing any missing API key warnings and showing a dedicated free-tier badge. Paid Zen models fall back to the standard "API key required" setup card.
+   - `AiWingmanHelper.isApiKeyRequired(provider, model)` is the single gate consumed by both the settings page and the in-app sheet (`HostAppAiSheetContent`); the Zen branch of `resolveEffectiveEndpoint` only honours a base URL as an override when it points at a genuine third-party proxy, so a stale URL from another provider can never hijack Zen routing.
+
 ---
 
 ## 6. Native Hinge Bottom Sheet UI (`HostAppAiSheetContent.kt`)

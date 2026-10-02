@@ -44,6 +44,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import io.github.s1ddhants1.unhinge.Consts
 import io.github.s1ddhants1.unhinge.R
+import io.github.s1ddhants1.unhinge.ai.ZenRouter
 import io.github.s1ddhants1.unhinge.ui.component.EnumDialog
 import io.github.s1ddhants1.unhinge.ui.component.Material3SettingsGroup
 import io.github.s1ddhants1.unhinge.ui.component.Material3SettingsItem
@@ -69,6 +70,7 @@ fun AiWingmanSettingsPage(
 
     val aiProviders =
         mapOf(
+            "Zen" to Consts.ZEN_DEFAULT_BASE_URL,
             "OpenRouter" to "https://openrouter.ai/api/v1/chat/completions",
             "OpenAI" to "https://api.openai.com/v1/chat/completions",
             "Perplexity" to "https://api.perplexity.ai/chat/completions",
@@ -82,6 +84,7 @@ fun AiWingmanSettingsPage(
 
     val providerHelpText =
         mapOf(
+            "Zen" to stringResource(R.string.ai_provider_zen_help),
             "OpenRouter" to stringResource(R.string.ai_provider_openrouter_help),
             "OpenAI" to stringResource(R.string.ai_provider_openai_help),
             "Perplexity" to stringResource(R.string.ai_provider_perplexity_help),
@@ -95,6 +98,24 @@ fun AiWingmanSettingsPage(
 
     val modelsByProvider =
         mapOf(
+            "Zen" to
+                listOf(
+                    "muse-spark-1.3-contributor-free",
+                    "space-bunny-free",
+                    "big-pickle",
+                    "deepseek-v4-flash",
+                    "glm-5.3-flash",
+                    "qwen3.8-flash",
+                    "muse-spark-1.2-contributor-free",
+                    "muse-spark-1.3",
+                    "gpt-5.6-sol",
+                    "claude-sonnet-5",
+                    "claude-haiku-4-5",
+                    "gemini-3.8-flash",
+                    "deepseek-v4-pro",
+                    "minimax-m3",
+                    "kimi-k2.5",
+                ),
             "OpenRouter" to
                 listOf(
                     "inception/mercury-2.5-preview",
@@ -312,7 +333,13 @@ fun AiWingmanSettingsPage(
             current = if (openRouterModel in commonModels) openRouterModel else "custom_input",
             values = commonModels + "custom_input",
             valueText = {
-                if (it == "custom_input") "Custom" else it
+                if (it == "custom_input") {
+                    "Custom"
+                } else if (aiProvider == "Zen" && ZenRouter.isFreeModel(it)) {
+                    "$it (Free)"
+                } else {
+                    it
+                }
             },
         )
     }
@@ -449,6 +476,10 @@ fun AiWingmanSettingsPage(
                             Text(
                                 if (openRouterApiKey.isNotEmpty()) {
                                     "•".repeat(minOf(openRouterApiKey.length, 8))
+                                } else if (aiProvider == "Zen" && ZenRouter.isFreeModel(openRouterModel)) {
+                                    "Not required (Free model)"
+                                } else if (aiProvider == "Zen") {
+                                    "Required for paid model"
                                 } else {
                                     stringResource(R.string.ai_not_set)
                                 },
