@@ -50,7 +50,11 @@ class WingmanPromptsTest {
         val user = WingmanPrompts.openerUserPrompt("Q: A", emptyList())
         assertTrue(user.contains("comment + question", ignoreCase = true))
         assertTrue(user.contains("under 25 words", ignoreCase = true))
+        assertTrue(user.contains("8-16 words", ignoreCase = true))
+        assertTrue(user.contains("exact noun", ignoreCase = true))
         assertTrue(user.contains("hey/hi/hello", ignoreCase = true))
+        assertTrue(user.contains("bold claim", ignoreCase = true))
+        assertTrue(user.contains("challenge accepted", ignoreCase = true))
     }
 
     @Test
