@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="io.github.s1ddhants1.unhinge.domain.usecase.GetHingeDataUseCaseTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-10-02T16:00:17.089Z" hostname="localhost" time="0.033">
-  <properties/>
-  <testcase name="invoke_returnsCompleteDataFromRepository" classname="io.github.s1ddhants1.unhinge.domain.usecase.GetHingeDataUseCaseTest" time="0.033"/>
-  <system-out><![CDATA[]]></system-out>
-  <system-err><![CDATA[]]></system-err>
-</testsuite>

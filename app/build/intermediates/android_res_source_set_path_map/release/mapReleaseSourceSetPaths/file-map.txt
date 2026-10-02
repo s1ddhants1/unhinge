@@ -1,8 +1,0 @@
-io.github.s1ddhants1.unhinge.app-pngs-0 /data/data/com.termux/files/home/unhinge/app/build/generated/res/pngs/release
-io.github.s1ddhants1.unhinge.app-updated_navigation_xml-1 /data/data/com.termux/files/home/unhinge/app/build/generated/updated_navigation_xml/release
-io.github.s1ddhants1.unhinge.app-packageReleaseResources-2 /data/data/com.termux/files/home/unhinge/app/build/intermediates/incremental/release/packageReleaseResources/merged.dir
-io.github.s1ddhants1.unhinge.app-packageReleaseResources-3 /data/data/com.termux/files/home/unhinge/app/build/intermediates/incremental/release/packageReleaseResources/stripped.dir
-io.github.s1ddhants1.unhinge.app-release-4 /data/data/com.termux/files/home/unhinge/app/build/intermediates/merged_res/release/mergeReleaseResources
-io.github.s1ddhants1.unhinge.app-main-5 /data/data/com.termux/files/home/unhinge/app/src/main/res
-io.github.s1ddhants1.unhinge.app-release-6 /data/data/com.termux/files/home/unhinge/app/src/release/res
-gradleHome-0 /data/data/com.termux/files/home/.gradle

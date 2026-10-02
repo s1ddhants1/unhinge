@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="io.github.s1ddhants1.unhinge.ai.AiWingmanHelperTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-10-02T16:00:16.913Z" hostname="localhost" time="0.053">
-  <properties/>
-  <testcase name="tildePrefixedModelIdsAreSanitized" classname="io.github.s1ddhants1.unhinge.ai.AiWingmanHelperTest" time="0.046"/>
-  <testcase name="legacyOpenRouterDefaultMigratesToCurrentDefault" classname="io.github.s1ddhants1.unhinge.ai.AiWingmanHelperTest" time="0.0"/>
-  <testcase name="blankModelFallsBackToCurrentDefault" classname="io.github.s1ddhants1.unhinge.ai.AiWingmanHelperTest" time="0.0"/>
-  <system-out><![CDATA[]]></system-out>
-  <system-err><![CDATA[]]></system-err>
-</testsuite>
