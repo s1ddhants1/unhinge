@@ -25,11 +25,11 @@ Unhinge operates across two strictly isolated Android processes:
 |  - PrivacyAppsFlyerHook (Attribution & campaigns)          (Direct in-process SQLite    |
 |  - PrivacyIncogniaHook (Fraud & geolocation SDK)            read from internal DB)      |
 |  - PrivacySplitHook (Feature flag telemetry)                                            |
-|  - PrivacyUbeHook (Hinge internal telemetry)                                            |
-|  - PrivacyOkHttpHook (Metrics interceptor blocking)                                     |
-|  - PrivacyMetricWorkersHook (WorkManager jobs drop)                                     |
-|  - PrivacyGmsComponentsHook (GAID, AppSet, ANDROID_ID)                                  |
-|  - PrivacyContactsHook (Contact query isolation)                                        |
+|  - PrivacyUbeHook (Hinge internal telemetry)             [Feed Navigation]              |
+|  - PrivacyOkHttpHook (Metrics interceptor blocking)      - HostFeedNavigationHook       |
+|  - PrivacyMetricWorkersHook (WorkManager jobs drop)        (SQLite query OFFSET inject) |
+|  - PrivacyGmsComponentsHook (GAID, AppSet, ANDROID_ID)   - FeedNavigator               |
+|  - PrivacyContactsHook (Contact query isolation)           (Room invalidation trigger)  |
 |  - PrivacyLocationHook (Fuzzing / coordinate rounding)                                  |
 |  - PrivacyDataTransportHook (GMS event transport drop)                                  |
 +-----------------------------------------------------------------------------------------+

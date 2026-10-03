@@ -56,6 +56,9 @@ import java.util.WeakHashMap
 object HostAppAiFab {
     private const val TAG_FAB_CONTAINER = "unhinge_host_fab_container"
     private const val TAG_FAB_BUTTON = "unhinge_host_fab_button"
+    internal const val TAG_NAV_BACK = "unhinge_nav_back"
+    internal const val TAG_NAV_FORWARD = "unhinge_nav_forward"
+    internal const val TAG_NAV_COUNTER = "unhinge_nav_counter"
 
     private val layoutListeners = WeakHashMap<Activity, ViewTreeObserver.OnGlobalLayoutListener>()
 
@@ -146,6 +149,70 @@ object HostAppAiFab {
                 }
 
                 container.addView(fab)
+
+                // Feed Navigation arrows (44dp circles, same aesthetic as Hinge action buttons)
+                val navArrowSize = (44 * density).toInt()
+                val navIconSize = (20 * density).toInt()
+
+                val backBtn = FrameLayout(activity).apply {
+                    tag = TAG_NAV_BACK
+                    layoutParams = FrameLayout.LayoutParams(navArrowSize, navArrowSize).apply {
+                        gravity = Gravity.TOP or Gravity.START
+                    }
+                    background = createNavButtonDrawable(density, surfaceColor, strokeColor, rippleColor)
+                    elevation = 12 * density
+                    outlineProvider = ViewOutlineProvider.BACKGROUND
+                    addView(ImageView(activity).apply {
+                        layoutParams = FrameLayout.LayoutParams(navIconSize, navIconSize).apply {
+                            gravity = Gravity.CENTER
+                        }
+                        setImageDrawable(ChevronDrawable(iconColor, ChevronDrawable.Direction.LEFT))
+                    })
+                    setOnClickListener {
+                        if (FeedNavigator.navigateBack()) updateNavCounter(container)
+                    }
+                    visibility = View.GONE
+                }
+
+                val forwardBtn = FrameLayout(activity).apply {
+                    tag = TAG_NAV_FORWARD
+                    layoutParams = FrameLayout.LayoutParams(navArrowSize, navArrowSize).apply {
+                        gravity = Gravity.TOP or Gravity.START
+                    }
+                    background = createNavButtonDrawable(density, surfaceColor, strokeColor, rippleColor)
+                    elevation = 12 * density
+                    outlineProvider = ViewOutlineProvider.BACKGROUND
+                    addView(ImageView(activity).apply {
+                        layoutParams = FrameLayout.LayoutParams(navIconSize, navIconSize).apply {
+                            gravity = Gravity.CENTER
+                        }
+                        setImageDrawable(ChevronDrawable(iconColor, ChevronDrawable.Direction.RIGHT))
+                    })
+                    setOnClickListener {
+                        if (FeedNavigator.navigateForward()) updateNavCounter(container)
+                    }
+                    visibility = View.GONE
+                }
+
+                val counterView = TextView(activity).apply {
+                    tag = TAG_NAV_COUNTER
+                    text = "1"
+                    textSize = 12f
+                    setTextColor(iconColor)
+                    gravity = Gravity.CENTER
+                    typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                    layoutParams = FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        navArrowSize
+                    ).apply { gravity = Gravity.TOP or Gravity.START }
+                    setPadding((6 * density).toInt(), 0, (6 * density).toInt(), 0)
+                    visibility = View.GONE
+                }
+
+                container.addView(backBtn)
+                container.addView(counterView)
+                container.addView(forwardBtn)
+
                 decorView.addView(container)
 
                 // Position immediately
@@ -177,6 +244,7 @@ object HostAppAiFab {
     }
 
     fun remove(activity: Activity) {
+        FeedNavigator.reset()
         activity.runOnUiThread {
             try {
                 val decorView = activity.window?.decorView as? ViewGroup
@@ -208,6 +276,19 @@ object HostAppAiFab {
             Log.d(Consts.TAG, "HostAppAiFab visibility changed to: ${if (newVisibility == View.VISIBLE) "VISIBLE" else "GONE"}")
         }
 
+        // Reset navigation offset when leaving Discover tab
+        if (!isDiscover && FeedNavigator.isNavigated) {
+            FeedNavigator.reset()
+        }
+
+        // Feed navigation arrows: visible on Discover when feature is enabled
+        val showNav = isDiscover && prefs.enableFeedNavigation
+        val navVis = if (showNav) View.VISIBLE else View.GONE
+        container.findViewWithTag<View>(TAG_NAV_BACK)?.visibility = navVis
+        container.findViewWithTag<View>(TAG_NAV_FORWARD)?.visibility = navVis
+        container.findViewWithTag<View>(TAG_NAV_COUNTER)?.visibility = navVis
+        if (showNav) updateNavCounter(container)
+
         if (shouldShow) {
             container.bringToFront()
             val density = activity.resources.displayMetrics.density
@@ -237,7 +318,32 @@ object HostAppAiFab {
 
         if (fab.x != targetX) fab.x = targetX
         if (fab.y != targetY) fab.y = targetY
-        Log.i(Consts.TAG, "updateFabPosition: fab.x=${fab.x}, fab.y=${fab.y}, targetX=$targetX, targetY=$targetY, bottomNavTop=$bottomNavTop")
+
+        // Position navigation arrows centered on screen, vertically aligned with action buttons
+        val container = fab.parent as? ViewGroup ?: return
+        val navBack = container.findViewWithTag<View>(TAG_NAV_BACK)
+        val navForward = container.findViewWithTag<View>(TAG_NAV_FORWARD)
+        val navCounter = container.findViewWithTag<TextView>(TAG_NAV_COUNTER)
+
+        if (navBack != null && navForward != null && navCounter != null) {
+            val arrowSize = (44 * density).toInt()
+            val gap = (6 * density).toInt()
+            navCounter.measure(
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+                View.MeasureSpec.makeMeasureSpec(arrowSize, View.MeasureSpec.EXACTLY)
+            )
+            val counterW = maxOf(navCounter.measuredWidth, (32 * density).toInt())
+
+            val centerX = screenWidth / 2f
+            val navY = targetY + (fabSize - arrowSize) / 2f
+
+            navBack.x = centerX - counterW / 2f - gap - arrowSize
+            navBack.y = navY
+            navCounter.x = centerX - counterW / 2f
+            navCounter.y = navY
+            navForward.x = centerX + counterW / 2f + gap
+            navForward.y = navY
+        }
     }
 
     private fun findBottomNavTop(root: View?, screenHeight: Int): Int? {
@@ -865,6 +971,93 @@ private class ComposeDialogLifecycleOwner :
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
         store.clear()
     }
+}
+
+/** Updates the position counter text and arrow button enabled/alpha state. */
+private fun updateNavCounter(container: View) {
+    val counterView = container.findViewWithTag<TextView>(HostAppAiFab.TAG_NAV_COUNTER) ?: return
+    val backBtn = container.findViewWithTag<View>(HostAppAiFab.TAG_NAV_BACK)
+    val forwardBtn = container.findViewWithTag<View>(HostAppAiFab.TAG_NAV_FORWARD)
+
+    val pos = FeedNavigator.displayPosition
+    val total = FeedNavigator.totalCandidates
+    counterView.text = if (total > 0) "$pos / $total" else "$pos"
+
+    backBtn?.alpha = if (FeedNavigator.currentOffset > 0) 1.0f else 0.35f
+    forwardBtn?.alpha = if (total > 0 && FeedNavigator.currentOffset < total - 1) 1.0f else 0.35f
+}
+
+/** Creates the standard Hinge-style oval ripple background for navigation arrow buttons. */
+private fun createNavButtonDrawable(
+    density: Float,
+    surfaceColor: Int,
+    strokeColor: Int,
+    rippleColor: Int
+): Drawable {
+    val bg = GradientDrawable().apply {
+        shape = GradientDrawable.OVAL
+        setColor(surfaceColor)
+        setStroke((1 * density).toInt(), strokeColor)
+    }
+    val mask = GradientDrawable().apply {
+        shape = GradientDrawable.OVAL
+        setColor(Color.WHITE)
+    }
+    return RippleDrawable(ColorStateList.valueOf(rippleColor), bg, mask)
+}
+
+/**
+ * Procedurally drawn chevron arrow icon for feed navigation buttons.
+ * Renders a left or right pointing angle bracket without resource injection.
+ */
+private class ChevronDrawable(
+    private val iconColor: Int = Color.BLACK,
+    val direction: Direction = Direction.RIGHT
+) : Drawable() {
+    enum class Direction { LEFT, RIGHT }
+
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = iconColor
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+    }
+    private val chevronPath = Path()
+
+    override fun onBoundsChange(bounds: Rect) {
+        super.onBoundsChange(bounds)
+        chevronPath.reset()
+        val w = bounds.width().toFloat()
+        val h = bounds.height().toFloat()
+        if (w <= 0f || h <= 0f) return
+
+        paint.strokeWidth = minOf(w, h) * 0.13f
+        val cx = w / 2f
+        val cy = h / 2f
+        val arm = minOf(w, h) * 0.28f
+
+        when (direction) {
+            Direction.LEFT -> {
+                chevronPath.moveTo(cx + arm * 0.45f, cy - arm)
+                chevronPath.lineTo(cx - arm * 0.45f, cy)
+                chevronPath.lineTo(cx + arm * 0.45f, cy + arm)
+            }
+            Direction.RIGHT -> {
+                chevronPath.moveTo(cx - arm * 0.45f, cy - arm)
+                chevronPath.lineTo(cx + arm * 0.45f, cy)
+                chevronPath.lineTo(cx - arm * 0.45f, cy + arm)
+            }
+        }
+    }
+
+    override fun draw(canvas: Canvas) {
+        canvas.drawPath(chevronPath, paint)
+    }
+
+    override fun setAlpha(alpha: Int) { paint.alpha = alpha }
+    override fun setColorFilter(colorFilter: ColorFilter?) { paint.colorFilter = colorFilter }
+    @Deprecated("Deprecated in Java")
+    override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
 }
 
 /**

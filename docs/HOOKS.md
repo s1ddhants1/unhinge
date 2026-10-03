@@ -1,6 +1,6 @@
 # Hook Handlers & Interception Guide — Unhinge
 
-This guide documents the technical specifications, target classes, intercepted method signatures, parameter transformations, return values, and suppression strategies for all 13 privacy & telemetry hooks and the host UI overlay hook in **Unhinge**.
+This guide documents the technical specifications, target classes, intercepted method signatures, parameter transformations, return values, and suppression strategies for all 13 privacy & telemetry hooks, the host UI overlay hook, and the feed navigation hook in **Unhinge**.
 
 ---
 
@@ -22,6 +22,7 @@ This guide documents the technical specifications, target classes, intercepted m
 | **`PrivacyLocationHook`** | `android.location.Location` | `getLatitude()`, `getLongitude()` | Round double coordinates to 2 decimal places (~1.1 km city radius) | `fuzz_location` (opt-in) |
 | **`PrivacyDataTransportHook`**| `com.google.android.datatransport.cct.CctTransportBackend` | `send(Event)` | Intercept telemetry batches and return synthetic `BackendResponse.ok()` | `block_datatransport` |
 | **`HostAppAiFab` Hook** | `co.hinge.app.ui.AppActivity` | `onResume()` | Attach in-app draggable AI Floating Action Button overlay to DecorView | `show_host_app_fab` |
+| **`HostFeedNavigationHook`** | `android.database.sqlite.SQLiteDatabase` | `rawQueryWithFactory(…)` | Inject SQL OFFSET into `discover_subject` queries for free feed browsing | `enable_feed_navigation` |
 
 ---
 
@@ -126,3 +127,17 @@ This guide documents the technical specifications, target classes, intercepted m
   4. On activity teardown (`onDestroy`), detaches the overlay container to prevent WindowManager leaks.
   5. **Dynamic Screen Clues Extraction**: On FAB tap, scans the view hierarchy and `AccessibilityNodeInfo` for visible prompt text, photo accessibility descriptions (`"[Name]'s photo"`), and skip actions (`"Skip [Name]"`), without referencing any obfuscated classes.
   6. **Multi-Feed Candidate Targeting**: Passes extracted clues to `HostCandidateReader.readTargetCandidate()` to semantically match and display whatever candidate profile is currently visible on screen (including Standouts, Discover, and Likes You).
+
+### 2.14 Feed Navigation Query Interception (`HostFeedNavigationHook`)
+- **Target**: `android.database.sqlite.SQLiteDatabase.rawQueryWithFactory(CursorFactory, String, String[], String, CancellationSignal)`
+- **State Manager**: `FeedNavigator` (singleton, `AtomicInteger` offset, `ThreadLocal` re-entrancy guard).
+- **Interception Mechanism**:
+  1. **Fast Path (offset == 0)**: Checks `FeedNavigator.isInternalQuery` (ThreadLocal) and `FeedNavigator.currentOffset` (AtomicInteger). When offset is 0 (normal operation), passes through with ~10ns overhead per query.
+  2. **Active Path (offset > 0)**: When the user has navigated via the overlay arrows:
+     - Filters for SELECT queries containing `discover_subject` (excludes COUNT aggregates).
+     - Captures `chain.thisObject` (Hinge's writable `SQLiteDatabase` connection) as a `WeakReference` in `FeedNavigator` for later use by `triggerHingeRefresh()`.
+     - Injects `OFFSET <n>` into the SQL: replaces trailing `LIMIT N` with `LIMIT N OFFSET <offset>`, or appends `LIMIT -1 OFFSET <offset>` for ORDER BY queries without an explicit LIMIT.
+  3. **Room Invalidation Trigger**: After updating the offset, `FeedNavigator.triggerHingeRefresh()` executes a no-op `UPDATE discover_subject SET batchId = batchId WHERE rowid = (SELECT MIN(rowid) FROM discover_subject)` through Hinge's own writable connection, firing Room's TEMP `AFTER UPDATE` triggers to mark `discover_subject` as invalidated in `room_table_modification_log`, which causes LiveData/Flow observers to re-execute their queries.
+  4. **Candidate Count Refresh**: `FeedNavigator.refreshTotal()` queries `SELECT COUNT(*) FROM discover_subject WHERE userId NOT IN (SELECT subjectId FROM pending_ratings WHERE subjectId IS NOT NULL)` with `isInternalQuery = true` to prevent hook recursion, and falls back to a plain `COUNT(*)` if `pending_ratings` is unavailable.
+- **Overlay Buttons**: Two 44dp circular chevron arrow buttons (← →) injected inline with the native action buttons via `HostAppAiFab.attach()`, with a centered `"3 / 12"` position counter. Buttons auto-hide when not on Discover tab and auto-reset the offset on tab switch.
+- **Framework Stability**: Hooks the public `android.database.sqlite.SQLiteDatabase` API exclusively — no obfuscated R8 class names. Resilient across all Hinge updates.

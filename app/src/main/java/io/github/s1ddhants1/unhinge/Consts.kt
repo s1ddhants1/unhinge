@@ -36,6 +36,9 @@ object Consts {
     const val PREF_BLOCK_GMS_MEASUREMENT = "block_gms_measurement"
     const val PREF_BLOCK_DATATRANSPORT = "block_datatransport"
 
+    // Feed Navigation
+    const val PREF_ENABLE_FEED_NAVIGATION = "enable_feed_navigation"
+
     // AI Wingman & Theme Preference Keys
     const val PREF_AI_PROVIDER = "ai_provider"
     const val PREF_OPENROUTER_API_KEY = "openrouter_api_key"

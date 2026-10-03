@@ -279,6 +279,9 @@ class PreferencesManager(
     var blockGmsMeasurement by booleanPreference(Consts.PREF_BLOCK_GMS_MEASUREMENT, true)
     var blockDataTransport by booleanPreference(Consts.PREF_BLOCK_DATATRANSPORT, true)
 
+    // Feed Navigation
+    var enableFeedNavigation by booleanPreference(Consts.PREF_ENABLE_FEED_NAVIGATION, true)
+
     // AI Wingman & Theme Preferences
     // Zen free tier needs no credentials, so a fresh install is AI-ready without onboarding.
     var aiProvider by stringPreference(Consts.PREF_AI_PROVIDER, "Zen")
@@ -363,6 +366,7 @@ class PreferencesManager(
                 blockMetricWorkers = localPrefs.getBoolean(Consts.PREF_BLOCK_METRIC_WORKERS, blockMetricWorkers)
                 blockGmsMeasurement = localPrefs.getBoolean(Consts.PREF_BLOCK_GMS_MEASUREMENT, blockGmsMeasurement)
                 blockDataTransport = localPrefs.getBoolean(Consts.PREF_BLOCK_DATATRANSPORT, blockDataTransport)
+                enableFeedNavigation = localPrefs.getBoolean(Consts.PREF_ENABLE_FEED_NAVIGATION, enableFeedNavigation)
                 val providerInStorage = localPrefs.getString(Consts.PREF_AI_PROVIDER, "") ?: ""
                 if (providerInStorage.isNotBlank()) {
                     aiProvider = providerInStorage
@@ -396,6 +400,7 @@ class PreferencesManager(
                         .putBoolean(Consts.PREF_BLOCK_METRIC_WORKERS, blockMetricWorkers)
                         .putBoolean(Consts.PREF_BLOCK_GMS_MEASUREMENT, blockGmsMeasurement)
                         .putBoolean(Consts.PREF_BLOCK_DATATRANSPORT, blockDataTransport)
+                        .putBoolean(Consts.PREF_ENABLE_FEED_NAVIGATION, enableFeedNavigation)
                         .putString(Consts.PREF_AI_PROVIDER, aiProvider)
                         .putString(Consts.PREF_OPENROUTER_API_KEY, openRouterApiKey)
                         .putString(Consts.PREF_OPENROUTER_BASE_URL, openRouterBaseUrl)
@@ -430,6 +435,7 @@ class PreferencesManager(
                                 .putBoolean(Consts.PREF_BLOCK_METRIC_WORKERS, blockMetricWorkers)
                                 .putBoolean(Consts.PREF_BLOCK_GMS_MEASUREMENT, blockGmsMeasurement)
                                 .putBoolean(Consts.PREF_BLOCK_DATATRANSPORT, blockDataTransport)
+                                .putBoolean(Consts.PREF_ENABLE_FEED_NAVIGATION, enableFeedNavigation)
                                 .putString(Consts.PREF_AI_PROVIDER, aiProvider)
                                 .putString(Consts.PREF_OPENROUTER_API_KEY, openRouterApiKey)
                                 .putString(Consts.PREF_OPENROUTER_BASE_URL, openRouterBaseUrl)

@@ -11,6 +11,7 @@ import io.github.libxposed.api.XposedModuleInterface
 import io.github.s1ddhants1.unhinge.hook.hookFirst
 import io.github.s1ddhants1.unhinge.hook.hookTracked
 import io.github.s1ddhants1.unhinge.hook.privacy.*
+import io.github.s1ddhants1.unhinge.hook.ui.HostFeedNavigationHook
 import io.github.s1ddhants1.unhinge.util.LSPatchHelper
 import io.github.s1ddhants1.unhinge.util.PreferencesManager
 import io.github.s1ddhants1.unhinge.util.attempt
@@ -153,6 +154,9 @@ class Module : XposedModule() {
         PrivacyContactsHook.apply(this, null, cl, prefs)
         PrivacyMetricWorkersHook.apply(this, null, cl, prefs)
         PrivacyDataTransportHook.apply(this, null, cl, prefs)
+
+        // Feed Navigation: intercept discover_subject queries to inject OFFSET
+        HostFeedNavigationHook.apply(this, null, cl, prefs)
 
         // Ensure AccessibilityManager.isEnabled() returns true so Jetpack Compose constructs accessibility semantics
         attempt<Unit>("hook AccessibilityManager.isEnabled", silent = true) {
