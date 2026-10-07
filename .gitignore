@@ -1,0 +1,49 @@
+# Keystores & Signing Keys (NEVER commit to git)
+*.keystore
+*.jks
+*.p12
+*.pem
+*.key
+signing/
+keystores/
+persistent-debug.keystore
+pr-debug.keystore
+
+# Android & Build Output Artifacts
+*.apk
+*.aab
+*.apks
+*.idsig
+*.apk.idsig
+*-unsigned.apk
+*-debug.apk
+/unhinge-release.apk
+/unhinge-debug.apk
+/unhinge-release-unsigned.apk
+
+# Gradle & Build caches
+.gradle/
+.kotlin/
+build/
+*/build/
+local.properties
+*.iml
+.idea/
+.DS_Store
+captures/
+*.hprof
+
+# Decompilation & Reverse Engineering dumps
+/hinge_apktool/
+/hinge_jadx/
+/hinge_base.apk
+/split_config.arm64_v8a.apk
+/apktool-output/
+/jadx-output/
+/apk/
+*.transcript.filtered.jsonl
+ANTIGRAVITY_IMPORT_*.md
+
+# Candidate evaluations research data and analysis (local only)
+/docs/research/
+/docs/CANDIDATE_PROMPT_RESEARCH.md

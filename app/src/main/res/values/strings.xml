@@ -1,0 +1,351 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
+    <string name="app_name" translatable="false">Unhinge</string>
+    <string name="module_description">Companion for Hinge: telemetry suppression &amp; match ELO coaching intelligence.</string>
+    <string name="ai_provider">Provider</string>
+    <string name="ai_base_url">Base URL</string>
+    <string name="ai_api_key">API key</string>
+    <string name="ai_model">Model</string>
+    <string name="ai_setup_guide">API credentials</string>
+    <string name="ai_provider_help">Get API keys</string>
+    <string name="ai_provider_openrouter_help">Visit <xliff:g id="url" example="https://openrouter.ai">https://openrouter.ai</xliff:g> for free and paid models</string>
+    <string name="ai_provider_openai_help">Visit <xliff:g id="url" example="https://platform.openai.com/api-keys">https://platform.openai.com/api-keys</xliff:g></string>
+    <string name="ai_provider_claude_help">Visit <xliff:g id="url" example="https://console.anthropic.com/settings/keys">https://console.anthropic.com/settings/keys</xliff:g></string>
+    <string name="ai_provider_gemini_help">Visit <xliff:g id="url" example="https://aistudio.google.com/apikey">https://aistudio.google.com/apikey</xliff:g></string>
+    <string name="ai_provider_perplexity_help">Visit <xliff:g id="url" example="https://perplexity.ai/settings/api">https://perplexity.ai/settings/api</xliff:g></string>
+    <string name="ai_provider_xai_help">Visit <xliff:g id="url" example="https://console.x.ai">https://console.x.ai</xliff:g></string>
+    <string name="ai_provider_mistral_help">Visit <xliff:g id="url" example="https://console.mistral.ai/api-keys">https://console.mistral.ai/api-keys</xliff:g></string>
+    <string name="ai_provider_inception_help">Visit <xliff:g id="url" example="https://platform.inceptionlabs.ai">https://platform.inceptionlabs.ai</xliff:g> for API keys</string>
+    <string name="ai_provider_zen_help">Free models require no key. Paid models: <xliff:g id="url" example="https://opencode.ai/auth">https://opencode.ai/auth</xliff:g></string>
+    <string name="ai_not_set">Not set</string>
+    <string name="ai_error_api_key_required">API key is required</string>
+    <string name="ai_error_zen_paid_key_required">An API key is required for paid Zen models. Switch to a free model or set an API key in Settings.</string>
+    <string name="ai_error_no_prompts">No prompts available</string>
+    <string name="ai_error_prompts_empty">Prompts are empty</string>
+    <string name="ai_error_unknown">An unknown error occurred</string>
+    <string name="ai_error_generation_failed">Generation failed</string>
+    <string name="ai_api_key_placeholder" translatable="false">opencode.ai API key</string>
+    <string name="ai_reasoning_unsupported_title">Reasoning Not Supported</string>
+    <string name="ai_reasoning_unsupported_message">The selected model (<xliff:g id="model" example="space-bunny-free">%1$s</xliff:g>) does not support reasoning configuration.</string>
+    <string name="ai_reasoning_fixed_title">Built-in Reasoning</string>
+    <string name="ai_reasoning_fixed_message">The selected model (<xliff:g id="model" example="space-bunny-free">%1$s</xliff:g>) uses built-in reasoning that cannot be modified or adjusted.</string>
+    <string name="ai_reasoning_level_title">Reasoning Level (<xliff:g id="model" example="Model">%1$s</xliff:g>)</string>
+    <string name="ai_reasoning_level_fallback">Model</string>
+    <string name="ai_system_prompt_title">System prompt</string>
+    <string name="ai_fab_title">Floating Action Button on Hinge</string>
+    <string name="ai_temperature_title">Temperature</string>
+    <string name="ai_top_p_title">Top P</string>
+    <string name="ai_reasoning_effort_title">Reasoning Effort</string>
+    <string name="ai_section_activation">Activation</string>
+    <string name="ai_section_model_params">Model Parameters</string>
+    <string name="ai_section_prompt">Prompt Instructions</string>
+    <string name="ai_opener_prompt_title">Opener Prompt Template</string>
+    <string name="ai_opener_prompt_default">Default (5 Archetypes &amp; Rules)</string>
+    <string name="ai_opener_prompt_custom">Customized template</string>
+    <string name="ai_remote_sync_title">Sync Prompt from Web</string>
+    <string name="ai_remote_sync_desc">Fetch latest OTA prompt rules from GitHub</string>
+    <string name="ai_remote_url_title">Remote Prompt URL</string>
+    <string name="ai_remote_sync_success">Opener prompt successfully updated from remote</string>
+    <string name="ai_remote_sync_failure">Failed to sync prompt from remote: <xliff:g id="error" example="Network error">%1$s</xliff:g></string>
+    <string name="ai_remote_sync_in_progress">Syncing prompt from remote…</string>
+    <string name="ai_custom_model">Custom</string>
+    <string name="ai_system_prompt_default">Default</string>
+    <string name="ai_current_model_fallback">current</string>
+    <string name="zen_model_free_format"><xliff:g id="model" example="space-bunny-free">%1$s</xliff:g> (Free)</string>
+    <string name="zen_model_paid_format"><xliff:g id="model" example="claude-sonnet-5">%1$s</xliff:g> (Requires Zen key)</string>
+    <string name="nav_tab_title_candidates">Candidate Feed</string>
+    <string name="nav_tab_title_matches">Matches &amp; Chats</string>
+    <string name="nav_tab_title_home">Home</string>
+    <string name="nav_tab_title_profile">My Profile Data</string>
+    <string name="nav_tab_title_explorer">Raw Storage Explorer</string>
+    <string name="nav_label_candidates">Candidates</string>
+    <string name="nav_label_matches">Matches</string>
+    <string name="nav_label_home">Home</string>
+    <string name="nav_label_profile">Profile</string>
+    <string name="nav_label_explorer">Explorer</string>
+    <string name="nav_settings_menu">Settings</string>
+    <string name="cd_back">Back</string>
+    <string name="cd_options">Options</string>
+    <string name="cd_candidates_tab">Candidates</string>
+    <string name="cd_matches_tab">Matches</string>
+    <string name="cd_home_tab">Home</string>
+    <string name="cd_profile_tab">Profile</string>
+    <string name="cd_explorer_tab">Explorer</string>
+    <string name="action_ok">OK</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_dismiss">Dismiss</string>
+    <string name="action_copy">Copy</string>
+    <string name="action_copied">Copied!</string>
+    <string name="action_copy_url">Copy URL</string>
+    <string name="action_reset_to_default">Reset to default</string>
+    <string name="action_clear_search">Clear Search</string>
+    <string name="action_close">Close</string>
+    <string name="action_close_preview">Close Preview</string>
+    <string name="action_reset_filters">Reset Filters</string>
+    <string name="action_view_transcript">View Transcript</string>
+    <string name="action_clear_archive">Clear Archive</string>
+    <string name="toast_copied_format">Copied <xliff:g id="label" example="Profile">%1$s</xliff:g></string>
+    <string name="search_candidates_hint">Search candidates, prompts, jobs, intent…</string>
+    <string name="search_matches_hint">Search matches, messages, jobs…</string>
+    <string name="cd_filter_in_feed">In Feed filter options</string>
+    <string name="cd_filter_options">Filter options</string>
+    <string name="cd_filter_active">Active Filter</string>
+    <string name="feed_both_format">Both (<xliff:g id="count" example="12">%1$d</xliff:g>)</string>
+    <string name="feed_discover_format">Discover (<xliff:g id="count" example="8">%1$d</xliff:g>)</string>
+    <string name="feed_standouts_format">Standouts (<xliff:g id="count" example="4">%1$d</xliff:g>)</string>
+    <string name="filter_in_feed_both">In Feed (<xliff:g id="count" example="12">%1$d</xliff:g>)</string>
+    <string name="filter_in_feed_discover">In Feed: Discover (<xliff:g id="count" example="8">%1$d</xliff:g>)</string>
+    <string name="filter_in_feed_standouts">In Feed: Standouts (<xliff:g id="count" example="4">%1$d</xliff:g>)</string>
+    <string name="filter_both_full">Both (Discover &amp; Standouts)</string>
+    <string name="filter_discover_feed">Discover Feed</string>
+    <string name="filter_standouts">Standouts</string>
+    <string name="filter_more">More Filters</string>
+    <string name="filter_in_feed_reset_both">In Feed (Both)</string>
+    <string name="filter_in_feed_reset_discover">In Feed (Discover)</string>
+    <string name="filter_in_feed_reset_standouts">In Feed (Standouts)</string>
+    <string name="filter_feed_prefix">Feed:</string>
+    <string name="filter_option_count_format"><xliff:g id="label" example="Liked You">%1$s</xliff:g> (<xliff:g id="count" example="5">%2$d</xliff:g>)</string>
+    <string name="filter_all">All</string>
+    <string name="filter_liked_you">Liked You</string>
+    <string name="filter_liked">Liked</string>
+    <string name="filter_passed">Passed</string>
+    <string name="filter_archived_past">Archived Past</string>
+    <string name="filter_with_comment">With Comment</string>
+    <string name="match_showing_format">Showing <xliff:g id="shown" example="8">%1$d</xliff:g> of <xliff:g id="total" example="20">%2$d</xliff:g> matches</string>
+    <string name="match_reset_filters">Reset Filters</string>
+    <string name="match_all_format">All (<xliff:g id="count" example="12">%1$d</xliff:g>)</string>
+    <string name="match_active_format">Active (<xliff:g id="count" example="5">%1$d</xliff:g>)</string>
+    <string name="match_your_turn_format">Your Turn (<xliff:g id="count" example="3">%1$d</xliff:g>)</string>
+    <string name="match_waiting_format">Waiting (<xliff:g id="count" example="2">%1$d</xliff:g>)</string>
+    <string name="match_phone_format">Phone (<xliff:g id="count" example="1">%1$d</xliff:g>)</string>
+    <string name="match_ended_format">Ended (<xliff:g id="count" example="6">%1$d</xliff:g>)</string>
+    <string name="tag_note">Note</string>
+    <string name="tag_standout">Standout</string>
+    <string name="tag_discover">Discover</string>
+    <string name="tag_rose">Rose</string>
+    <string name="tag_liked_you">Liked You</string>
+    <string name="tag_phone_exchanged">Phone Exchanged</string>
+    <string name="tag_social_exchanged">Social Exchanged</string>
+    <string name="tag_priority_like">Priority Like</string>
+    <string name="tag_draft_saved">Draft Saved</string>
+    <string name="match_nudge_days_format"><xliff:g id="days" example="3">%1$d</xliff:g>d since reply</string>
+    <string name="cd_previous_photo">Previous Photo</string>
+    <string name="cd_next_photo">Next Photo</string>
+    <string name="cd_reset_zoom">Reset Zoom</string>
+    <string name="image_viewer_mode_standard">4:5 Standard</string>
+    <string name="image_viewer_mode_fit">Full Fit</string>
+    <string name="image_viewer_failed_load">Failed to load image</string>
+    <string name="image_viewer_photo_count_format">Photo <xliff:g id="current" example="2">%1$d</xliff:g> of <xliff:g id="total" example="6">%2$d</xliff:g></string>
+    <string name="cd_aspect_ratio_mode">Toggle photo crop mode</string>
+    <string name="cd_selfie_verified">Selfie Verified Profile</string>
+    <string name="cd_copy_profile">Copy Profile Info</string>
+    <string name="cd_sent_comment">Your Sent Comment</string>
+    <string name="photo_of_format">Photo <xliff:g id="index" example="3">%1$d</xliff:g> of <xliff:g id="name" example="Alex">%2$s</xliff:g></string>
+    <string name="candidate_fallback_name">Candidate</string>
+    <string name="ai_wingman_label">AI Wingman</string>
+    <string name="match_voice_note">Voice Note</string>
+    <string name="telemetry_badge_paused">Paused</string>
+    <string name="telemetry_reset_in_format">Reset in <xliff:g id="countdown" example="5h 12m">%1$s</xliff:g></string>
+    <string name="telemetry_type_comment">Comment</string>
+    <string name="telemetry_type_photo">Photo</string>
+    <string name="telemetry_type_plain">Plain</string>
+    <string name="metric_free_roses">Free Roses</string>
+    <string name="metric_snoozes">Snoozes</string>
+    <string name="metric_undo_skips">Undo Skips</string>
+    <string name="metric_priority_likes">Priority Likes</string>
+    <string name="metric_boosts_left">Boosts Left</string>
+    <string name="metric_selectivity">Selectivity</string>
+    <string name="cd_profile_photo">Profile Photo</string>
+    <string name="profile_complete_format"><xliff:g id="percent" example="80">%1$d</xliff:g>%% Complete</string>
+    <string name="profile_smart_photos_on">Smart Photos: On</string>
+    <string name="profile_smart_photos_off">Smart Photos: Off</string>
+    <string name="profile_circle_yes">Circle Member: Yes</string>
+    <string name="profile_circle_no">Circle Member: No</string>
+    <string name="profile_rating_format">Rating: <xliff:g id="status" example="High">%1$s</xliff:g></string>
+    <string name="profile_rating_default">High</string>
+    <string name="profile_title_format"><xliff:g id="name" example="Alex">%1$s</xliff:g>\'s Profile</string>
+    <string name="profile_photos_prompts_format"><xliff:g id="photos" example="6">%1$d</xliff:g> Photos • <xliff:g id="prompts" example="3">%2$d</xliff:g> Prompts</string>
+    <string name="profile_server_eval">Server Prompt Evaluation</string>
+    <string name="profile_section_media">Profile Media Assets</string>
+    <string name="profile_section_media_count"><xliff:g id="count" example="6">%1$d</xliff:g> Photos</string>
+    <string name="profile_empty_photos">No Profile Photos</string>
+    <string name="profile_empty_photos_desc">Media records have not been synced from local storage yet.</string>
+    <string name="profile_section_prompts">Profile Prompts &amp; Answers</string>
+    <string name="profile_section_prompts_count"><xliff:g id="count" example="3">%1$d</xliff:g> Prompts</string>
+    <string name="profile_empty_prompts">No Prompts Available</string>
+    <string name="profile_empty_prompts_desc">Answer records will appear here after syncing with local storage.</string>
+    <string name="copy_photo_url">Photo URL</string>
+    <string name="copy_prompt_answer">Prompt Answer</string>
+    <string name="cd_photo_full_preview">Full photo preview</string>
+    <string name="cd_photo_index_format">Photo <xliff:g id="index" example="2">%1$d</xliff:g></string>
+    <string name="cd_copy">Copy</string>
+    <string name="cd_copy_all_flags">Copy All Flags</string>
+    <string name="cd_copy_key">Copy Key</string>
+    <string name="cd_copy_value">Copy Value</string>
+    <string name="cd_copy_label_format">Copy <xliff:g id="label" example="Name">%1$s</xliff:g></string>
+    <string name="cd_clear">Clear</string>
+    <string name="explorer_active_format"><xliff:g id="count" example="14">%1$d</xliff:g> Active</string>
+    <string name="explorer_rows_format"><xliff:g id="count" example="42">%1$d</xliff:g> Rows</string>
+    <string name="explorer_tab_prefs">Preferences (<xliff:g id="count" example="4">%1$d</xliff:g>)</string>
+    <string name="explorer_tab_sqlite">SQLite (<xliff:g id="count" example="9">%1$d</xliff:g>)</string>
+    <string name="explorer_tab_flags">Server Flags (<xliff:g id="count" example="14">%1$d</xliff:g>)</string>
+    <string name="explorer_empty_prefs_title">No Preference Entries</string>
+    <string name="explorer_empty_search_prefs">No entries match \'<xliff:g id="query" example="theme">%1$s</xliff:g>\'</string>
+    <string name="explorer_empty_prefs_none">This XML file has no entries</string>
+    <string name="explorer_empty_tables_title">No Tables Found</string>
+    <string name="explorer_empty_search_tables">No tables match \'<xliff:g id="query" example="chat">%1$s</xliff:g>\'</string>
+    <string name="explorer_empty_tables_none">No SQLite database tables detected</string>
+    <string name="explorer_section_ids">Server Identifiers &amp; Parameters</string>
+    <string name="explorer_section_flags">Server Flags</string>
+    <string name="explorer_empty_flags_title">No Flags Found</string>
+    <string name="explorer_empty_search_flags">No flags match \'<xliff:g id="query" example="likes">%1$s</xliff:g>\'</string>
+    <string name="explorer_empty_flags_none">No server permissions recorded in storage</string>
+    <string name="explorer_table_title">SQLite Database Table</string>
+    <string name="explorer_clear_filter">Clear Filter</string>
+    <string name="match_empty_chat">No recorded chat messages in local database</string>
+    <string name="settings_appearance">Appearance</string>
+    <string name="settings_wingman">AI Prompt Wingman</string>
+    <string name="settings_feed_nav">Feed Navigation</string>
+    <string name="settings_privacy">Privacy &amp; Telemetry</string>
+    <string name="settings_backup">Data &amp; Backup</string>
+    <string name="cd_github_repo">GitHub Repository</string>
+    <string name="priv_section_shield">Privacy Shield</string>
+    <string name="priv_master">Master Interception Shield</string>
+    <string name="priv_section_sdks">Telemetry &amp; Analytics SDKs</string>
+    <string name="priv_block_firebase">Block Firebase Analytics</string>
+    <string name="priv_block_appsflyer">Block AppsFlyer Attribution</string>
+    <string name="priv_block_split">Block Split.io Telemetry</string>
+    <string name="priv_block_incognia">Block Incognia Anti-Fraud</string>
+    <string name="priv_block_metric_workers">Block Metric Worker Jobs</string>
+    <string name="priv_block_okhttp">Block OkHttp Telemetry</string>
+    <string name="priv_block_crashlytics">Block Crashlytics Upload</string>
+    <string name="priv_block_perf">Block Performance SDK</string>
+    <string name="priv_section_device">Device Permissions &amp; Hardware</string>
+    <string name="priv_fuzz_location">Fuzz Device Location</string>
+    <string name="priv_block_contacts">Block Contacts Synchronization</string>
+    <string name="priv_block_ube">Block User Behavior Engine (UBE)</string>
+    <string name="appearance_theme_mode">Theme Mode</string>
+    <string name="appearance_theme_system">System</string>
+    <string name="appearance_theme_light">Light</string>
+    <string name="appearance_theme_dark">Dark</string>
+    <string name="appearance_pure_black">Pure Black (AMOLED)</string>
+    <string name="feednav_section">Feed Navigation &amp; Likes</string>
+    <string name="feednav_likes_counter">Available Likes Counter</string>
+    <string name="feednav_controls">Feed Navigation Controls</string>
+    <string name="backup_section_export">Export Data</string>
+    <string name="backup_export_full">Export Complete Backup</string>
+    <string name="backup_export_settings">Export Settings</string>
+    <string name="backup_export_candidates">Export Candidate Archive</string>
+    <string name="backup_section_import">Import &amp; Restore</string>
+    <string name="backup_import_file">Import Backup File</string>
+    <string name="backup_section_storage">Candidate Archive Storage</string>
+    <string name="backup_archived_profiles">Archived Profiles</string>
+    <string name="backup_archived_saved_format"><xliff:g id="count" example="12">%1$d</xliff:g> saved</string>
+    <string name="backup_clear_row">Clear Candidate Archive</string>
+    <string name="backup_clear_title">Clear Candidate Archive?</string>
+    <string name="backup_export_ok">Export saved successfully</string>
+    <string name="backup_export_fail">Failed to save export file</string>
+    <string name="backup_read_fail">Failed to read file</string>
+    <string name="backup_import_fail">Failed to import backup</string>
+    <string name="backup_cleared">Candidate archive cleared</string>
+    <string name="backup_restore_prefix">Restored: </string>
+    <string name="backup_restore_settings">Settings updated. </string>
+    <string name="quick_force_stop">Force Stop</string>
+    <string name="quick_open_hinge">Open Hinge</string>
+    <plurals name="backup_clear_archive_message">
+        <item quantity="one">This will permanently remove the saved candidate profile from the local database.</item>
+        <item quantity="other">This will permanently remove all <xliff:g id="count" example="12">%1$d</xliff:g> saved candidate profiles from the local database.</item>
+    </plurals>
+    <plurals name="backup_restore_candidates">
+        <item quantity="one"><xliff:g id="count" example="1">%1$d</xliff:g> candidate imported.</item>
+        <item quantity="other"><xliff:g id="count" example="12">%1$d</xliff:g> candidates imported.</item>
+    </plurals>
+
+    <string name="banner_status_active">Active</string>
+    <string name="banner_status_degraded">Degraded</string>
+    <string name="root_access_title">Root Access</string>
+    <string name="root_status_granted">Granted</string>
+    <string name="root_status_unavailable">Not Available</string>
+    <string name="root_status_checking">Checking…</string>
+    <string name="root_desc_granted">Superuser access active for process controls and candidate storage fallback.</string>
+    <string name="root_desc_unavailable">Non-root mode. Basic operations active; system-level process kills use intent settings.</string>
+    <string name="root_desc_checking">Checking superuser environment…</string>
+
+    <string name="quick_force_stopped">Hinge force stopped</string>
+    <string name="quick_opened_settings">Opened Hinge app settings</string>
+
+    <string name="telemetry_account_fallback">Hinge Account</string>
+    <string name="telemetry_account_local">Local Account Data</string>
+    <string name="telemetry_meta_created">Account Created</string>
+    <string name="telemetry_meta_synced">Last Synced</string>
+    <string name="telemetry_section_quotas">Daily Resource Quotas</string>
+    <string name="telemetry_likes_remaining">Daily Likes Remaining</string>
+    <string name="telemetry_section_inbound">Inbound Likes Queue</string>
+    <string name="telemetry_inbound_waiting_format"><xliff:g id="count" example="5">%1$d</xliff:g> Waiting</string>
+    <string name="telemetry_cache_timestamp_format">Last Likes Cache: <xliff:g id="time" example="10:30">%1$s</xliff:g></string>
+    <string name="telemetry_section_algo">Algorithmic &amp; Interaction Telemetry</string>
+    <string name="telemetry_metric_likes_sent">Lifetime Likes Sent</string>
+    <string name="telemetry_metric_discover_likes">Discover Likes Counter</string>
+    <string name="telemetry_metric_rose_dialogs">Rose Upsell Dialogs</string>
+    <string name="telemetry_metric_standout_views">Standout Views</string>
+    <string name="telemetry_metric_standout_likes">Standout Likes</string>
+    <string name="telemetry_metric_chats_started">Chats Started</string>
+    <string name="telemetry_metric_we_met_prompts">We Met Prompts</string>
+
+    <string name="candidates_empty_archived_title">No Profiles Archived Yet</string>
+    <string name="candidates_empty_archived_desc">Profiles will appear here automatically when viewed in Hinge.</string>
+    <string name="candidates_empty_discover_title">No Discover Profiles In Feed</string>
+    <string name="candidates_empty_discover_desc">Browse the Discover feed in Hinge to populate local profiles.</string>
+    <string name="candidates_empty_standouts_title">No Standouts In Feed</string>
+    <string name="candidates_empty_standouts_desc">Browse Standouts in Hinge to view recommended profiles.</string>
+    <string name="candidates_empty_action_both">Show Both Feeds</string>
+    <string name="candidates_tag_sent_rose">Sent You a Rose</string>
+    <string name="candidates_tag_liked_profile">Liked Your Profile</string>
+    <string name="candidates_action_show_less">Show less</string>
+    <string name="candidates_action_more_details_format">+ <xliff:g id="count" example="3">%1$d</xliff:g> more details</string>
+    <string name="candidates_label_sent_comment">Your Sent Comment</string>
+    <string name="candidates_photos_count_format"><xliff:g id="count" example="4">%1$d</xliff:g> Photos in Archive</string>
+    <string name="candidates_meta_first_format">First: <xliff:g id="date" example="Oct 12">%1$s</xliff:g></string>
+    <string name="candidates_meta_last_format">Last: <xliff:g id="date" example="Oct 14">%1$s</xliff:g></string>
+    <string name="candidates_search_placeholder">Search name, prompts, bio, school, religion…</string>
+    <string name="tag_liked">Liked</string>
+    <string name="tag_passed">Passed</string>
+    <string name="tag_with_comment">With Comment</string>
+    <string name="tag_circle">Circle</string>
+
+    <string name="matches_empty_title">No Matches Found</string>
+    <string name="matches_empty_search_desc">No matching conversations found for your query.</string>
+    <string name="matches_empty_none_desc">Matches and chats recorded in Hinge will be archived here.</string>
+    <string name="matches_kpi_matches">Matches</string>
+    <string name="matches_kpi_active_chats">Active Chats</string>
+    <string name="matches_kpi_contacts">Contacts</string>
+    <string name="matches_kpi_priority">Priority</string>
+    <string name="matches_messages_recorded_format"><xliff:g id="count" example="18">%1$d</xliff:g> total messages recorded</string>
+    <string name="matches_unsent_draft">Unsent Saved Draft:</string>
+    <string name="matches_search_placeholder">Search matches, prompts, messages, drafts…</string>
+
+    <string name="explorer_search_keys">Search keys or values…</string>
+    <string name="explorer_search_tables">Search tables…</string>
+    <string name="explorer_search_flags">Search flags…</string>
+    <string name="explorer_server_install_id">Install ID</string>
+    <string name="explorer_server_discover_etag">Discover ETag</string>
+    <string name="explorer_server_first_sync">First Sync</string>
+    <string name="explorer_server_last_changed">Last Changed</string>
+
+    <string name="profile_ai_coaching_title">AI Coaching Recommendations</string>
+    <string name="profile_prompt_question_fallback">Prompt Question</string>
+    <string name="profile_empty_response">(Empty response)</string>
+
+    <string name="tag_ended_by_you">Ended by you</string>
+    <string name="tag_unmatched">Unmatched</string>
+    <string name="matches_empty_filter_title">No Matching Conversations</string>
+    <string name="action_clear_filters">Clear Filters</string>
+    <string name="matches_msg_single_format"><xliff:g id="count" example="1">%1$d</xliff:g> msg</string>
+    <string name="matches_msg_plural_format"><xliff:g id="count" example="4">%1$d</xliff:g> msgs</string>
+
+    <string name="telemetry_metric_boost_dialogs">Boost Upsell Dialogs</string>
+    <string name="telemetry_metric_profiles_seen">Session Profiles Seen</string>
+    <string name="telemetry_metric_pass_streak">Session Pass Streak</string>
+    <string name="match_fallback_name">Match</string>
+    <string name="match_date_format">Matched <xliff:g id="date" example="Oct 12, 2024">%1$s</xliff:g></string>
+</resources>
