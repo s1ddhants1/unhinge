@@ -157,7 +157,8 @@ data class CachedCandidateProfile(
     val isSecondChance: Boolean = false,
     val isIncomingLike: Boolean = false,
     val incomingComment: String = "",
-    val incomingLikeType: String = ""
+    val incomingLikeType: String = "",
+    val lastActiveStatusId: Int? = null // 1 = Active now, 2 = Active today
 )
 ```
 

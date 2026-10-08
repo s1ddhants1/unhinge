@@ -132,4 +132,20 @@ class CandidateSearchTest {
         assertTrue(matchesCandidateSearch(richCandidate, "favorite spot"))
         assertTrue(matchesCandidateSearch(richCandidate, "Google McGill Leo"))
     }
+
+    @Test
+    fun testSortedByActiveStatus() {
+        val candOther = sampleCandidate.copy(userId = "c_other", lastActiveStatusId = null)
+        val candActiveToday = sampleCandidate.copy(userId = "c_today", lastActiveStatusId = 2)
+        val candActiveNow = sampleCandidate.copy(userId = "c_now", lastActiveStatusId = 1)
+        val candZero = sampleCandidate.copy(userId = "c_zero", lastActiveStatusId = 0)
+
+        val list = listOf(candOther, candActiveToday, candZero, candActiveNow)
+        val sorted = list.sortedByActiveStatus()
+
+        org.junit.Assert.assertEquals("c_now", sorted[0].userId)
+        org.junit.Assert.assertEquals("c_today", sorted[1].userId)
+        org.junit.Assert.assertTrue(sorted[2].userId in listOf("c_other", "c_zero"))
+        org.junit.Assert.assertTrue(sorted[3].userId in listOf("c_other", "c_zero"))
+    }
 }

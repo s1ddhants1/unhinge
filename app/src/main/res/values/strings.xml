@@ -106,11 +106,19 @@
     <string name="filter_feed_prefix">Feed:</string>
     <string name="filter_option_count_format"><xliff:g id="label" example="Liked You">%1$s</xliff:g> (<xliff:g id="count" example="5">%2$d</xliff:g>)</string>
     <string name="filter_all">All</string>
+    <string name="filter_active_now">Active Now</string>
+    <string name="filter_active_today">Active Today</string>
     <string name="filter_liked_you">Liked You</string>
     <string name="filter_liked">Liked</string>
     <string name="filter_passed">Passed</string>
     <string name="filter_archived_past">Archived Past</string>
     <string name="filter_with_comment">With Comment</string>
+    <string name="sort_label">Sort</string>
+    <string name="sort_active_status">Active Status</string>
+    <string name="sort_recent">Most Recent</string>
+    <string name="sort_name">Name (A–Z)</string>
+    <string name="sort_age">Age</string>
+    <string name="cd_sort_options">Sort options</string>
     <string name="match_showing_format">Showing <xliff:g id="shown" example="8">%1$d</xliff:g> of <xliff:g id="total" example="20">%2$d</xliff:g> matches</string>
     <string name="match_reset_filters">Reset Filters</string>
     <string name="match_all_format">All (<xliff:g id="count" example="12">%1$d</xliff:g>)</string>
@@ -120,6 +128,8 @@
     <string name="match_phone_format">Phone (<xliff:g id="count" example="1">%1$d</xliff:g>)</string>
     <string name="match_ended_format">Ended (<xliff:g id="count" example="6">%1$d</xliff:g>)</string>
     <string name="tag_note">Note</string>
+    <string name="tag_active_now">Active now</string>
+    <string name="tag_active_today">Active today</string>
     <string name="tag_standout">Standout</string>
     <string name="tag_discover">Discover</string>
     <string name="tag_rose">Rose</string>
@@ -232,8 +242,6 @@
     <string name="feednav_section">Feed Navigation &amp; Likes</string>
     <string name="feednav_likes_counter">Available Likes Counter</string>
     <string name="feednav_controls">Feed Navigation Controls</string>
-    <string name="feednav_active_filters">Unlock Active Today / Active Now Filters</string>
-    <string name="feednav_active_filters_desc">Removes the premium paywall on the Active Today and Active Now Discover filters. Requires Hinge restart. While on, filter-related API traffic is logged to logcat (ActiveFilterDiag) to verify the server honors it.</string>
     <string name="backup_section_export">Export Data</string>
     <string name="backup_export_full">Export Complete Backup</string>
     <string name="backup_export_settings">Export Settings</string>

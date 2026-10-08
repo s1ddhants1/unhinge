@@ -191,8 +191,7 @@ CREATE TABLE `discover_filter` (
 ```
 Observed rows: `age` / `height` / `dating_intentions` (free, empty permission);
 `active_today`, `new_here`, `filter_circle_members` (premium, `filters_plus`).
-Free accounts lack `filters_plus` in `default.xml` `USER_PERMISSIONS`, which is
-exactly what `HostActiveFilterHook` injects to unlock Active Today / Active Now.
+Free accounts lack `filters_plus` in `default.xml` `USER_PERMISSIONS`.
 
 ---
 

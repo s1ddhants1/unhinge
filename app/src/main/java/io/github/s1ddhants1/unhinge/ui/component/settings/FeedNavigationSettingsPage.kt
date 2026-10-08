@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.FilterAlt
 import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -47,16 +46,6 @@ fun FeedNavigationSettingsPage(
                 icon = Icons.Outlined.SwapHoriz,
                 checked = prefs.enableFeedNavigation,
                 onCheckedChange = { prefs.enableFeedNavigation = it }
-            )
-
-            SettingsDivider()
-
-            SettingsSwitchRow(
-                title = stringResource(R.string.feednav_active_filters),
-                description = stringResource(R.string.feednav_active_filters_desc),
-                icon = Icons.Outlined.FilterAlt,
-                checked = prefs.unlockActiveFilters,
-                onCheckedChange = { prefs.unlockActiveFilters = it }
             )
         }
 

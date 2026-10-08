@@ -24,7 +24,6 @@ This guide documents the technical specifications, target classes, intercepted m
 | **`HostAppAiFab` Hook** | `co.hinge.app.ui.AppActivity` | `onResume()` | Attach in-app draggable AI Floating Action Button overlay to DecorView | `show_host_app_fab` |
 | **`HostFeedNavigationHook`** | `android.database.sqlite.SQLiteDatabase` | `rawQueryWithFactory(…)` | Inject SQL OFFSET into `discover_subject` queries for free feed browsing | `enable_feed_navigation` |
 | **`HostUndoHook`** | `android.app.SharedPreferencesImpl` | `getInt`, `getLong`, `contains`, `getAll` | Return `999` for `local/apiAvailableSkipUndos` for unlimited native rewind | `enable_feed_navigation` |
-| **`HostActiveFilterHook`** | `android.app.SharedPreferencesImpl` | `getStringSet`, `getBoolean`, `getInt`, `contains`, `getAll` | Inject Active Today / Active Now filter permissions into `USER_PERMISSIONS`, return `true` for matching entitlement keys | `unlock_active_filters` (opt-in) |
 
 ---
 
@@ -155,14 +154,4 @@ This guide documents the technical specifications, target classes, intercepted m
      - On user reset, tab change away from Discover, or activity pause, `FeedNavigator.reset()` resets `navOffset` back to 0 and re-triggers Room invalidation.
   6. **Unified Navigation Capsule**: Centered horizontally between the native Pass button and AI FAB (`[ ‹  pos / total  › ]`, 36dp height, 18dp corner radius, 12dp elevation). Chevrons dynamically enable/disable based on navigation position. Suppressed on Standouts and non-candidate screens.
 - **Framework Stability**: Targets public Android framework contracts (`SharedPreferencesImpl`, `SQLiteDatabase`, `SQLiteOpenHelper`) and public AndroidX Room interfaces (`RoomDatabase`, `InvalidationTracker`) exclusively — no obfuscated R8 class names. Resilient across all Hinge updates.
-
-### 2.15 Active Today / Active Now Filter Unlock (`HostActiveFilterHook`)
-- **Target**: `android.app.SharedPreferencesImpl.getStringSet(...)`, `getBoolean(...)`, `getInt(...)`, `contains(...)`, `getAll()`.
-- **Verified Entitlement** (reverse-engineered on-device from `co.hinge.app` v10.4.0 `databases/db`): the server-synced `discover_filter(id, filterId, pillType, permission)` table gates each premium filter per row via its `permission` column. Free rows (`age`, `height`, `dating_intentions`) carry an empty permission; premium rows (`active_today`, `new_here`, `filter_circle_members` — and `active_now` when the server sends it) all require `"filters_plus"`, which free accounts lack in `USER_PERMISSIONS`.
-- **Unlock Mechanism**:
-  1. Hooks `getStringSet` for key `"USER_PERMISSIONS"` and injects `"filters_plus"`, unlocking every premium Discover filter at once (Active Today, Active Now, New Here, Circle Members).
-  2. Hooks `getBoolean`/`contains`/`getInt` for entitlement-shaped keys (matches `active` + `now/today` together with a `filter|permission|entitl|unlock|premium|available|...` qualifier) and returns unlocked values (`true` / `1`) as forward-compat for future permission names.
-  3. `HostActiveFilterHook.ensureActiveFiltersUnlocked(activity)` proactively persists `"filters_plus"` into Hinge's `default.xml`, mirroring `ensureUnlimitedUndos`.
-- **Framework Stability**: Targets public Android framework contracts (`SharedPreferencesImpl`) exclusively — no obfuscated R8 class names. Opt-in via `unlock_active_filters` (off by default, requires Hinge restart to take effect).
-- **Server-validation diagnostics**: while the toggle is on, `PrivacyOkHttpHook` logs first-party filter/Discover request lines and sync response codes to logcat (`ActiveFilterDiag`, bodies truncated to 1500 chars with secrets redacted, headers never logged) so it is observable whether the server honors the unlocked filter or serves unfiltered results.
 

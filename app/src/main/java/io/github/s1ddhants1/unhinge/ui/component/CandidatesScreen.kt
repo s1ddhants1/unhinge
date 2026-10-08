@@ -55,6 +55,26 @@ import java.text.Normalizer
 import java.text.SimpleDateFormat
 import java.util.*
 
+enum class CandidateSortOption(val labelRes: Int) {
+    ACTIVE_STATUS(R.string.sort_active_status),
+    RECENT(R.string.sort_recent),
+    NAME(R.string.sort_name),
+    AGE(R.string.sort_age)
+}
+
+fun List<CachedCandidateProfile>.sortedByActiveStatus(): List<CachedCandidateProfile> {
+    return sortedWith(
+        compareBy<CachedCandidateProfile> { candidate ->
+            when (candidate.lastActiveStatusId) {
+                1 -> 0 // Active now
+                2 -> 1 // Active today
+                else -> 2 // Others
+            }
+        }.thenByDescending { it.isLiveInFeed }
+         .thenByDescending { it.lastSeenTimestamp }
+    )
+}
+
 private data class CandidateFilterOption(
     val id: String,
     val labelRes: Int,
@@ -77,6 +97,8 @@ fun CandidatesScreen(
     var inFeedSubFilter by rememberSaveable { mutableStateOf("Both") }
     var inFeedDropdownExpanded by remember { mutableStateOf(false) }
     var dropdownExpanded by remember { mutableStateOf(false) }
+    var selectedSort by rememberSaveable { mutableStateOf(CandidateSortOption.ACTIVE_STATUS) }
+    var sortDropdownExpanded by remember { mutableStateOf(false) }
     var previewCandidateId by rememberSaveable { mutableStateOf<String?>(null) }
     var previewPhotoIndex by rememberSaveable { mutableIntStateOf(0) }
     var selectedAiCandidate by remember { mutableStateOf<CachedCandidateProfile?>(null) }
@@ -93,6 +115,8 @@ fun CandidatesScreen(
         }
     }
 
+    val activeNowCount = remember(searchMatchedCandidates) { searchMatchedCandidates.count { it.lastActiveStatusId == 1 } }
+    val activeTodayCount = remember(searchMatchedCandidates) { searchMatchedCandidates.count { it.lastActiveStatusId == 2 } }
     val likedYouCount = remember(searchMatchedCandidates) { searchMatchedCandidates.count { it.isIncomingLike } }
     val inFeedCount = remember(searchMatchedCandidates) { searchMatchedCandidates.count { it.isLiveInFeed } }
     val inFeedDiscoverCount = remember(searchMatchedCandidates) {
@@ -110,6 +134,8 @@ fun CandidatesScreen(
 
     val otherFilterOptions = remember(
         searchMatchedCandidates.size,
+        activeNowCount,
+        activeTodayCount,
         likedYouCount,
         likedCount,
         passedCount,
@@ -119,6 +145,8 @@ fun CandidatesScreen(
     ) {
         listOf(
             CandidateFilterOption("All", R.string.filter_all, searchMatchedCandidates.size, Icons.Default.People),
+            CandidateFilterOption("Active Now", R.string.filter_active_now, activeNowCount, Icons.Default.FiberManualRecord),
+            CandidateFilterOption("Active Today", R.string.filter_active_today, activeTodayCount, Icons.Default.AccessTime),
             CandidateFilterOption("Liked You", R.string.filter_liked_you, likedYouCount, HingeIcons.HeartVector),
             CandidateFilterOption("Liked", R.string.filter_liked, likedCount, Icons.Default.ThumbUp),
             CandidateFilterOption("Passed", R.string.filter_passed, passedCount, Icons.Default.ThumbDown),
@@ -136,6 +164,8 @@ fun CandidatesScreen(
                     "Standouts" -> c.isLiveInFeed && c.isStandout
                     else -> c.isLiveInFeed
                 }
+                "Active Now" -> c.lastActiveStatusId == 1
+                "Active Today" -> c.lastActiveStatusId == 2
                 "Liked You" -> c.isIncomingLike
                 "Archived Past" -> !c.isLiveInFeed
                 "Discover" -> c.isDiscover
@@ -145,6 +175,20 @@ fun CandidatesScreen(
                 "Passed" -> c.ratingStatus.equals("Passed", true)
                 else -> true
             }
+        }
+    }
+
+    val sortedCandidates = remember(filtered, selectedSort) {
+        when (selectedSort) {
+            CandidateSortOption.ACTIVE_STATUS -> filtered.sortedByActiveStatus()
+            CandidateSortOption.RECENT -> filtered.sortedWith(
+                compareByDescending<CachedCandidateProfile> { it.isLiveInFeed }
+                    .thenByDescending { it.lastSeenTimestamp }
+            )
+            CandidateSortOption.NAME -> filtered.sortedBy { it.firstName.lowercase() }
+            CandidateSortOption.AGE -> filtered.sortedWith(
+                compareBy<CachedCandidateProfile> { if (it.age > 0) it.age else 999 }
+            )
         }
     }
 
@@ -514,6 +558,77 @@ fun CandidatesScreen(
                     }
                 }
             }
+
+            Box {
+                FilterChip(
+                    selected = selectedSort != CandidateSortOption.RECENT,
+                    onClick = { sortDropdownExpanded = !sortDropdownExpanded },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.SwapVert,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    },
+                    label = { Text(stringResource(selectedSort.labelRes)) },
+                    trailingIcon = {
+                        Icon(
+                            imageVector = if (sortDropdownExpanded) Icons.Default.ArrowDropUp else Icons.Default.ArrowDropDown,
+                            contentDescription = stringResource(R.string.cd_sort_options),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    },
+                    shape = RoundedCornerShape(12.dp)
+                )
+
+                DropdownMenu(
+                    expanded = sortDropdownExpanded,
+                    onDismissRequest = { sortDropdownExpanded = false },
+                    modifier = Modifier.widthIn(min = 190.dp),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    CandidateSortOption.entries.forEach { option ->
+                        val isSelected = selectedSort == option
+                        DropdownMenuItem(
+                            leadingIcon = {
+                                val optIcon = when (option) {
+                                    CandidateSortOption.ACTIVE_STATUS -> Icons.Default.Bolt
+                                    CandidateSortOption.RECENT -> Icons.Default.AccessTime
+                                    CandidateSortOption.NAME -> Icons.Default.SortByAlpha
+                                    CandidateSortOption.AGE -> Icons.Default.FormatListNumbered
+                                }
+                                Icon(
+                                    imageVector = optIcon,
+                                    contentDescription = null,
+                                    tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            },
+                            text = {
+                                Text(
+                                    text = stringResource(option.labelRes),
+                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            trailingIcon = {
+                                if (isSelected) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = stringResource(R.string.cd_filter_active),
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            },
+                            onClick = {
+                                selectedSort = option
+                                sortDropdownExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
         }
 
         AnimatedVisibility(
@@ -579,7 +694,7 @@ fun CandidatesScreen(
             }
         }
 
-        if (filtered.isEmpty()) {
+        if (sortedCandidates.isEmpty()) {
             val emptyTitle = if (candidates.isEmpty()) {
                 "No Profiles Archived Yet"
             } else if (selectedFilter == "In Feed") {
@@ -588,6 +703,10 @@ fun CandidatesScreen(
                     "Standouts" -> "No Standouts In Feed"
                     else -> "No Candidates In Feed"
                 }
+            } else if (selectedFilter == "Active Now") {
+                "No Active Now Profiles"
+            } else if (selectedFilter == "Active Today") {
+                "No Active Today Profiles"
             } else {
                 "No Matching Candidates"
             }
@@ -600,6 +719,10 @@ fun CandidatesScreen(
                     "Standouts" -> "No active Standout profiles found in the feed. Check back when Hinge refreshes Standouts."
                     else -> "No active in-feed profiles found. You can view all saved profiles or check other filters."
                 }
+            } else if (selectedFilter == "Active Now") {
+                "No candidates currently marked Active now found in cache."
+            } else if (selectedFilter == "Active Today") {
+                "No candidates marked Active today found in cache."
             } else if (selectedFilter == "With Comment") {
                 "No candidates found with an outgoing like comment."
             } else {
@@ -643,7 +766,7 @@ fun CandidatesScreen(
                 contentPadding = PaddingValues(bottom = 16.dp)
             ) {
                 items(
-                    items = filtered,
+                    items = sortedCandidates,
                     key = { candidate ->
                         candidate.userId.ifBlank { "cand_${candidate.hashCode()}" }
                     }
@@ -802,6 +925,24 @@ private fun CandidateCard(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    if (candidate.lastActiveStatusId == 1) {
+                        UnhingeBadge(
+                            label = stringResource(R.string.tag_active_now),
+                            containerColor = Color(0xFF1B5E20).copy(alpha = 0.14f),
+                            contentColor = Color(0xFF2E7D32),
+                            showPulseDot = true,
+                            pulseColor = Color(0xFF2E7D32),
+                            onClick = { onBadgeClick("Active Now") }
+                        )
+                    } else if (candidate.lastActiveStatusId == 2) {
+                        UnhingeBadge(
+                            label = stringResource(R.string.tag_active_today),
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            onClick = { onBadgeClick("Active Today") }
+                        )
+                    }
+
                     if (candidate.isIncomingLike) {
                         val isRose = candidate.incomingLikeType.contains("rose", true) || candidate.incomingLikeType.contains("super", true)
                         UnhingeBadge(

@@ -225,7 +225,13 @@ class CandidateArchiveDb(context: Context) : SQLiteOpenHelper(context, "candidat
                        isSecondChance, isIncomingLike, incomingComment, incomingLikeType, incomingTimestamp,
                        lastActiveStatusId
                 FROM archived_candidates
-                ORDER BY isLiveInFeed DESC, lastSeenTimestamp DESC
+                ORDER BY isLiveInFeed DESC,
+                         CASE
+                             WHEN lastActiveStatusId = 1 THEN 0
+                             WHEN lastActiveStatusId = 2 THEN 1
+                             ELSE 2
+                         END ASC,
+                         lastSeenTimestamp DESC
             """.trimIndent(), null).use { c ->
                 while (c.moveToNext()) {
                     val uId = c.getString(0) ?: continue
