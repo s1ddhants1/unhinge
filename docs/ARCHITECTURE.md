@@ -217,4 +217,4 @@ The companion manager app provides deep inspection, local archival, telemetry st
 5. **Standardized Design System & Typography (`ui/component/DesignTokens.kt`, `ui/theme/Typography.kt`)**:
    - `ShapeTokens`: Unified corner radii (`Card` = 18dp, `CardNested` = 14dp, `Pill` = 12dp, `Badge` = 8dp, `Search` = 16dp).
    - `UnhingeTypography`: Standardized Material 3 typography scale (strictly eliminating ad-hoc `.sp` font sizes, line heights, and ALL-CAPS text across companion app and hook overlay).
-   - Reusable components: `UnhingeDoubleBezelCard`, `UnhingeBadge`, `UnhingeSearchBar`, `EmptyStateView`, and `HingePhotoViewer`.
+   - Reusable components: `UnhingeDoubleBezelCard`, `UnhingeBadge`, `UnhingeSearchBar`, `EmptyStateView`, `HingePhotoViewer`, and `HingePhotoCarousel`.

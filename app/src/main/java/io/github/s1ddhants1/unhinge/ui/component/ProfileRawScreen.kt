@@ -10,8 +10,6 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -20,7 +18,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -31,8 +28,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-
-import coil3.compose.SubcomposeAsyncImage
 import io.github.s1ddhants1.unhinge.model.CompleteHingeData
 import io.github.s1ddhants1.unhinge.model.PlayerAnswerItem
 import io.github.s1ddhants1.unhinge.model.PlayerMediaItem
@@ -49,8 +44,6 @@ fun ProfileRawScreen(
     val photos = data.playerMedia
     val answers = data.playerAnswers
     val ratingFallback = stringResource(R.string.profile_rating_default)
-
-    var previewPhotoIndex by rememberSaveable { mutableStateOf<Int?>(null) }
 
     fun copy(label: String, text: String) {
         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -247,33 +240,21 @@ fun ProfileRawScreen(
 
         ProfileSectionHeader(title = stringResource(R.string.profile_section_media), badgeText = stringResource(R.string.profile_section_media_count, photos.size))
 
-        if (photos.isEmpty()) {
+        val validMedia = remember(photos) { photos.filter { it.photoUrl.isNotBlank() } }
+        if (validMedia.isEmpty()) {
             EmptyStateView(
                 icon = Icons.Default.PhotoLibrary,
                 title = stringResource(R.string.profile_empty_photos),
                 description = stringResource(R.string.profile_empty_photos_desc),
             )
         } else {
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            HingePhotoCarousel(
+                photos = validMedia.map { it.photoUrl },
+                captions = validMedia.map { it.promptCaption },
+                candidateName = if (t.firstName.isNotBlank()) stringResource(R.string.profile_title_format, t.firstName) else "",
+                onCopyUrl = { copy(context.getString(R.string.copy_photo_url), it) },
                 modifier = Modifier.fillMaxWidth()
-            ) {
-                itemsIndexed(
-                    items = photos,
-                    key = { index, item -> item.photoUrl.ifBlank { "photo_$index" } }
-                ) { index, media ->
-                    PlayerMediaCard(
-                        media = media,
-                        index = index + 1,
-                        onClick = {
-                            if (media.photoUrl.isNotBlank()) {
-                                previewPhotoIndex = index
-                            }
-                        },
-                        onCopyUrl = { copy(context.getString(R.string.copy_photo_url), media.photoUrl) }
-                    )
-                }
-            }
+            )
         }
 
         ProfileSectionHeader(title = stringResource(R.string.profile_section_prompts), badgeText = stringResource(R.string.profile_section_prompts_count, answers.size))
@@ -297,107 +278,6 @@ fun ProfileRawScreen(
         }
 
         Spacer(modifier = Modifier.height(32.dp))
-    }
-
-    if (previewPhotoIndex != null) {
-        val validPhotos = remember(photos) { photos.map { it.photoUrl }.filter { it.isNotBlank() } }
-        if (validPhotos.isNotEmpty()) {
-            HingePhotoViewer(
-                photos = validPhotos,
-                initialIndex = previewPhotoIndex!!.coerceIn(0, validPhotos.size - 1),
-                title = if (t.firstName.isNotBlank()) stringResource(R.string.profile_title_format, t.firstName)
-                    else stringResource(R.string.nav_tab_title_profile),
-                subtitle = stringResource(R.string.profile_section_media),
-                onDismiss = { previewPhotoIndex = null },
-                onCopyUrl = { copy(context.getString(R.string.copy_photo_url), it) }
-            )
-        }
-    }
-}
-
-@Composable
-private fun PlayerMediaCard(
-    media: PlayerMediaItem,
-    index: Int,
-    onClick: () -> Unit,
-    onCopyUrl: () -> Unit
-) {
-    Surface(
-        modifier = Modifier
-            .width(180.dp)
-            .height(250.dp)
-            .bouncyClickable(onClick = onClick)
-            .hairlineBorder(ShapeTokens.Card),
-        shape = ShapeTokens.Card,
-        color = MaterialTheme.colorScheme.surfaceContainer
-    ) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            if (media.photoUrl.isNotBlank()) {
-                SubcomposeAsyncImage(
-                    model = media.photoUrl,
-                    contentDescription = stringResource(R.string.cd_photo_index_format, index),
-                    contentScale = ContentScale.Crop,
-                    loading = {
-                        SkeletonBox(
-                            modifier = Modifier.fillMaxSize(),
-                            shape = ShapeTokens.Card
-                        )
-                    },
-                    modifier = Modifier.fillMaxSize()
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.surfaceContainerHighest),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.Default.Photo,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(36.dp)
-                    )
-                }
-            }
-
-            Surface(
-                shape = CircleShape,
-                color = Color.Black.copy(alpha = 0.65f),
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(10.dp)
-            ) {
-                Text(
-                    text = "#$index",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                )
-            }
-
-            if (media.promptCaption.isNotBlank()) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))
-                            )
-                        )
-                        .padding(10.dp)
-                ) {
-                    Text(
-                        text = media.promptCaption,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.White,
-                        maxLines = 2
-                    )
-                }
-            }
-        }
     }
 }
 

@@ -57,7 +57,7 @@ object HostAppAiFab {
     private val layoutListeners = WeakHashMap<View, ViewTreeObserver.OnGlobalLayoutListener>()
     private val preDrawListeners = WeakHashMap<View, ViewTreeObserver.OnPreDrawListener>()
     private val likesObservers = WeakHashMap<Activity, (HostLikesReader.LikesState) -> Unit>()
-    private var currentActivityRef: WeakReference<Activity>? = null
+    internal var currentActivityRef: WeakReference<Activity>? = null
     private var currentPrefsRef: WeakReference<PreferencesManager>? = null
 
     fun attach(activity: Activity, prefs: PreferencesManager) {
@@ -579,7 +579,7 @@ object HostAppAiFab {
         return null
     }
 
-    private fun findBottomNavTop(root: View?, screenHeight: Int): Int? {
+    internal fun findBottomNavTop(root: View?, screenHeight: Int): Int? {
         if (root == null || root.visibility != View.VISIBLE) return null
         val density = root.resources.displayMetrics.density
         val minNavHeight = (48 * density).toInt()
@@ -685,7 +685,7 @@ object HostAppAiFab {
         }
     }
 
-    private fun getChildVirtualId(node: AccessibilityNodeInfo, index: Int): Int? {
+    internal fun getChildVirtualId(node: AccessibilityNodeInfo, index: Int): Int? {
         val longId = try {
             getChildIdMethod?.invoke(node, index) as? Long
         } catch (_: Throwable) {

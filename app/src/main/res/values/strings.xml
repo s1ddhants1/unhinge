@@ -98,6 +98,7 @@
     <string name="filter_in_feed_standouts">In Feed: Standouts (<xliff:g id="count" example="4">%1$d</xliff:g>)</string>
     <string name="filter_both_full">Both (Discover &amp; Standouts)</string>
     <string name="filter_discover_feed">Discover Feed</string>
+    <string name="filter_discover">Discover</string>
     <string name="filter_standouts">Standouts</string>
     <string name="filter_more">More Filters</string>
     <string name="filter_in_feed_reset_both">In Feed (Both)</string>
@@ -113,6 +114,19 @@
     <string name="filter_passed">Passed</string>
     <string name="filter_archived_past">Archived Past</string>
     <string name="filter_with_comment">With Comment</string>
+    <string name="filter_in_feed">In Feed</string>
+    <string name="candidates_showing_format">Showing <xliff:g id="shown" example="8">%1$d</xliff:g> of <xliff:g id="total" example="20">%2$d</xliff:g> candidates</string>
+    <string name="empty_candidates_search">No Matching Candidates</string>
+    <string name="empty_candidates_in_feed">No Candidates In Feed</string>
+    <string name="empty_candidates_active_now">No Active Now Profiles</string>
+    <string name="empty_candidates_active_today">No Active Today Profiles</string>
+    <string name="empty_candidates_liked_you">No Incoming Likes</string>
+    <string name="empty_candidates_with_note">No Profiles With Notes</string>
+    <string name="empty_candidates_liked">No Liked Profiles</string>
+    <string name="empty_candidates_passed">No Passed Profiles</string>
+    <string name="empty_candidates_archived">No Archived Profiles</string>
+    <string name="empty_candidates_default">No Profiles Matching Filter</string>
+    <string name="empty_candidates_filter_desc">Try selecting another filter or clearing search.</string>
     <string name="sort_label">Sort</string>
     <string name="sort_active_status">Active Status</string>
     <string name="sort_recent">Most Recent</string>

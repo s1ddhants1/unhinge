@@ -135,8 +135,8 @@ This guide documents the technical specifications, target classes, intercepted m
 - **State Manager**: `FeedNavigator` (singleton, in-memory `AtomicInteger navOffset`, `WeakReference` SQLite and Room InvalidationTracker references, `ThreadLocal` re-entrancy guard).
 - **Interception Mechanism**:
   1. **Non-Destructive In-Memory Paging (Zero Touch Synthetic Motion, Zero Profile Rejection)**:
-     - **Forward (`navigateForward`)**: Increments in-memory `navOffset`, signals Room's `InvalidationTracker` (`notifyObserversByTableNames("discover_subject")` and `refreshVersionsAsync()`), and touches `discover_subject` in SQLite. Hinge's Room query re-runs with `LIMIT ... OFFSET $navOffset`, advancing the candidate view in-place.
-     - **Back (`navigateBack`)**: Decrements in-memory `navOffset` and signals Room's `InvalidationTracker`, returning to previous candidates seamlessly.
+     - **Forward (`navigateForward`)**: Increments in-memory `navOffset` and executes `triggerHingeRefresh(activity)`: dispatches the native `ReloadPotential` (`w65.a`) event to `DiscoverFragment`'s `DiscoverActor` controller (`u85`), re-attaches `DiscoverFragment` with `action = "refresh"`, signals bottom navigation tab reselection, and invalidates Room tables. Hinge's query re-runs with `LIMIT ... OFFSET $navOffset`, advancing the candidate view in-place.
+     - **Back (`navigateBack`)**: Decrements in-memory `navOffset` and executes `triggerHingeRefresh(activity)` to return to previous candidates seamlessly.
      - **Zero writes to `pending_ratings`**: Candidates are never marked as skipped or rejected during browsing. Multi-step forward and backward browsing (e.g. forward 10, back 10) works without limitation.
   2. **Query Offset Injection**:
      - Hooks `rawQueryWithFactory` on `SQLiteDatabase`.

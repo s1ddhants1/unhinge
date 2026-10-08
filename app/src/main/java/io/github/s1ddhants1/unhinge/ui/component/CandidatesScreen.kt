@@ -7,17 +7,13 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -35,7 +31,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLocale
@@ -43,7 +38,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color
-import coil3.compose.SubcomposeAsyncImage
 import io.github.s1ddhants1.unhinge.model.CachedCandidateProfile
 import io.github.s1ddhants1.unhinge.hook.ui.HingeIcons
 import io.github.s1ddhants1.unhinge.hook.ui.HostAppAiSheetContent
@@ -75,12 +69,36 @@ fun List<CachedCandidateProfile>.sortedByActiveStatus(): List<CachedCandidatePro
     )
 }
 
-private data class CandidateFilterOption(
-    val id: String,
+enum class CandidateFilter(
     val labelRes: Int,
-    val count: Int,
-    val icon: ImageVector
-)
+    val icon: ImageVector? = null
+) {
+    IN_FEED(R.string.filter_in_feed, Icons.Default.DynamicFeed),
+    ALL(R.string.filter_all, Icons.Default.People),
+    DISCOVER(R.string.filter_discover, Icons.Default.Explore),
+    STANDOUTS(R.string.filter_standouts, Icons.Default.Star),
+    ACTIVE_NOW(R.string.filter_active_now, Icons.Default.FiberManualRecord),
+    ACTIVE_TODAY(R.string.filter_active_today, Icons.Default.AccessTime),
+    LIKED_YOU(R.string.filter_liked_you, HingeIcons.HeartVector),
+    WITH_COMMENT(R.string.filter_with_comment, Icons.AutoMirrored.Filled.Comment),
+    LIKED(R.string.filter_liked, Icons.Default.ThumbUp),
+    PASSED(R.string.filter_passed, Icons.Default.ThumbDown),
+    ARCHIVED(R.string.filter_archived_past, Icons.Default.Archive);
+
+    fun matches(candidate: CachedCandidateProfile): Boolean = when (this) {
+        IN_FEED -> candidate.isLiveInFeed
+        ALL -> true
+        DISCOVER -> candidate.isDiscover || (candidate.isLiveInFeed && !candidate.isStandout)
+        STANDOUTS -> candidate.isStandout
+        ACTIVE_NOW -> candidate.lastActiveStatusId == 1
+        ACTIVE_TODAY -> candidate.lastActiveStatusId == 2
+        LIKED_YOU -> candidate.isIncomingLike
+        WITH_COMMENT -> candidate.likeComment.isNotBlank()
+        LIKED -> candidate.ratingStatus.equals("Liked", ignoreCase = true)
+        PASSED -> candidate.ratingStatus.equals("Passed", ignoreCase = true)
+        ARCHIVED -> !candidate.isLiveInFeed
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -93,14 +111,9 @@ fun CandidatesScreen(
     val focusManager = LocalFocusManager.current
     val candidateFallbackName = stringResource(R.string.candidate_fallback_name)
     var searchQuery by rememberSaveable { mutableStateOf("") }
-    var selectedFilter by rememberSaveable { mutableStateOf("In Feed") }
-    var inFeedSubFilter by rememberSaveable { mutableStateOf("Both") }
-    var inFeedDropdownExpanded by remember { mutableStateOf(false) }
-    var dropdownExpanded by remember { mutableStateOf(false) }
+    var selectedFilter by rememberSaveable { mutableStateOf(CandidateFilter.IN_FEED) }
     var selectedSort by rememberSaveable { mutableStateOf(CandidateSortOption.ACTIVE_STATUS) }
     var sortDropdownExpanded by remember { mutableStateOf(false) }
-    var previewCandidateId by rememberSaveable { mutableStateOf<String?>(null) }
-    var previewPhotoIndex by rememberSaveable { mutableIntStateOf(0) }
     var selectedAiCandidate by remember { mutableStateOf<CachedCandidateProfile?>(null) }
 
     fun copy(label: String, text: String) {
@@ -115,66 +128,21 @@ fun CandidatesScreen(
         }
     }
 
-    val activeNowCount = remember(searchMatchedCandidates) { searchMatchedCandidates.count { it.lastActiveStatusId == 1 } }
-    val activeTodayCount = remember(searchMatchedCandidates) { searchMatchedCandidates.count { it.lastActiveStatusId == 2 } }
-    val likedYouCount = remember(searchMatchedCandidates) { searchMatchedCandidates.count { it.isIncomingLike } }
-    val inFeedCount = remember(searchMatchedCandidates) { searchMatchedCandidates.count { it.isLiveInFeed } }
-    val inFeedDiscoverCount = remember(searchMatchedCandidates) {
-        searchMatchedCandidates.count { it.isLiveInFeed && (it.isDiscover || !it.isStandout) }
-    }
-    val inFeedStandoutCount = remember(searchMatchedCandidates) {
-        searchMatchedCandidates.count { it.isLiveInFeed && it.isStandout }
-    }
-    val pastCount = remember(searchMatchedCandidates) { searchMatchedCandidates.count { !it.isLiveInFeed } }
-    val discoverCount = remember(searchMatchedCandidates) { searchMatchedCandidates.count { it.isDiscover } }
-    val standoutCount = remember(searchMatchedCandidates) { searchMatchedCandidates.count { it.isStandout } }
-    val likedCount = remember(searchMatchedCandidates) { searchMatchedCandidates.count { it.ratingStatus.equals("Liked", true) } }
-    val withCommentCount = remember(searchMatchedCandidates) { searchMatchedCandidates.count { it.likeComment.isNotBlank() } }
-    val passedCount = remember(searchMatchedCandidates) { searchMatchedCandidates.count { it.ratingStatus.equals("Passed", true) } }
-
-    val otherFilterOptions = remember(
-        searchMatchedCandidates.size,
-        activeNowCount,
-        activeTodayCount,
-        likedYouCount,
-        likedCount,
-        passedCount,
-        pastCount,
-        standoutCount,
-        withCommentCount
-    ) {
-        listOf(
-            CandidateFilterOption("All", R.string.filter_all, searchMatchedCandidates.size, Icons.Default.People),
-            CandidateFilterOption("Active Now", R.string.filter_active_now, activeNowCount, Icons.Default.FiberManualRecord),
-            CandidateFilterOption("Active Today", R.string.filter_active_today, activeTodayCount, Icons.Default.AccessTime),
-            CandidateFilterOption("Liked You", R.string.filter_liked_you, likedYouCount, HingeIcons.HeartVector),
-            CandidateFilterOption("Liked", R.string.filter_liked, likedCount, Icons.Default.ThumbUp),
-            CandidateFilterOption("Passed", R.string.filter_passed, passedCount, Icons.Default.ThumbDown),
-            CandidateFilterOption("Archived Past", R.string.filter_archived_past, pastCount, Icons.Default.Archive),
-            CandidateFilterOption("Standouts", R.string.filter_standouts, standoutCount, Icons.Default.Star),
-            CandidateFilterOption("With Comment", R.string.filter_with_comment, withCommentCount, Icons.AutoMirrored.Filled.Comment)
-        )
+    val filterCounts = remember(searchMatchedCandidates) {
+        CandidateFilter.entries.associateWith { filter ->
+            searchMatchedCandidates.count { filter.matches(it) }
+        }
     }
 
-    val filtered = remember(searchMatchedCandidates, selectedFilter, inFeedSubFilter) {
-        searchMatchedCandidates.filter { c ->
-            when (selectedFilter) {
-                "In Feed" -> when (inFeedSubFilter) {
-                    "Discover" -> c.isLiveInFeed && (c.isDiscover || !c.isStandout)
-                    "Standouts" -> c.isLiveInFeed && c.isStandout
-                    else -> c.isLiveInFeed
-                }
-                "Active Now" -> c.lastActiveStatusId == 1
-                "Active Today" -> c.lastActiveStatusId == 2
-                "Liked You" -> c.isIncomingLike
-                "Archived Past" -> !c.isLiveInFeed
-                "Discover" -> c.isDiscover
-                "Standouts" -> c.isStandout
-                "Liked" -> c.ratingStatus.equals("Liked", true)
-                "With Comment" -> c.likeComment.isNotBlank()
-                "Passed" -> c.ratingStatus.equals("Passed", true)
-                else -> true
-            }
+    val filtered = remember(searchMatchedCandidates, selectedFilter) {
+        searchMatchedCandidates.filter { selectedFilter.matches(it) }
+    }
+
+    fun toggleFilter(filter: CandidateFilter) {
+        selectedFilter = when {
+            selectedFilter == filter && filter == CandidateFilter.IN_FEED -> CandidateFilter.ALL
+            selectedFilter == filter -> CandidateFilter.IN_FEED
+            else -> filter
         }
     }
 
@@ -213,355 +181,9 @@ fun CandidatesScreen(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-
-            Box {
-                val inFeedLabel = when (inFeedSubFilter) {
-                    "Discover" -> stringResource(R.string.filter_in_feed_discover, inFeedDiscoverCount)
-                    "Standouts" -> stringResource(R.string.filter_in_feed_standouts, inFeedStandoutCount)
-                    else -> stringResource(R.string.filter_in_feed_both, inFeedCount)
-                }
-                val inFeedIcon = when (inFeedSubFilter) {
-                    "Discover" -> Icons.Default.Explore
-                    "Standouts" -> Icons.Default.Star
-                    else -> Icons.Default.DynamicFeed
-                }
-
-                FilterChip(
-                    selected = selectedFilter == "In Feed",
-                    onClick = {
-                        if (selectedFilter != "In Feed") {
-                            selectedFilter = "In Feed"
-                        } else {
-                            inFeedDropdownExpanded = !inFeedDropdownExpanded
-                        }
-                    },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = inFeedIcon,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    },
-                    label = { Text(inFeedLabel) },
-                    trailingIcon = {
-                        Icon(
-                            imageVector = if (inFeedDropdownExpanded) Icons.Default.ArrowDropUp else Icons.Default.ArrowDropDown,
-                            contentDescription = stringResource(R.string.cd_filter_in_feed),
-                            modifier = Modifier.size(18.dp)
-                        )
-                    },
-                    shape = RoundedCornerShape(12.dp)
-                )
-
-                DropdownMenu(
-                    expanded = inFeedDropdownExpanded,
-                    onDismissRequest = { inFeedDropdownExpanded = false },
-                    modifier = Modifier.widthIn(min = 230.dp),
-                    shape = RoundedCornerShape(14.dp)
-                ) {
-                    DropdownMenuItem(
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.DynamicFeed,
-                                contentDescription = null,
-                                tint = if (inFeedSubFilter == "Both") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        },
-                        text = {
-                            Text(
-                                text = stringResource(R.string.filter_both_full),
-                                fontWeight = if (inFeedSubFilter == "Both") FontWeight.SemiBold else FontWeight.Normal,
-                                color = if (inFeedSubFilter == "Both") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                            )
-                        },
-                        trailingIcon = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "($inFeedCount)",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = if (inFeedSubFilter == "Both") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                if (inFeedSubFilter == "Both") {
-                                    Spacer(Modifier.width(6.dp))
-                                    Icon(
-                                        imageVector = Icons.Default.Check,
-                                        contentDescription = stringResource(R.string.cd_filter_active),
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-                            }
-                        },
-                        onClick = {
-                            inFeedSubFilter = "Both"
-                            selectedFilter = "In Feed"
-                            inFeedDropdownExpanded = false
-                        }
-                    )
-
-                    DropdownMenuItem(
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.Explore,
-                                contentDescription = null,
-                                tint = if (inFeedSubFilter == "Discover") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        },
-                        text = {
-                            Text(
-                                text = stringResource(R.string.filter_discover_feed),
-                                fontWeight = if (inFeedSubFilter == "Discover") FontWeight.SemiBold else FontWeight.Normal,
-                                color = if (inFeedSubFilter == "Discover") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                            )
-                        },
-                        trailingIcon = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "($inFeedDiscoverCount)",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = if (inFeedSubFilter == "Discover") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                if (inFeedSubFilter == "Discover") {
-                                    Spacer(Modifier.width(6.dp))
-                                    Icon(
-                                        imageVector = Icons.Default.Check,
-                                        contentDescription = stringResource(R.string.cd_filter_active),
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-                            }
-                        },
-                        onClick = {
-                            inFeedSubFilter = "Discover"
-                            selectedFilter = "In Feed"
-                            inFeedDropdownExpanded = false
-                        }
-                    )
-
-                    DropdownMenuItem(
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.Star,
-                                contentDescription = null,
-                                tint = if (inFeedSubFilter == "Standouts") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        },
-                        text = {
-                            Text(
-                                text = stringResource(R.string.filter_standouts),
-                                fontWeight = if (inFeedSubFilter == "Standouts") FontWeight.SemiBold else FontWeight.Normal,
-                                color = if (inFeedSubFilter == "Standouts") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                            )
-                        },
-                        trailingIcon = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "($inFeedStandoutCount)",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = if (inFeedSubFilter == "Standouts") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                if (inFeedSubFilter == "Standouts") {
-                                    Spacer(Modifier.width(6.dp))
-                                    Icon(
-                                        imageVector = Icons.Default.Check,
-                                        contentDescription = stringResource(R.string.cd_filter_active),
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-                            }
-                        },
-                        onClick = {
-                            inFeedSubFilter = "Standouts"
-                            selectedFilter = "In Feed"
-                            inFeedDropdownExpanded = false
-                        }
-                    )
-                }
-            }
-
-            Box {
-                val isOtherSelected = selectedFilter != "In Feed"
-                val activeOption = otherFilterOptions.find { it.id == selectedFilter }
-                val dropdownLabel = if (isOtherSelected) {
-                    activeOption?.let { stringResource(R.string.filter_option_count_format, stringResource(it.labelRes), it.count) } ?: selectedFilter
-                } else {
-                    stringResource(R.string.filter_more)
-                }
-
-                FilterChip(
-                    selected = isOtherSelected,
-                    onClick = {
-                        dropdownExpanded = !dropdownExpanded
-                    },
-                    leadingIcon = {
-                        val icon = activeOption?.icon ?: Icons.Default.FilterList
-                        Icon(
-                            imageVector = icon,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    },
-                    label = { Text(dropdownLabel) },
-                    trailingIcon = {
-                        Icon(
-                            imageVector = if (dropdownExpanded) Icons.Default.ArrowDropUp else Icons.Default.ArrowDropDown,
-                            contentDescription = stringResource(R.string.cd_filter_options),
-                            modifier = Modifier.size(18.dp)
-                        )
-                    },
-                    shape = RoundedCornerShape(12.dp)
-                )
-
-                DropdownMenu(
-                    expanded = dropdownExpanded,
-                    onDismissRequest = { dropdownExpanded = false },
-                    modifier = Modifier.widthIn(min = 220.dp),
-                    shape = RoundedCornerShape(14.dp)
-                ) {
-                    otherFilterOptions.forEach { option ->
-                        val isSelected = selectedFilter == option.id
-                        DropdownMenuItem(
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = option.icon,
-                                    contentDescription = null,
-                                    tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            },
-                            text = {
-                                Text(
-                                    text = stringResource(option.labelRes),
-                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                                )
-                            },
-                            trailingIcon = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = "(${option.count})",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                    if (isSelected) {
-                                        Spacer(Modifier.width(6.dp))
-                                        Icon(
-                                            imageVector = Icons.Default.Check,
-                                            contentDescription = stringResource(R.string.cd_filter_active),
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                }
-                            },
-                            onClick = {
-                                selectedFilter = option.id
-                                dropdownExpanded = false
-                            }
-                        )
-                    }
-
-                    if (isOtherSelected) {
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                        DropdownMenuItem(
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Default.DynamicFeed,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            },
-                            text = {
-                                Text(
-                                    text = stringResource(R.string.filter_in_feed_reset_both),
-                                    fontWeight = FontWeight.Medium,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            },
-                            trailingIcon = {
-                                Text(
-                                    text = "($inFeedCount)",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            },
-                            onClick = {
-                                selectedFilter = "In Feed"
-                                inFeedSubFilter = "Both"
-                                dropdownExpanded = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Default.Explore,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            },
-                            text = {
-                                Text(
-                                    text = stringResource(R.string.filter_in_feed_reset_discover),
-                                    fontWeight = FontWeight.Medium,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            },
-                            trailingIcon = {
-                                Text(
-                                    text = "($inFeedDiscoverCount)",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            },
-                            onClick = {
-                                selectedFilter = "In Feed"
-                                inFeedSubFilter = "Discover"
-                                dropdownExpanded = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Default.Star,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            },
-                            text = {
-                                Text(
-                                    text = stringResource(R.string.filter_in_feed_reset_standouts),
-                                    fontWeight = FontWeight.Medium,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            },
-                            trailingIcon = {
-                                Text(
-                                    text = "($inFeedStandoutCount)",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            },
-                            onClick = {
-                                selectedFilter = "In Feed"
-                                inFeedSubFilter = "Standouts"
-                                dropdownExpanded = false
-                            }
-                        )
-                    }
-                }
-            }
-
             Box {
                 FilterChip(
-                    selected = selectedSort != CandidateSortOption.RECENT,
+                    selected = selectedSort != CandidateSortOption.ACTIVE_STATUS,
                     onClick = { sortDropdownExpanded = !sortDropdownExpanded },
                     leadingIcon = {
                         Icon(
@@ -578,7 +200,7 @@ fun CandidatesScreen(
                             modifier = Modifier.size(18.dp)
                         )
                     },
-                    shape = RoundedCornerShape(12.dp)
+                    shape = ShapeTokens.Pill
                 )
 
                 DropdownMenu(
@@ -629,116 +251,95 @@ fun CandidatesScreen(
                     }
                 }
             }
+
+            VerticalDivider(
+                modifier = Modifier.height(24.dp),
+                color = MaterialTheme.colorScheme.outlineVariant
+            )
+
+            CandidateFilter.entries.forEach { filter ->
+                val count = filterCounts[filter] ?: 0
+                val isSelected = selectedFilter == filter
+                FilterChip(
+                    selected = isSelected,
+                    onClick = { toggleFilter(filter) },
+                    leadingIcon = filter.icon?.let { icon ->
+                        {
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    },
+                    label = {
+                        Text(
+                            text = stringResource(
+                                R.string.filter_option_count_format,
+                                stringResource(filter.labelRes),
+                                count
+                            )
+                        )
+                    },
+                    shape = ShapeTokens.Pill
+                )
+            }
         }
 
-        AnimatedVisibility(
-            visible = selectedFilter == "In Feed",
-            enter = fadeIn(),
-            exit = fadeOut()
-        ) {
+        if (searchQuery.isNotBlank() || selectedFilter != CandidateFilter.IN_FEED) {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = stringResource(R.string.filter_feed_prefix),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(end = 2.dp)
+                    text = stringResource(R.string.candidates_showing_format, filtered.size, candidates.size),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-
-                FilterChip(
-                    selected = inFeedSubFilter == "Both",
-                    onClick = { inFeedSubFilter = "Both" },
-                    label = { Text(stringResource(R.string.feed_both_format, inFeedCount)) },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.DynamicFeed,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp)
-                        )
+                TextButton(
+                    onClick = {
+                        searchQuery = ""
+                        selectedFilter = CandidateFilter.IN_FEED
+                        focusManager.clearFocus()
                     },
-                    shape = RoundedCornerShape(10.dp)
-                )
-
-                FilterChip(
-                    selected = inFeedSubFilter == "Discover",
-                    onClick = { inFeedSubFilter = "Discover" },
-                    label = { Text(stringResource(R.string.feed_discover_format, inFeedDiscoverCount)) },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Explore,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp)
-                        )
-                    },
-                    shape = RoundedCornerShape(10.dp)
-                )
-
-                FilterChip(
-                    selected = inFeedSubFilter == "Standouts",
-                    onClick = { inFeedSubFilter = "Standouts" },
-                    label = { Text(stringResource(R.string.feed_standouts_format, inFeedStandoutCount)) },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Star,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp)
-                        )
-                    },
-                    shape = RoundedCornerShape(10.dp)
-                )
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(stringResource(R.string.action_reset_filters), style = MaterialTheme.typography.labelMedium)
+                }
             }
         }
 
         if (sortedCandidates.isEmpty()) {
-            val emptyTitle = if (candidates.isEmpty()) {
-                "No Profiles Archived Yet"
-            } else if (selectedFilter == "In Feed") {
-                when (inFeedSubFilter) {
-                    "Discover" -> "No Discover Profiles In Feed"
-                    "Standouts" -> "No Standouts In Feed"
-                    else -> "No Candidates In Feed"
-                }
-            } else if (selectedFilter == "Active Now") {
-                "No Active Now Profiles"
-            } else if (selectedFilter == "Active Today") {
-                "No Active Today Profiles"
-            } else {
-                "No Matching Candidates"
+            val emptyTitle = when {
+                candidates.isEmpty() -> stringResource(R.string.candidates_empty_archived_title)
+                searchQuery.isNotBlank() -> stringResource(R.string.empty_candidates_search)
+                selectedFilter == CandidateFilter.IN_FEED -> stringResource(R.string.empty_candidates_in_feed)
+                selectedFilter == CandidateFilter.DISCOVER -> stringResource(R.string.candidates_empty_discover_title)
+                selectedFilter == CandidateFilter.STANDOUTS -> stringResource(R.string.candidates_empty_standouts_title)
+                selectedFilter == CandidateFilter.ACTIVE_NOW -> stringResource(R.string.empty_candidates_active_now)
+                selectedFilter == CandidateFilter.ACTIVE_TODAY -> stringResource(R.string.empty_candidates_active_today)
+                selectedFilter == CandidateFilter.LIKED_YOU -> stringResource(R.string.empty_candidates_liked_you)
+                selectedFilter == CandidateFilter.WITH_COMMENT -> stringResource(R.string.empty_candidates_with_note)
+                selectedFilter == CandidateFilter.LIKED -> stringResource(R.string.empty_candidates_liked)
+                selectedFilter == CandidateFilter.PASSED -> stringResource(R.string.empty_candidates_passed)
+                selectedFilter == CandidateFilter.ARCHIVED -> stringResource(R.string.empty_candidates_archived)
+                else -> stringResource(R.string.empty_candidates_default)
             }
 
-            val emptyDescription = if (candidates.isEmpty()) {
-                "Candidate profiles will appear here as they are discovered in your Hinge feed or Standouts."
-            } else if (selectedFilter == "In Feed") {
-                when (inFeedSubFilter) {
-                    "Discover" -> "No active Discover queue profiles found. Try checking Standouts or Both."
-                    "Standouts" -> "No active Standout profiles found in the feed. Check back when Hinge refreshes Standouts."
-                    else -> "No active in-feed profiles found. You can view all saved profiles or check other filters."
-                }
-            } else if (selectedFilter == "Active Now") {
-                "No candidates currently marked Active now found in cache."
-            } else if (selectedFilter == "Active Today") {
-                "No candidates marked Active today found in cache."
-            } else if (selectedFilter == "With Comment") {
-                "No candidates found with an outgoing like comment."
-            } else {
-                "No candidates matched your search or active filter."
+            val emptyDescription = when {
+                candidates.isEmpty() -> stringResource(R.string.candidates_empty_archived_desc)
+                selectedFilter == CandidateFilter.DISCOVER -> stringResource(R.string.candidates_empty_discover_desc)
+                selectedFilter == CandidateFilter.STANDOUTS -> stringResource(R.string.candidates_empty_standouts_desc)
+                else -> stringResource(R.string.empty_candidates_filter_desc)
             }
 
-            val actionLabel = if (candidates.isEmpty()) {
-                null
-            } else if (selectedFilter == "In Feed" && inFeedSubFilter != "Both") {
-                "Show Both Feeds"
-            } else if (selectedFilter == "In Feed" && candidates.isNotEmpty()) {
-                "View All Candidates"
-            } else if (searchQuery.isNotBlank() || selectedFilter != "In Feed") {
-                "Reset to In Feed"
-            } else {
-                null
+            val actionLabel = when {
+                candidates.isEmpty() -> null
+                selectedFilter != CandidateFilter.IN_FEED || searchQuery.isNotBlank() -> stringResource(R.string.action_reset_filters)
+                else -> stringResource(R.string.filter_all)
             }
 
             EmptyStateView(
@@ -747,15 +348,12 @@ fun CandidatesScreen(
                 description = emptyDescription,
                 actionLabel = actionLabel,
                 onAction = {
-                    if (selectedFilter == "In Feed" && inFeedSubFilter != "Both") {
-                        inFeedSubFilter = "Both"
-                    } else if (selectedFilter == "In Feed" && candidates.isNotEmpty()) {
-                        selectedFilter = "All"
-                    } else {
+                    if (selectedFilter != CandidateFilter.IN_FEED || searchQuery.isNotBlank()) {
                         searchQuery = ""
-                        selectedFilter = "In Feed"
-                        inFeedSubFilter = "Both"
+                        selectedFilter = CandidateFilter.IN_FEED
                         focusManager.clearFocus()
+                    } else {
+                        selectedFilter = CandidateFilter.ALL
                     }
                 }
             )
@@ -773,32 +371,8 @@ fun CandidatesScreen(
                 ) { candidate ->
                     CandidateCard(
                         candidate = candidate,
-                        onPhotoClick = { photoIdx ->
-                            previewCandidateId = candidate.userId
-                            previewPhotoIndex = photoIdx
-                        },
                         onBadgeClick = { filter ->
-                            when (filter) {
-                                "Discover" -> {
-                                    if (selectedFilter == "In Feed" && inFeedSubFilter == "Discover") {
-                                        inFeedSubFilter = "Both"
-                                    } else {
-                                        selectedFilter = "In Feed"
-                                        inFeedSubFilter = "Discover"
-                                    }
-                                }
-                                "Standouts" -> {
-                                    if (selectedFilter == "In Feed" && inFeedSubFilter == "Standouts") {
-                                        inFeedSubFilter = "Both"
-                                    } else {
-                                        selectedFilter = "In Feed"
-                                        inFeedSubFilter = "Standouts"
-                                    }
-                                }
-                                else -> {
-                                    selectedFilter = if (selectedFilter == filter) "In Feed" else filter
-                                }
-                            }
+                            toggleFilter(filter)
                         },
                         onAiClick = {
                             selectedAiCandidate = candidate
@@ -823,33 +397,12 @@ fun CandidatesScreen(
             )
         }
     }
-
-    val previewCandidate = previewCandidateId?.let { id -> candidates.find { it.userId == id } }
-    if (previewCandidate != null && previewCandidate.photos.isNotEmpty()) {
-        val subtitle = buildString {
-            if (previewCandidate.age > 0) append("${previewCandidate.age}")
-            if (previewCandidate.location.isNotBlank()) {
-                if (isNotEmpty()) append(" • ")
-                append(previewCandidate.location)
-            }
-        }.ifBlank { null }
-
-        HingePhotoViewer(
-            photos = previewCandidate.photos,
-            initialIndex = previewPhotoIndex,
-            title = previewCandidate.firstName.ifBlank { stringResource(R.string.candidate_fallback_name) },
-            subtitle = subtitle,
-            onDismiss = { previewCandidateId = null },
-            onCopyUrl = { copy(context.getString(R.string.copy_photo_url), it) }
-        )
-    }
 }
 
 @Composable
 private fun CandidateCard(
     candidate: CachedCandidateProfile,
-    onPhotoClick: (Int) -> Unit,
-    onBadgeClick: (String) -> Unit,
+    onBadgeClick: (CandidateFilter) -> Unit,
     onAiClick: () -> Unit = {},
     onCopy: (String) -> Unit
 ) {
@@ -932,14 +485,14 @@ private fun CandidateCard(
                             contentColor = Color(0xFF2E7D32),
                             showPulseDot = true,
                             pulseColor = Color(0xFF2E7D32),
-                            onClick = { onBadgeClick("Active Now") }
+                            onClick = { onBadgeClick(CandidateFilter.ACTIVE_NOW) }
                         )
                     } else if (candidate.lastActiveStatusId == 2) {
                         UnhingeBadge(
                             label = stringResource(R.string.tag_active_today),
                             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                             contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            onClick = { onBadgeClick("Active Today") }
+                            onClick = { onBadgeClick(CandidateFilter.ACTIVE_TODAY) }
                         )
                     }
 
@@ -950,7 +503,7 @@ private fun CandidateCard(
                             icon = if (isRose) HingeIcons.RoseVector else HingeIcons.HeartVector,
                             containerColor = MaterialTheme.colorScheme.primaryContainer,
                             contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                            onClick = { onBadgeClick("Liked You") }
+                            onClick = { onBadgeClick(CandidateFilter.LIKED_YOU) }
                         )
                     }
                     if (candidate.ratingStatus.isNotBlank()) {
@@ -959,7 +512,7 @@ private fun CandidateCard(
                             label = candidate.ratingStatus,
                             containerColor = if (isLiked) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceContainerHighest,
                             contentColor = if (isLiked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            onClick = { onBadgeClick(if (isLiked) "Liked" else "Passed") }
+                            onClick = { onBadgeClick(if (isLiked) CandidateFilter.LIKED else CandidateFilter.PASSED) }
                         )
                     }
                     if (candidate.likeComment.isNotBlank()) {
@@ -967,7 +520,7 @@ private fun CandidateCard(
                             label = stringResource(R.string.tag_note),
                             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                             contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            onClick = { onBadgeClick("With Comment") }
+                            onClick = { onBadgeClick(CandidateFilter.WITH_COMMENT) }
                         )
                     }
 
@@ -976,73 +529,31 @@ private fun CandidateCard(
                             label = stringResource(R.string.tag_standout),
                             containerColor = AccentGold.copy(alpha = 0.18f),
                             contentColor = AccentGold,
-                            onClick = { onBadgeClick("Standouts") }
+                            onClick = { onBadgeClick(CandidateFilter.STANDOUTS) }
                         )
                     } else if (candidate.isLiveInFeed) {
                         UnhingeBadge(
                             label = stringResource(R.string.tag_discover),
                             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                             contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            onClick = { onBadgeClick("Discover") }
+                            onClick = { onBadgeClick(CandidateFilter.DISCOVER) }
                         )
                     }
                 }
             }
 
-            if (candidate.photos.isNotEmpty()) {
-                LazyRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    itemsIndexed(
-                        items = candidate.photos,
-                        key = { idx, url -> "${candidate.userId}_${idx}_$url" }
-                    ) { idx, photoUrl ->
-                        Box(
-                            modifier = Modifier
-                                .size(width = 135.dp, height = 180.dp)
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                                .bouncyClickable { onPhotoClick(idx) }
-                        ) {
-                            SubcomposeAsyncImage(
-                                model = photoUrl,
-                                contentDescription = stringResource(R.string.photo_of_format, idx + 1, candidate.firstName.ifBlank { stringResource(R.string.candidate_fallback_name) }),
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize(),
-                                loading = {
-                                    SkeletonBox(
-                                        modifier = Modifier.fillMaxSize(),
-                                        shape = RoundedCornerShape(14.dp)
-                                    )
-                                },
-                                error = {
-                                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            Icons.Default.BrokenImage,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.outline
-                                        )
-                                    }
-                                }
-                            )
-                            Surface(
-                                modifier = Modifier
-                                    .padding(6.dp)
-                                    .align(Alignment.BottomEnd),
-                                shape = RoundedCornerShape(6.dp),
-                                color = Color.Black.copy(alpha = 0.65f)
-                            ) {
-                                Text(
-                                    text = "${idx + 1}/${candidate.photos.size}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = Color.White,
-                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
-                                )
-                            }
-                        }
-                    }
-                }
+            val validPhotos = remember(candidate.photos) { candidate.photos.filter { it.isNotBlank() } }
+            if (validPhotos.isNotEmpty()) {
+                HingePhotoCarousel(
+                    photos = validPhotos,
+                    candidateName = candidate.firstName.ifBlank { stringResource(R.string.candidate_fallback_name) },
+                    onCopyUrl = {
+                        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        cm.setPrimaryClip(ClipData.newPlainText(context.getString(R.string.copy_photo_url), it))
+                        Toast.makeText(context, context.getString(R.string.toast_copied_format, context.getString(R.string.copy_photo_url)), Toast.LENGTH_SHORT).show()
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
 
             if (candidate.isIncomingLike) {

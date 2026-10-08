@@ -32,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -582,6 +583,191 @@ fun HingeSheetDotsIndicator(
                         .clip(CircleShape)
                         .background(dotColor)
                 )
+            }
+        }
+    }
+}
+
+@Composable
+fun HingePhotoCarousel(
+    photos: List<String>,
+    modifier: Modifier = Modifier,
+    candidateName: String = "",
+    captions: List<String>? = null,
+    onCopyUrl: ((String) -> Unit)? = null
+) {
+    val validPhotos = remember(photos) { photos.filter { it.isNotBlank() } }
+    if (validPhotos.isEmpty()) return
+
+    val pagerState = rememberPagerState(initialPage = 0) { validPhotos.size }
+    val coroutineScope = rememberCoroutineScope()
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .aspectRatio(HINGE_PHOTO_ASPECT_RATIO)
+            .clip(ShapeTokens.CardNested)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .hairlineBorder(ShapeTokens.CardNested)
+    ) {
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize()
+        ) { page ->
+            val photoUrl = validPhotos[page]
+            SubcomposeAsyncImage(
+                model = photoUrl,
+                contentDescription = if (candidateName.isNotBlank()) {
+                    stringResource(R.string.photo_of_format, page + 1, candidateName)
+                } else null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+                loading = {
+                    SkeletonBox(
+                        modifier = Modifier.fillMaxSize(),
+                        shape = ShapeTokens.CardNested
+                    )
+                },
+                error = {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Default.BrokenImage,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.outline
+                        )
+                    }
+                }
+            )
+        }
+
+        if (validPhotos.size > 1) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .height(44.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(Color.Black.copy(alpha = 0.45f), Color.Transparent)
+                        )
+                    )
+            )
+
+            Row(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                repeat(validPhotos.size) { index ->
+                    val isActive = index == pagerState.currentPage
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(18.dp)
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) {
+                                coroutineScope.launch {
+                                    pagerState.animateScrollToPage(index)
+                                }
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(3.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (isActive) Color.White
+                                    else Color.White.copy(alpha = 0.4f)
+                                )
+                        )
+                    }
+                }
+            }
+        }
+
+        val currentCaption = captions?.getOrNull(pagerState.currentPage)?.takeIf { it.isNotBlank() }
+        val showBottomControls = validPhotos.size > 1 || onCopyUrl != null || currentCaption != null
+
+        if (showBottomControls) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                Color.Black.copy(alpha = if (currentCaption != null) 0.85f else 0.45f)
+                            )
+                        )
+                    )
+                    .padding(horizontal = 10.dp, vertical = 8.dp)
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (currentCaption != null) {
+                        Text(
+                            text = currentCaption,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (onCopyUrl != null) {
+                            val currentUrl = validPhotos.getOrNull(pagerState.currentPage)
+                            if (!currentUrl.isNullOrBlank()) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = Color.Black.copy(alpha = 0.6f),
+                                    onClick = { onCopyUrl(currentUrl) },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                                        Icon(
+                                            imageVector = Icons.Default.ContentCopy,
+                                            contentDescription = stringResource(R.string.copy_photo_url),
+                                            tint = Color.White,
+                                            modifier = Modifier.size(13.dp)
+                                        )
+                                    }
+                                }
+                            } else {
+                                Spacer(Modifier.width(1.dp))
+                            }
+                        } else {
+                            Spacer(Modifier.width(1.dp))
+                        }
+
+                        if (validPhotos.size > 1) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color.Black.copy(alpha = 0.6f)
+                            ) {
+                                Text(
+                                    text = "${pagerState.currentPage + 1}/${validPhotos.size}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
     }

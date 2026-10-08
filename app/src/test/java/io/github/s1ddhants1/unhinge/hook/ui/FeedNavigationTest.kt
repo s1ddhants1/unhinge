@@ -196,4 +196,36 @@ class FeedNavigationTest {
         val modified = HostFeedNavigationHook.injectOffset(filteredQuery, 2)
         assertEquals("SELECT userId FROM discover_subject WHERE userId NOT IN (SELECT subjectId FROM pending_ratings WHERE subjectId IS NOT NULL) ORDER BY batchId ASC LIMIT 1 OFFSET 2", modified)
     }
+
+    @Test
+    fun testDispatchReloadPotentialWithFakeFragmentAndController() {
+        var eventReceived: Any? = null
+        val fakeController = object {
+            fun U(event: Any): Any {
+                eventReceived = event
+                return Unit
+            }
+        }
+        val fakeViewModel = object {
+            val e = fakeController
+        }
+        val fakeFragment = object {
+            fun y0(): Any = fakeViewModel
+        }
+
+        val result = FeedNavigator.dispatchReloadPotential(fakeFragment)
+        // In local unit test classpath, defpackage.w65 is not present so event is null and returns false safely
+        assertFalse(result)
+    }
+
+    @Test
+    fun testTriggerHingeRefreshSafeWithoutActivity() {
+        FeedNavigator.triggerHingeRefresh(null)
+    }
+
+    @Test
+    fun testReAttachDiscoverFragmentGracefullyHandlesNonFragment() {
+        val dummy = Any()
+        FeedNavigator.reAttachDiscoverFragment(dummy)
+    }
 }
