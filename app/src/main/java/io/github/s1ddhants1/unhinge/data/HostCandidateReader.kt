@@ -125,7 +125,8 @@ object HostCandidateReader {
                            jobTitleText, datingIntentionText, relationshipTypeText,
                            religionText, ethnicitiesText, selfieVerified, circleMember,
                            educationHistoryText, employmentHistory, politicsText, smoking,
-                           drinking, marijuana, drugs, kids, familyPlans, pet, zodiacSign, didJustJoin
+                           drinking, marijuana, drugs, kids, familyPlans, pet, zodiacSign, didJustJoin,
+                           lastActiveStatusId
                     FROM profiles
                 """.trimIndent()
 
@@ -134,6 +135,7 @@ object HostCandidateReader {
                     while (c.moveToNext()) {
                         val uId = c.getString(0) ?: continue
                         val isIncoming = incomingLikes.containsKey(uId)
+                        val activeStatusId = if (c.isNull(25)) null else c.getInt(25)
                         val p = CachedCandidateProfile(
                             userId = uId,
                             firstName = c.getString(1) ?: "",
@@ -166,7 +168,8 @@ object HostCandidateReader {
                             zodiac = c.getString(23) ?: "",
                             isNewHere = c.getInt(24) == 1,
                             isIncomingLike = isIncoming,
-                            incomingLikeType = incomingLikes[uId] ?: ""
+                            incomingLikeType = incomingLikes[uId] ?: "",
+                            lastActiveStatusId = activeStatusId
                         )
                         profilesFound[uId] = p
                     }
@@ -512,7 +515,8 @@ object HostCandidateReader {
                    jobTitleText, datingIntentionText, relationshipTypeText,
                    religionText, ethnicitiesText, selfieVerified, circleMember,
                    educationHistoryText, employmentHistory, politicsText, smoking,
-                   drinking, marijuana, drugs, kids, familyPlans, pet, zodiacSign, didJustJoin
+                   drinking, marijuana, drugs, kids, familyPlans, pet, zodiacSign, didJustJoin,
+                   lastActiveStatusId
             FROM profiles
             WHERE userId = ?
             LIMIT 1
@@ -521,6 +525,7 @@ object HostCandidateReader {
         try {
             db.rawQuery(query, arrayOf(targetId)).use { c ->
                 if (c.moveToFirst()) {
+                    val activeStatusId = if (c.isNull(25)) null else c.getInt(25)
                     return CachedCandidateProfile(
                         userId = targetId,
                         firstName = c.getString(1) ?: "",
@@ -553,7 +558,8 @@ object HostCandidateReader {
                         zodiac = c.getString(23) ?: "",
                         isNewHere = c.getInt(24) == 1,
                         isIncomingLike = isIncoming,
-                        incomingLikeType = incomingType
+                        incomingLikeType = incomingType,
+                        lastActiveStatusId = activeStatusId
                     )
                 }
             }

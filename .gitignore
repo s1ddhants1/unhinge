@@ -47,3 +47,6 @@ ANTIGRAVITY_IMPORT_*.md
 # Candidate evaluations research data and analysis (local only)
 /docs/research/
 /docs/CANDIDATE_PROMPT_RESEARCH.md
+
+# External reference repos (local only)
+/Prompt-Engineering-Guide/

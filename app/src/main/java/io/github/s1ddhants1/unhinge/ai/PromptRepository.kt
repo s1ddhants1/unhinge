@@ -78,7 +78,7 @@ object PromptRepository {
         ASSET_ASK_AI_TEMPLATE_PATH ->
             "You are an authentic dating wingman AI assistant for Hinge.\n\n<candidate_context>\nCandidate Profile:\n{profile}\n</candidate_context>\n\n=== EXHAUSTIVE DATING WINGMAN INSTRUCTIONS ===\nYou are an authentic, perceptive dating wingman texting on Hinge. All suggested lines and advice must sound 100% human—effortless, grounded, low-stakes, and completely free of AI copywriter or pickup-artist tropes.\n{custom_instructions}"
         else ->
-            "Generate opening replies for the following candidate prompts.\n\n<candidate_context>\n{profile}Candidate Prompts ({lineCount} items):\n{prompts}\n{avoid}{directional_stimulus}\n</candidate_context>\n\nOutput MUST be a JSON object {\"lines\": [...]} with EXACTLY {lineCount} opening replies, one per input prompt."
+            "Generate opening replies for the following candidate prompts.\n\n<candidate_context>\n{profile}Candidate Prompts ({lineCount} items):\n{prompts}\n</candidate_context>{avoid}{directional_stimulus}\n\nOutput MUST be a JSON object {\"lines\": [...]} with EXACTLY {lineCount} opening replies, one per input prompt."
     }
 
     fun getEffectiveOpenerTemplate(
@@ -115,22 +115,25 @@ object PromptRepository {
         avoidReplies: List<String> = emptyList(),
         profileBlock: String = "",
         directionalStimulus: String = "",
+        promptCount: Int? = null,
     ): String {
-        val lineCount = promptsText.lines().size
+        val lineCount = promptCount ?: promptsText.lines().filter { it.isNotBlank() }.size.coerceAtLeast(1)
         val avoid = if (avoidReplies.isNotEmpty()) {
             "\n\nPreviously generated replies (generate a completely fresh and DIFFERENT opener; do NOT repeat or reuse similar angles):\n" +
-                avoidReplies.joinToString("\n") { "- \"$it\"" }
+                avoidReplies.joinToString("\n") { "- \"${PromptSanitizer.sanitizeUntrusted(it)}\"" }
         } else ""
-        val profile = profileBlock.takeIf { it.isNotBlank() }?.let { "Profile:\n$it\n\n" } ?: ""
+        val sanitizedProfile = profileBlock.takeIf { it.isNotBlank() }?.let { PromptSanitizer.sanitizeUntrusted(it) }
+        val profile = sanitizedProfile?.let { "Profile:\n$it\n\n" } ?: ""
+        val sanitizedPrompts = PromptSanitizer.sanitizeUntrusted(promptsText)
         val directional = if (directionalStimulus.isNotBlank()) {
-            "\n\n<directional_stimulus>\n$directionalStimulus\n</directional_stimulus>"
+            "\n\n<directional_stimulus>\n${PromptSanitizer.sanitizeUntrusted(directionalStimulus).trim()}\n</directional_stimulus>"
         } else ""
 
         return template
             .replace("{avoid}", avoid)
             .replace("{profile}", profile)
             .replace("{lineCount}", lineCount.toString())
-            .replace("{prompts}", promptsText)
+            .replace("{prompts}", sanitizedPrompts)
             .replace("{directional_stimulus}", directional)
     }
 
@@ -157,9 +160,22 @@ object PromptRepository {
             "\nAdditional System Instructions:\n$customInstructions\n"
         } else ""
         return template
-            .replace("{profile}", profileSummary)
+            .replace("{profile}", PromptSanitizer.sanitizeUntrusted(profileSummary))
             .replace("{custom_instructions}", custom)
             .trim()
+    }
+
+    fun validateOpenerTemplate(template: String): Result<Unit> {
+        if (template.isBlank()) {
+            return Result.failure(IllegalArgumentException("Template cannot be blank"))
+        }
+        val missing = mutableListOf<String>()
+        if (!template.contains("{prompts}")) missing.add("{prompts}")
+        if (!template.contains("{lineCount}")) missing.add("{lineCount}")
+        if (missing.isNotEmpty()) {
+            return Result.failure(IllegalArgumentException("Template missing required placeholders: ${missing.joinToString(", ")}"))
+        }
+        return Result.success(Unit)
     }
 
     suspend fun fetchRemoteTemplate(
@@ -179,6 +195,10 @@ object PromptRepository {
                 val body = resp.body.string()
                 if (body.isBlank()) {
                     return@withContext Result.failure(IllegalStateException("Remote prompt template is empty"))
+                }
+                val validation = validateOpenerTemplate(body)
+                if (validation.isFailure) {
+                    return@withContext Result.failure(validation.exceptionOrNull() ?: IllegalStateException("Invalid template schema"))
                 }
                 Result.success(body)
             }

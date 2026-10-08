@@ -85,3 +85,5 @@ Refer to the dedicated modular documentation files in `docs/` for deep technical
   Comprehensive surveillance audit of Hinge, network endpoint classification, third-party analytics SDK interception, and hardware/identity fingerprint spoofing guarantees.
 - **[Prompt Research, Typologies & Empirical Benchmarks](docs/PROMPT_RESEARCH_AND_TYPOLOGY.md)**:
   Exhaustive empirical research on Hinge prompt categories, user answer typologies, conversion statistics from Hinge Labs and SwipeStats.io, conversational reply architecture, and anti-cliché taxonomies.
+- **[Prompt Engineering Guide Integration Analysis](docs/PROMPT_ENGINEERING_GUIDE_INTEGRATION.md)**:
+  DAIR.AI prompt engineering guide mapping, data boundary isolation, explicit prompt-count derivation, template schema validation, privacy minimization, and output sanitization audits.

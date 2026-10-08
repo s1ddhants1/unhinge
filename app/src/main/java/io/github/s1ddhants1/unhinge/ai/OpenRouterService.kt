@@ -53,10 +53,12 @@ object OpenRouterService {
         reasoningEffort: String = Consts.DEFAULT_AI_REASONING_EFFORT,
         promptTemplate: String? = null,
         directionalStimulus: String = "",
+        promptCount: Int? = null,
     ): Result<List<String>> =
         withContext(Dispatchers.IO) {
             if (text.isBlank()) return@withContext Result.failure(Exception("Input text is empty"))
 
+            val expectedCount = promptCount ?: text.lines().size
             val safeModel = sanitizeModelId(model)
             var useStructured = structured
             repeat(maxRetries) { attempt ->
@@ -75,6 +77,7 @@ object OpenRouterService {
                             reasoningEffort = reasoningEffort,
                             promptTemplate = promptTemplate,
                             directionalStimulus = directionalStimulus,
+                            promptCount = expectedCount,
                         )
                     val targetUrl = baseUrl.ifBlank { OpenRouterDefaultBaseUrl }
                     val request =
@@ -123,7 +126,7 @@ object OpenRouterService {
                                 ?.jsonPrimitive
                                 ?.contentOrNull
                                 .orEmpty()
-                        return@withContext parseGeneratedContent(content, text.lines().size)
+                        return@withContext parseGeneratedContent(content, expectedCount)
                     }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
@@ -151,8 +154,9 @@ internal fun buildGenerationRequest(
     reasoningEffort: String = Consts.DEFAULT_AI_REASONING_EFFORT,
     promptTemplate: String? = null,
     directionalStimulus: String = "",
+    promptCount: Int? = null,
 ): JsonObject {
-    val lineCount = text.lines().size
+    val lineCount = promptCount ?: text.lines().size
     val systemPrompt = WingmanPrompts.openerSystemPrompt(lineCount, customSystemPrompt)
     val userPrompt = WingmanPrompts.openerUserPrompt(
         text = text,
@@ -160,6 +164,7 @@ internal fun buildGenerationRequest(
         profileBlock = profileBlock,
         template = promptTemplate,
         directionalStimulus = directionalStimulus,
+        promptCount = lineCount,
     )
     val safeModel = sanitizeModelId(model)
 
@@ -412,7 +417,8 @@ internal fun parseGeneratedContent(
                 }
                 ?: error("Failed to parse response")
 
-        generatedLines.take(expectedLineCount) + List((expectedLineCount - generatedLines.size).coerceAtLeast(0)) { "" }
+        val sanitizedLines = generatedLines.map { PromptSanitizer.cleanOpenerReply(it) }
+        sanitizedLines.take(expectedLineCount) + List((expectedLineCount - sanitizedLines.size).coerceAtLeast(0)) { "" }
     }
 
 private fun extractLines(element: JsonElement): List<String>? =

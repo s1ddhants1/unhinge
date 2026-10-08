@@ -47,6 +47,7 @@ object OpenRouterStreamingService {
         reasoningEffort: String = Consts.DEFAULT_AI_REASONING_EFFORT,
         promptTemplate: String? = null,
         directionalStimulus: String = "",
+        promptCount: Int? = null,
     ): Flow<StreamChunk> =
         flow {
             if (text.isBlank()) {
@@ -54,6 +55,7 @@ object OpenRouterStreamingService {
                 return@flow
             }
 
+            val expectedCount = promptCount ?: text.lines().size
             val safeModel = sanitizeModelId(model)
             var useStructured = structured
             var lastError = "Max retries exceeded"
@@ -75,6 +77,7 @@ object OpenRouterStreamingService {
                             reasoningEffort = reasoningEffort,
                             promptTemplate = promptTemplate,
                             directionalStimulus = directionalStimulus,
+                            promptCount = expectedCount,
                         )
                     val targetUrl = baseUrl.ifBlank { OpenRouterDefaultBaseUrl }
                     val request =
@@ -149,7 +152,7 @@ object OpenRouterStreamingService {
                         if (rawContent.isBlank()) {
                             emit(StreamChunk.Error("Model returned an empty response. Retrying with non-streaming..."))
                         } else {
-                            parseGeneratedContent(rawContent, text.lines().size)
+                            parseGeneratedContent(rawContent, expectedCount)
                                 .onSuccess { lines -> emit(StreamChunk.Complete(lines)) }
                                 .onFailure { emit(StreamChunk.Error(it.message ?: "Parsing failed")) }
                         }

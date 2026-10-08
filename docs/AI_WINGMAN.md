@@ -393,10 +393,21 @@ The Unhinge prompt engineering pipeline adheres to modern empirical LLM research
   - Internal deliberation restricted strictly to noun selection and natural mobile phrasing.
   - Zero thought leakage: enforces raw JSON output without explanatory wrappers (`Why this works:`), markdown blocks, or meta-comments.
 
-### 7.4 Declarative Prompt Assets & Zero Hardcoded Rules Policy
-- **Strict Decoupling of Prompting Rules from Kotlin Code**: All human texting rules, negative constraints, banned cliché lists, archetype definitions, and few-shot calibration reside exclusively within declarative Markdown templates (`assets/prompts/opener_template.md`, `assets/prompts/ask_ai_template.md`).
-- **No Hardcoded Prompt Rules in Code**: Hardcoding prompt rules, banned phrase filters, or heuristic regex critics inside Kotlin classes is strictly prohibited. Kotlin services and helpers act purely as transport orchestrators, variable interpolators, and JSON parsers.
-- **OTA & Customization Extensibility**: Storing rules in markdown files enables over-the-air template updates and user custom template overrides (`PreferencesManager.aiOpenerPromptTemplate`) without requiring code changes or application recompilation.
+### 7.5 Data Boundary Isolation & Delimiter Sanitization
+- **Untrusted Input Escaping**: All candidate bio strings and prompt text extracted from Hinge SQLite are treated as untrusted user content and sanitized via `PromptSanitizer.sanitizeUntrusted()` to neutralize XML delimiter tag spoofing (`<candidate_context>`, `</candidate_context>`, `<directional_stimulus>`).
+- **Segregation of User Controls**: User controls (`{avoid}` and `{directional_stimulus}`) are explicitly kept *outside* the `<candidate_context>` enclosure to maintain a strict barrier between third-party profile data and system instructions.
+
+### 7.6 Deterministic Prompt Count Derivation
+- **PromptEntry-Derived Count**: Output line counts are strictly derived from the number of active `PromptEntry` objects (`promptCount`) rather than physical string newlines (`promptsText.lines().size`).
+- **Protection Against Multiline Answers**: Candidates with multi-sentence or multiline answers no longer cause newline inflation or corrupted JSON line padding/truncation during parser alignment.
+
+### 7.7 Privacy Minimization & Context Boundaries
+- **Opener Generation Context**: Only essential conversational attributes (first name, age, job title/employer, city) are transmitted to external LLM providers during opener generation.
+- **Sensitive Trait Suppression**: Habits (smoking, drinking, marijuana), dating intentions, relationship types, hometowns, and zodiac signs are suppressed from opener generation prompts, reserving full dossier exposure exclusively for user-initiated deep "Ask AI" queries.
+
+### 7.8 Template Schema Validation & Output Auditing
+- **Schema Guardrails**: `PromptRepository.validateOpenerTemplate()` verifies that remote or custom user templates contain mandatory placeholders (`{prompts}` and `{lineCount}`) before activation, preventing broken generation states.
+- **Output Sanitization**: `PromptSanitizer.cleanOpenerReply()` strips markdown wrappers, analytical preambles (`Why this works:`), conversational throat-clearing, and normalizes excessive interrogation questions.
 
 
 

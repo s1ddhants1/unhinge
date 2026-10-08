@@ -15,10 +15,18 @@ object HostActiveFilterHook : HookHandler {
     // `discover_filter` table gates premium filters per row via its `permission`
     // column. Free rows carry an empty permission; premium rows
     // (active_today, new_here, filter_circle_members — and active_now when the
-    // server sends it) all require "filters_plus". The free account's
-    // USER_PERMISSIONS set lacks it, so injecting it unlocks every premium
-    // filter at once, including Active Today and Active Now.
-    val ACTIVE_FILTER_PERMISSIONS = setOf("filters_plus")
+    // server sends it) require "filters_plus", while premium preference filters
+    // (height, dating_intentions, etc.) require "preference_premium_edit".
+    // Injecting both unlocks all Discover filters and preference filters at once.
+    val ACTIVE_FILTER_PERMISSIONS = setOf("filters_plus", "preference_premium_edit")
+
+    // Ghost Mode key: Hinge enforces reciprocal privacy client-side. If the local user
+    // has `isLastActiveOptIn == false`, Hinge suppresses all "Active now" and "Active today"
+    // badges on incoming cards and prompts an opt-in modal when tapping Active Today filter.
+    // By intercepting `isLastActiveOptIn` to return `true` in memory while leaving the
+    // disk file and backend un-opted-in, the user gains complete visibility into others'
+    // activity status without broadcasting their own presence to strangers.
+    const val KEY_LAST_ACTIVE_OPT_IN = "isLastActiveOptIn"
 
     private val ACTIVE_FILTER_KEY_REGEX = Regex(
         "(?i).*active.*(now|today).*|(?i).*(now|today).*active.*"
@@ -105,6 +113,7 @@ object HostActiveFilterHook : HookHandler {
                                 ?: mutableSetOf()
                             perms.addAll(ACTIVE_FILTER_PERMISSIONS)
                             map["USER_PERMISSIONS"] = perms
+                            map[KEY_LAST_ACTIVE_OPT_IN] = true
                             for ((k, _) in result) {
                                 val key = k as? String ?: continue
                                 if (isActiveFilterKey(key) && map[key] is Boolean) {
@@ -123,6 +132,7 @@ object HostActiveFilterHook : HookHandler {
 
     fun isActiveFilterKey(key: String?): Boolean {
         if (key.isNullOrBlank()) return false
+        if (key.equals(KEY_LAST_ACTIVE_OPT_IN, ignoreCase = true)) return true
         if (ACTIVE_FILTER_PERMISSIONS.contains(key)) return true
         if (key == "USER_PERMISSIONS") return false
         return ACTIVE_FILTER_KEY_REGEX.matches(key) && ENTITLEMENT_QUALIFIER_REGEX.matches(key)

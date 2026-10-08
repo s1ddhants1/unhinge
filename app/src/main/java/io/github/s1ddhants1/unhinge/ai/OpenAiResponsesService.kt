@@ -51,9 +51,11 @@ object OpenAiResponsesService {
         reasoningEffort: String = Consts.DEFAULT_AI_REASONING_EFFORT,
         promptTemplate: String? = null,
         directionalStimulus: String = "",
+        promptCount: Int? = null,
     ): Result<List<String>> =
         withContext(Dispatchers.IO) {
             if (text.isBlank()) return@withContext Result.failure(Exception("Input text is empty"))
+            val expectedCount = promptCount ?: text.lines().size
             val safeModel = ZenRouter.normalizeModelId(model)
             val effectiveBaseUrl = baseUrl.ifBlank { ZenResponsesDefaultBaseUrl }
             val isZen = ZenRouter.isZenUrl(effectiveBaseUrl)
@@ -63,13 +65,14 @@ object OpenAiResponsesService {
                     val sessionId = ZenRouter.generateSessionId()
                     val body =
                         buildResponsesRequest(
-                            instructions = WingmanPrompts.openerSystemPrompt(text.lines().size, customSystemPrompt),
+                            instructions = WingmanPrompts.openerSystemPrompt(expectedCount, customSystemPrompt),
                             input = WingmanPrompts.openerUserPrompt(
                                 text = text,
                                 avoidReplies = avoidReplies,
                                 profileBlock = profileBlock,
                                 template = promptTemplate,
                                 directionalStimulus = directionalStimulus,
+                                promptCount = expectedCount,
                             ),
                             model = safeModel,
                             temperature = temperature,
@@ -119,7 +122,7 @@ object OpenAiResponsesService {
                             }
                             return@withContext Result.failure(Exception(errMsg))
                         }
-                        return@withContext parseGeneratedContent(content, text.lines().size)
+                        return@withContext parseGeneratedContent(content, expectedCount)
                     }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
@@ -145,12 +148,14 @@ object OpenAiResponsesService {
         reasoningEffort: String = Consts.DEFAULT_AI_REASONING_EFFORT,
         promptTemplate: String? = null,
         directionalStimulus: String = "",
+        promptCount: Int? = null,
     ): Flow<OpenRouterStreamingService.StreamChunk> =
         flow {
             if (text.isBlank()) {
                 emit(OpenRouterStreamingService.StreamChunk.Error("Input text is empty"))
                 return@flow
             }
+            val expectedCount = promptCount ?: text.lines().size
             val safeModel = ZenRouter.normalizeModelId(model)
             val effectiveBaseUrl = baseUrl.ifBlank { ZenResponsesDefaultBaseUrl }
             var lastError = "Max retries exceeded"
@@ -159,13 +164,14 @@ object OpenAiResponsesService {
                     val sessionId = ZenRouter.generateSessionId()
                     val body =
                         buildResponsesRequest(
-                            instructions = WingmanPrompts.openerSystemPrompt(text.lines().size, customSystemPrompt),
+                            instructions = WingmanPrompts.openerSystemPrompt(expectedCount, customSystemPrompt),
                             input = WingmanPrompts.openerUserPrompt(
                                 text = text,
                                 avoidReplies = avoidReplies,
                                 profileBlock = profileBlock,
                                 template = promptTemplate,
                                 directionalStimulus = directionalStimulus,
+                                promptCount = expectedCount,
                             ),
                             model = safeModel,
                             temperature = temperature,
@@ -215,7 +221,7 @@ object OpenAiResponsesService {
                             }
                             emit(OpenRouterStreamingService.StreamChunk.Error(errMsg))
                         } else {
-                            parseGeneratedContent(rawContent, text.lines().size)
+                            parseGeneratedContent(rawContent, expectedCount)
                                 .onSuccess { emit(OpenRouterStreamingService.StreamChunk.Complete(it)) }
                                 .onFailure { emit(OpenRouterStreamingService.StreamChunk.Error(it.message ?: "Parsing failed")) }
                         }

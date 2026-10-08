@@ -63,7 +63,8 @@ class CandidateArchiveDb(context: Context) : SQLiteOpenHelper(context, "candidat
                 firstSeenTimestamp INTEGER,
                 lastSeenTimestamp INTEGER,
                 photosJson TEXT,
-                promptsJson TEXT
+                promptsJson TEXT,
+                lastActiveStatusId INTEGER DEFAULT 0
             )
         """.trimIndent())
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_archived_live ON archived_candidates (isLiveInFeed)")
@@ -99,7 +100,8 @@ class CandidateArchiveDb(context: Context) : SQLiteOpenHelper(context, "candidat
             "isIncomingLike INTEGER DEFAULT 0",
             "incomingComment TEXT DEFAULT ''",
             "incomingLikeType TEXT DEFAULT ''",
-            "incomingTimestamp INTEGER DEFAULT 0"
+            "incomingTimestamp INTEGER DEFAULT 0",
+            "lastActiveStatusId INTEGER DEFAULT 0"
         )
         for (col in columns) {
             try {
@@ -183,6 +185,7 @@ class CandidateArchiveDb(context: Context) : SQLiteOpenHelper(context, "candidat
                         put("lastSeenTimestamp", now)
                         put("photosJson", json.encodeToString(c.photos))
                         put("promptsJson", json.encodeToString(c.prompts))
+                        put("lastActiveStatusId", c.lastActiveStatusId ?: 0)
                     }
 
                     db.insertWithOnConflict("archived_candidates", null, values, SQLiteDatabase.CONFLICT_REPLACE)
@@ -219,7 +222,8 @@ class CandidateArchiveDb(context: Context) : SQLiteOpenHelper(context, "candidat
                        lastSeenTimestamp, photosJson, promptsJson,
                        school, employer, politics, smoking, drinking, marijuana, drugs,
                        kids, familyPlans, pet, zodiac, isNewHere, isYourTypeLately,
-                       isSecondChance, isIncomingLike, incomingComment, incomingLikeType, incomingTimestamp
+                       isSecondChance, isIncomingLike, incomingComment, incomingLikeType, incomingTimestamp,
+                       lastActiveStatusId
                 FROM archived_candidates
                 ORDER BY isLiveInFeed DESC, lastSeenTimestamp DESC
             """.trimIndent(), null).use { c ->
@@ -277,7 +281,8 @@ class CandidateArchiveDb(context: Context) : SQLiteOpenHelper(context, "candidat
                             isIncomingLike = c.getInt(36) == 1,
                             incomingComment = c.getString(37) ?: "",
                             incomingLikeType = c.getString(38) ?: "",
-                            incomingTimestamp = c.getLong(39)
+                            incomingTimestamp = c.getLong(39),
+                            lastActiveStatusId = if (c.isNull(40) || c.getInt(40) == 0) null else c.getInt(40)
                         )
                     )
                 }

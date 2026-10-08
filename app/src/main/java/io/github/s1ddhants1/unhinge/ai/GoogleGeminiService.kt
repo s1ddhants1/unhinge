@@ -48,21 +48,24 @@ object GoogleGeminiService {
         reasoningEffort: String = Consts.DEFAULT_AI_REASONING_EFFORT,
         promptTemplate: String? = null,
         directionalStimulus: String = "",
+        promptCount: Int? = null,
     ): Result<List<String>> =
         withContext(Dispatchers.IO) {
             if (text.isBlank()) return@withContext Result.failure(Exception("Input text is empty"))
+            val expectedCount = promptCount ?: text.lines().size
             val safeModel = sanitizeModelId(model)
             repeat(maxRetries) { attempt ->
                 try {
                     val body =
                         buildGeminiRequest(
-                            system = WingmanPrompts.openerSystemPrompt(text.lines().size, customSystemPrompt),
+                            system = WingmanPrompts.openerSystemPrompt(expectedCount, customSystemPrompt),
                             user = WingmanPrompts.openerUserPrompt(
                                 text = text,
                                 avoidReplies = avoidReplies,
                                 profileBlock = profileBlock,
                                 template = promptTemplate,
                                 directionalStimulus = directionalStimulus,
+                                promptCount = expectedCount,
                             ),
                             model = safeModel,
                             temperature = temperature,
@@ -78,7 +81,7 @@ object GoogleGeminiService {
                             return@withContext Result.failure(Exception(error))
                         }
                         val content = extractGeminiText(responseBody).orEmpty()
-                        return@withContext parseGeneratedContent(content, text.lines().size)
+                        return@withContext parseGeneratedContent(content, expectedCount)
                     }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
@@ -104,25 +107,28 @@ object GoogleGeminiService {
         reasoningEffort: String = Consts.DEFAULT_AI_REASONING_EFFORT,
         promptTemplate: String? = null,
         directionalStimulus: String = "",
+        promptCount: Int? = null,
     ): Flow<OpenRouterStreamingService.StreamChunk> =
         flow {
             if (text.isBlank()) {
                 emit(OpenRouterStreamingService.StreamChunk.Error("Input text is empty"))
                 return@flow
             }
+            val expectedCount = promptCount ?: text.lines().size
             val safeModel = sanitizeModelId(model)
             var lastError = "Max retries exceeded"
             for (attempt in 0 until maxRetries) {
                 try {
                     val body =
                         buildGeminiRequest(
-                            system = WingmanPrompts.openerSystemPrompt(text.lines().size, customSystemPrompt),
+                            system = WingmanPrompts.openerSystemPrompt(expectedCount, customSystemPrompt),
                             user = WingmanPrompts.openerUserPrompt(
                                 text = text,
                                 avoidReplies = avoidReplies,
                                 profileBlock = profileBlock,
                                 template = promptTemplate,
                                 directionalStimulus = directionalStimulus,
+                                promptCount = expectedCount,
                             ),
                             model = safeModel,
                             temperature = temperature,
@@ -166,7 +172,7 @@ object GoogleGeminiService {
                                 }
                             }
                         }
-                        parseGeneratedContent(content.toString(), text.lines().size)
+                        parseGeneratedContent(content.toString(), expectedCount)
                             .onSuccess { emit(OpenRouterStreamingService.StreamChunk.Complete(it)) }
                             .onFailure { emit(OpenRouterStreamingService.StreamChunk.Error(it.message ?: "Parsing failed")) }
                     }

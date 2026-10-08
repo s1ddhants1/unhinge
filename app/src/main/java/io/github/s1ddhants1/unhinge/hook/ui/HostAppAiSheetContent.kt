@@ -118,26 +118,13 @@ private fun launchUnhingeSettings(context: Context) {
 
 private fun openerProfileBlock(candidate: CachedCandidateProfile): String {
     val work = listOf(candidate.jobTitle, candidate.employer).filter { it.isNotBlank() }.joinToString(" at ")
-    val habits = listOf(
-        candidate.smoking.takeIf { it.isNotBlank() }?.let { "Smoking: $it" },
-        candidate.drinking.takeIf { it.isNotBlank() }?.let { "Drinking: $it" },
-        candidate.marijuana.takeIf { it.isNotBlank() }?.let { "Marijuana: $it" },
-    ).filterNotNull().joinToString(", ")
     return listOfNotNull(
         buildString {
             append(candidate.firstName.ifBlank { "Candidate" })
             if (candidate.age > 0) append(", ${candidate.age}")
         }.takeIf { candidate.firstName.isNotBlank() || candidate.age > 0 },
         work.takeIf { it.isNotBlank() }?.let { "Work: $it" },
-        candidate.school.takeIf { it.isNotBlank() }?.let { "School: $it" },
         candidate.location.takeIf { it.isNotBlank() }?.let { "Location: $it" },
-        candidate.hometown.takeIf { it.isNotBlank() }?.let { "Hometown: $it" },
-        candidate.datingIntention.takeIf { it.isNotBlank() }?.let { "Dating intention: $it" },
-        candidate.relationshipType.takeIf { it.isNotBlank() }?.let { "Relationship type: $it" },
-        habits.takeIf { it.isNotBlank() },
-        candidate.pet.takeIf { it.isNotBlank() }?.let { "Pet: $it" },
-        candidate.zodiac.takeIf { it.isNotBlank() }?.let { "Zodiac: $it" },
-        "Just joined Hinge".takeIf { candidate.isNewHere },
     ).joinToString("\n")
 }
 
@@ -614,6 +601,36 @@ fun HostAppAiSheetContent(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
+
+                            val activeStatusId = candidate.lastActiveStatusId
+                            if (activeStatusId != null && activeStatusId > 0) {
+                                val isActiveNow = activeStatusId == 1
+                                Surface(
+                                    color = if (isActiveNow) Color(0xFF1B5E20).copy(alpha = 0.14f) else cardBg,
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        if (isActiveNow) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(6.dp)
+                                                    .background(Color(0xFF2E7D32), CircleShape)
+                                            )
+                                        }
+                                        Text(
+                                            text = if (isActiveNow) "Active now" else "Active today",
+                                            fontFamily = modernEraBold,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = if (isActiveNow) Color(0xFF2E7D32) else textSecondary
+                                        )
+                                    }
+                                }
+                            }
                         }
 
                         val subtitle = listOfNotNull(

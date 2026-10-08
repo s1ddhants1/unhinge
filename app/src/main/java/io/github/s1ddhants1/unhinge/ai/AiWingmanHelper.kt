@@ -343,6 +343,7 @@ object AiWingmanHelper {
                         reasoningEffort = reasoningEffort,
                         promptTemplate = promptTemplate,
                         directionalStimulus = directionalStimulus,
+                        promptCount = nonEmptyEntries.size,
                     ).collect { chunk ->
                         when (chunk) {
                             is OpenRouterStreamingService.StreamChunk.Content -> {
@@ -402,6 +403,7 @@ object AiWingmanHelper {
                                 reasoningEffort = reasoningEffort,
                                 promptTemplate = promptTemplate,
                                 directionalStimulus = directionalStimulus,
+                                promptCount = nonEmptyEntries.size,
                             )
                         } else if (isFallbackWorthy(errorMessage)) {
                             Timber.d("Streaming failed transiently, falling back to non-streaming")
@@ -419,6 +421,7 @@ object AiWingmanHelper {
                                 reasoningEffort = reasoningEffort,
                                 promptTemplate = promptTemplate,
                                 directionalStimulus = directionalStimulus,
+                                promptCount = nonEmptyEntries.size,
                             )
                         } else {
                             Result.failure(Exception(errorMessage))
@@ -444,6 +447,7 @@ object AiWingmanHelper {
                         reasoningEffort = reasoningEffort,
                         promptTemplate = promptTemplate,
                         directionalStimulus = directionalStimulus,
+                        promptCount = nonEmptyEntries.size,
                     )
                     if (initialResult.isFailure) {
                         val errMsg = initialResult.exceptionOrNull()?.message.orEmpty()
@@ -475,6 +479,7 @@ object AiWingmanHelper {
                                 reasoningEffort = reasoningEffort,
                                 promptTemplate = promptTemplate,
                                 directionalStimulus = directionalStimulus,
+                                promptCount = nonEmptyEntries.size,
                             )
                         } else {
                             initialResult
@@ -548,6 +553,7 @@ object AiWingmanHelper {
         reasoningEffort: String = Consts.DEFAULT_AI_REASONING_EFFORT,
         promptTemplate: String? = null,
         directionalStimulus: String = "",
+        promptCount: Int = text.lines().size,
     ): Flow<OpenRouterStreamingService.StreamChunk> =
         when (protocol) {
             LlmProtocol.OpenAiResponses ->
@@ -564,6 +570,7 @@ object AiWingmanHelper {
                     reasoningEffort = reasoningEffort,
                     promptTemplate = promptTemplate,
                     directionalStimulus = directionalStimulus,
+                    promptCount = promptCount,
                 )
             LlmProtocol.AnthropicMessages ->
                 AnthropicMessagesService.streamGeneration(
@@ -579,6 +586,7 @@ object AiWingmanHelper {
                     reasoningEffort = reasoningEffort,
                     promptTemplate = promptTemplate,
                     directionalStimulus = directionalStimulus,
+                    promptCount = promptCount,
                 )
             LlmProtocol.GoogleGemini ->
                 GoogleGeminiService.streamGeneration(
@@ -594,6 +602,7 @@ object AiWingmanHelper {
                     reasoningEffort = reasoningEffort,
                     promptTemplate = promptTemplate,
                     directionalStimulus = directionalStimulus,
+                    promptCount = promptCount,
                 )
             else ->
                 OpenRouterStreamingService.streamGeneration(
@@ -609,6 +618,7 @@ object AiWingmanHelper {
                     reasoningEffort = reasoningEffort,
                     promptTemplate = promptTemplate,
                     directionalStimulus = directionalStimulus,
+                    promptCount = promptCount,
                 )
         }
 
@@ -626,6 +636,7 @@ object AiWingmanHelper {
         reasoningEffort: String = Consts.DEFAULT_AI_REASONING_EFFORT,
         promptTemplate: String? = null,
         directionalStimulus: String = "",
+        promptCount: Int = text.lines().size,
     ): Result<List<String>> =
         when (protocol) {
             LlmProtocol.OpenAiResponses ->
@@ -642,6 +653,7 @@ object AiWingmanHelper {
                     reasoningEffort = reasoningEffort,
                     promptTemplate = promptTemplate,
                     directionalStimulus = directionalStimulus,
+                    promptCount = promptCount,
                 )
             LlmProtocol.AnthropicMessages ->
                 AnthropicMessagesService.generate(
@@ -657,6 +669,7 @@ object AiWingmanHelper {
                     reasoningEffort = reasoningEffort,
                     promptTemplate = promptTemplate,
                     directionalStimulus = directionalStimulus,
+                    promptCount = promptCount,
                 )
             LlmProtocol.GoogleGemini ->
                 GoogleGeminiService.generate(
@@ -672,6 +685,7 @@ object AiWingmanHelper {
                     reasoningEffort = reasoningEffort,
                     promptTemplate = promptTemplate,
                     directionalStimulus = directionalStimulus,
+                    promptCount = promptCount,
                 )
             else ->
                 OpenRouterService.generate(
@@ -687,6 +701,7 @@ object AiWingmanHelper {
                     reasoningEffort = reasoningEffort,
                     promptTemplate = promptTemplate,
                     directionalStimulus = directionalStimulus,
+                    promptCount = promptCount,
                 )
         }
 

@@ -185,8 +185,16 @@ data class CachedCandidateProfile(
     val incomingLikeType: String = "",
     val incomingTimestamp: Long = 0L,
     val firstSeenTimestamp: Long = 0L,
-    val lastSeenTimestamp: Long = 0L
-)
+    val lastSeenTimestamp: Long = 0L,
+    val lastActiveStatusId: Int? = null
+) {
+    val activeStatusText: String
+        get() = when (lastActiveStatusId) {
+            1 -> "Active now"
+            2 -> "Active today"
+            else -> ""
+        }
+}
 
 @Keep
 @Serializable

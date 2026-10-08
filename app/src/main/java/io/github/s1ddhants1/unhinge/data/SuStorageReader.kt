@@ -488,7 +488,8 @@ object SuStorageReader {
                                jobTitleText, datingIntentionText, relationshipTypeText,
                                religionText, ethnicitiesText, selfieVerified, circleMember,
                                educationHistoryText, employmentHistory, politicsText, smoking,
-                               drinking, marijuana, drugs, kids, familyPlans, pet, zodiacSign, didJustJoin
+                               drinking, marijuana, drugs, kids, familyPlans, pet, zodiacSign, didJustJoin,
+                               lastActiveStatusId
                         FROM profiles
                     """.trimIndent(), null).use { c ->
                         while (c.moveToNext()) {
@@ -497,6 +498,7 @@ object SuStorageReader {
                             val incomingInfo = incomingLikesMap[uId]
                             val isIncoming = incomingInfo != null
                             val incomingComment = if (isIncoming) likedContentMap[uId] ?: "" else ""
+                            val activeStatusId = if (c.isNull(25)) null else c.getInt(25)
 
                             candidates.add(
                                 CachedCandidateProfile(
@@ -537,7 +539,8 @@ object SuStorageReader {
                                     isIncomingLike = isIncoming,
                                     incomingComment = incomingComment,
                                     incomingLikeType = incomingInfo?.type ?: "",
-                                    incomingTimestamp = incomingInfo?.timestamp ?: 0L
+                                    incomingTimestamp = incomingInfo?.timestamp ?: 0L,
+                                    lastActiveStatusId = activeStatusId
                                 )
                             )
                         }
