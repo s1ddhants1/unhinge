@@ -46,6 +46,7 @@ object OpenRouterStreamingService {
         structured: Boolean = true,
         reasoningEffort: String = Consts.DEFAULT_AI_REASONING_EFFORT,
         promptTemplate: String? = null,
+        directionalStimulus: String = "",
     ): Flow<StreamChunk> =
         flow {
             if (text.isBlank()) {
@@ -73,6 +74,7 @@ object OpenRouterStreamingService {
                             structured = useStructured,
                             reasoningEffort = reasoningEffort,
                             promptTemplate = promptTemplate,
+                            directionalStimulus = directionalStimulus,
                         )
                     val targetUrl = baseUrl.ifBlank { OpenRouterDefaultBaseUrl }
                     val request =
@@ -148,7 +150,7 @@ object OpenRouterStreamingService {
                             emit(StreamChunk.Error("Model returned an empty response. Retrying with non-streaming..."))
                         } else {
                             parseGeneratedContent(rawContent, text.lines().size)
-                                .onSuccess { emit(StreamChunk.Complete(it)) }
+                                .onSuccess { lines -> emit(StreamChunk.Complete(lines)) }
                                 .onFailure { emit(StreamChunk.Error(it.message ?: "Parsing failed")) }
                         }
                     }

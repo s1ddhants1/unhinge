@@ -61,8 +61,9 @@ object AiWingmanHelper {
         systemPrompt: String,
         temperature: Float,
         topP: Float,
+        directionalStimulus: String = "",
     ): String {
-        return "${text.hashCode()}_${profileBlock.hashCode()}_${systemPrompt.hashCode()}_${temperature}_${topP}"
+        return "${text.hashCode()}_${profileBlock.hashCode()}_${systemPrompt.hashCode()}_${temperature}_${topP}_${directionalStimulus.hashCode()}"
     }
 
     private fun tryParsePartialReplies(content: String, expectedLines: Int): List<String> {
@@ -250,6 +251,7 @@ object AiWingmanHelper {
         temperature: Float = Consts.DEFAULT_AI_TEMPERATURE,
         topP: Float = Consts.DEFAULT_AI_TOP_P,
         reasoningEffort: String = prefs?.aiReasoningEffort ?: Consts.DEFAULT_AI_REASONING_EFFORT,
+        directionalStimulus: String = "",
     ) {
         if (!forceRefresh) {
             generationJob?.cancel()
@@ -276,7 +278,7 @@ object AiWingmanHelper {
                 val (protocol, effectiveBaseUrl, effectiveModel) =
                     resolveEffectiveEndpoint(provider, apiKey, baseUrl, model)
 
-                Timber.d("generateReplies: protocol=${protocol.wireId}, baseUrl=$effectiveBaseUrl, model=$effectiveModel, keyLen=${apiKey.length}, forceRefresh=$forceRefresh")
+                Timber.d("generateReplies: protocol=${protocol.wireId}, baseUrl=$effectiveBaseUrl, model=$effectiveModel, keyLen=${apiKey.length}, forceRefresh=$forceRefresh, vibe=$directionalStimulus")
 
                 if (prompts.isEmpty()) {
                     _status.value = WingmanStatus.Error(safeErrorString(context, R.string.ai_error_no_prompts, "No prompts available"))
@@ -294,13 +296,14 @@ object AiWingmanHelper {
 
                 val fullText = nonEmptyEntries.joinToString("\n") { it.second.text }
 
-                val cacheKey = getCacheKey(fullText, profileBlock, systemPrompt, temperature, topP)
+                val cacheKey = getCacheKey(fullText, profileBlock, systemPrompt, temperature, topP, directionalStimulus)
                 if (!forceRefresh) {
                     val cachedReplies = replyCache[cacheKey]
                     if (cachedReplies != null && cachedReplies.size >= nonEmptyEntries.size) {
                         nonEmptyEntries.forEachIndexed { idx, (_, entry) ->
                             if (idx < cachedReplies.size) {
-                                entry.addReply(cachedReplies[idx], selectNew = true)
+                                val reply = cachedReplies[idx]
+                                entry.addReply(reply, selectNew = true)
                             }
                         }
                         _hasActiveSuggestions.value = true
@@ -326,7 +329,21 @@ object AiWingmanHelper {
                     var errorMessage = ""
                     val contentAccumulator = StringBuilder()
 
-                    streamingGeneration(protocol, fullText, apiKey, effectiveBaseUrl, effectiveModel, systemPrompt, profileBlock, avoidReplies, temperature, topP, reasoningEffort, promptTemplate).collect { chunk ->
+                    streamingGeneration(
+                        protocol = protocol,
+                        text = fullText,
+                        apiKey = apiKey,
+                        baseUrl = effectiveBaseUrl,
+                        model = effectiveModel,
+                        systemPrompt = systemPrompt,
+                        profileBlock = profileBlock,
+                        avoidReplies = avoidReplies,
+                        temperature = temperature,
+                        topP = topP,
+                        reasoningEffort = reasoningEffort,
+                        promptTemplate = promptTemplate,
+                        directionalStimulus = directionalStimulus,
+                    ).collect { chunk ->
                         when (chunk) {
                             is OpenRouterStreamingService.StreamChunk.Content -> {
                                 contentAccumulator.append(chunk.text)
@@ -384,6 +401,7 @@ object AiWingmanHelper {
                                 topP = topP,
                                 reasoningEffort = reasoningEffort,
                                 promptTemplate = promptTemplate,
+                                directionalStimulus = directionalStimulus,
                             )
                         } else if (isFallbackWorthy(errorMessage)) {
                             Timber.d("Streaming failed transiently, falling back to non-streaming")
@@ -400,6 +418,7 @@ object AiWingmanHelper {
                                 topP = topP,
                                 reasoningEffort = reasoningEffort,
                                 promptTemplate = promptTemplate,
+                                directionalStimulus = directionalStimulus,
                             )
                         } else {
                             Result.failure(Exception(errorMessage))
@@ -424,6 +443,7 @@ object AiWingmanHelper {
                         topP = topP,
                         reasoningEffort = reasoningEffort,
                         promptTemplate = promptTemplate,
+                        directionalStimulus = directionalStimulus,
                     )
                     if (initialResult.isFailure) {
                         val errMsg = initialResult.exceptionOrNull()?.message.orEmpty()
@@ -454,6 +474,7 @@ object AiWingmanHelper {
                                 topP = topP,
                                 reasoningEffort = reasoningEffort,
                                 promptTemplate = promptTemplate,
+                                directionalStimulus = directionalStimulus,
                             )
                         } else {
                             initialResult
@@ -467,7 +488,7 @@ object AiWingmanHelper {
                     if (!isCompositionActive) return@onSuccess
 
                     if (!forceRefresh) {
-                        val cacheKey = getCacheKey(fullText, profileBlock, systemPrompt, temperature, topP)
+                        val cacheKey = getCacheKey(fullText, profileBlock, systemPrompt, temperature, topP, directionalStimulus)
                         replyCache[cacheKey] = replies
                     }
 
@@ -526,6 +547,7 @@ object AiWingmanHelper {
         topP: Float,
         reasoningEffort: String = Consts.DEFAULT_AI_REASONING_EFFORT,
         promptTemplate: String? = null,
+        directionalStimulus: String = "",
     ): Flow<OpenRouterStreamingService.StreamChunk> =
         when (protocol) {
             LlmProtocol.OpenAiResponses ->
@@ -541,6 +563,7 @@ object AiWingmanHelper {
                     topP = topP,
                     reasoningEffort = reasoningEffort,
                     promptTemplate = promptTemplate,
+                    directionalStimulus = directionalStimulus,
                 )
             LlmProtocol.AnthropicMessages ->
                 AnthropicMessagesService.streamGeneration(
@@ -555,6 +578,7 @@ object AiWingmanHelper {
                     topP = topP,
                     reasoningEffort = reasoningEffort,
                     promptTemplate = promptTemplate,
+                    directionalStimulus = directionalStimulus,
                 )
             LlmProtocol.GoogleGemini ->
                 GoogleGeminiService.streamGeneration(
@@ -569,6 +593,7 @@ object AiWingmanHelper {
                     topP = topP,
                     reasoningEffort = reasoningEffort,
                     promptTemplate = promptTemplate,
+                    directionalStimulus = directionalStimulus,
                 )
             else ->
                 OpenRouterStreamingService.streamGeneration(
@@ -583,6 +608,7 @@ object AiWingmanHelper {
                     topP = topP,
                     reasoningEffort = reasoningEffort,
                     promptTemplate = promptTemplate,
+                    directionalStimulus = directionalStimulus,
                 )
         }
 
@@ -599,6 +625,7 @@ object AiWingmanHelper {
         topP: Float,
         reasoningEffort: String = Consts.DEFAULT_AI_REASONING_EFFORT,
         promptTemplate: String? = null,
+        directionalStimulus: String = "",
     ): Result<List<String>> =
         when (protocol) {
             LlmProtocol.OpenAiResponses ->
@@ -614,6 +641,7 @@ object AiWingmanHelper {
                     topP = topP,
                     reasoningEffort = reasoningEffort,
                     promptTemplate = promptTemplate,
+                    directionalStimulus = directionalStimulus,
                 )
             LlmProtocol.AnthropicMessages ->
                 AnthropicMessagesService.generate(
@@ -628,6 +656,7 @@ object AiWingmanHelper {
                     topP = topP,
                     reasoningEffort = reasoningEffort,
                     promptTemplate = promptTemplate,
+                    directionalStimulus = directionalStimulus,
                 )
             LlmProtocol.GoogleGemini ->
                 GoogleGeminiService.generate(
@@ -642,6 +671,7 @@ object AiWingmanHelper {
                     topP = topP,
                     reasoningEffort = reasoningEffort,
                     promptTemplate = promptTemplate,
+                    directionalStimulus = directionalStimulus,
                 )
             else ->
                 OpenRouterService.generate(
@@ -656,6 +686,7 @@ object AiWingmanHelper {
                     topP = topP,
                     reasoningEffort = reasoningEffort,
                     promptTemplate = promptTemplate,
+                    directionalStimulus = directionalStimulus,
                 )
         }
 

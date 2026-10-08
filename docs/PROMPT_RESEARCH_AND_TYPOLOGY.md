@@ -205,7 +205,11 @@ Analysis of over 10,000 community-shared Hinge profiles identifies six prevailin
 
 ## 7. Operational Guidelines for Prompt Dynamic Loading
 
-1. **Decouple Template from Logic**: All prompts, archetype definitions, and banned patterns reside in Markdown templates (`prompts/opener_template.md`), served over-the-air and cached in user preferences.
-2. **Enforce Adaptive Energy Matching**: The template must inspect the length and punctuation of the prompt answer, dynamically sizing the opener to mirror the user's investment.
-3. **Ban Sycophancy**: Explicit negative prompt tokens must suppress corporate, HR, and interview clichés (*"heavy lifting"*, *"full time job"*, *"resume"*, *"bet you"*).
-4. **Ground in Concrete Nouns**: Mandate that the model extract the most physical, sensory, or specific noun from the profile card before constructing its hook.
+1. **Decouple Template from Logic**: All prompts, archetype definitions, and banned patterns reside exclusively in Markdown templates (`assets/prompts/opener_template.md`), served over-the-air and cached in user preferences. It is strictly prohibited to hardcode prompting rules or banned patterns in Kotlin code.
+2. **Context Engineering via XML Enclosures**: Wrap all candidate bio extractions in `<candidate_context>` delimiters to protect against prompt injection and enforce strict topical isolation.
+3. **Contrastive Few-Shot Calibration with Principle Rationales**: Every exemplar pairs a failed output (`BAD (Failed Principle: ...)`) with a calibrated human reply (`GOOD (Principle: ...)`), providing explicit causal explanations that generalize across unobserved prompts.
+4. **Interactive Directional Stimulus (DSP)**: Support instant archetype steering via `<directional_stimulus>` tokens driven by interactive in-app chips (`Auto`, `Playful Tease`, `Micro-Debate`, `Chaos Story`, `Collaborative`).
+5. **Reasoning Model (LRM) Compute Scoping**: Directives in the prompt template calibrate internal thinking budgets for reasoning architectures, suppressing over-analysis and prohibiting markdown thought leakage.
+6. **Ground in Concrete Nouns**: Mandate in the template that the model extract the most physical, sensory, or specific noun from the profile card before constructing its hook.
+
+

@@ -52,6 +52,7 @@ object OpenRouterService {
         structured: Boolean = true,
         reasoningEffort: String = Consts.DEFAULT_AI_REASONING_EFFORT,
         promptTemplate: String? = null,
+        directionalStimulus: String = "",
     ): Result<List<String>> =
         withContext(Dispatchers.IO) {
             if (text.isBlank()) return@withContext Result.failure(Exception("Input text is empty"))
@@ -73,6 +74,7 @@ object OpenRouterService {
                             structured = useStructured,
                             reasoningEffort = reasoningEffort,
                             promptTemplate = promptTemplate,
+                            directionalStimulus = directionalStimulus,
                         )
                     val targetUrl = baseUrl.ifBlank { OpenRouterDefaultBaseUrl }
                     val request =
@@ -148,6 +150,7 @@ internal fun buildGenerationRequest(
     structured: Boolean = true,
     reasoningEffort: String = Consts.DEFAULT_AI_REASONING_EFFORT,
     promptTemplate: String? = null,
+    directionalStimulus: String = "",
 ): JsonObject {
     val lineCount = text.lines().size
     val systemPrompt = WingmanPrompts.openerSystemPrompt(lineCount, customSystemPrompt)
@@ -156,6 +159,7 @@ internal fun buildGenerationRequest(
         avoidReplies = avoidReplies,
         profileBlock = profileBlock,
         template = promptTemplate,
+        directionalStimulus = directionalStimulus,
     )
     val safeModel = sanitizeModelId(model)
 

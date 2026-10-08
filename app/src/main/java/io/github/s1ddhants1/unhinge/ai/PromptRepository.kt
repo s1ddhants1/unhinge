@@ -48,10 +48,10 @@ object PromptRepository {
         }
 
         val candidatePaths = listOf(
-            path,
-            "../$path",
             "app/src/main/assets/$path",
             "src/main/assets/$path",
+            path,
+            "../$path",
             "../../$path"
         )
         for (candidate in candidatePaths) {
@@ -76,9 +76,9 @@ object PromptRepository {
         ASSET_SYSTEM_PROMPT_TEMPLATE_PATH ->
             "You are a dating wingman AI assistant for Hinge. Every message must sound like a real, effortless human texting from their couch—never like an AI bot, copywriter, or pickup artist.\n{custom_instructions}\nOutput ONLY a valid JSON object {\"lines\": [...]} with EXACTLY {lineCount} opening replies, one per input prompt."
         ASSET_ASK_AI_TEMPLATE_PATH ->
-            "You are an authentic dating wingman AI assistant for Hinge.\n\nCandidate Profile:\n{profile}\n\n=== EXHAUSTIVE DATING WINGMAN INSTRUCTIONS ===\nYou are an authentic, perceptive dating wingman texting on Hinge. All suggested lines and advice must sound 100% human—effortless, grounded, low-stakes, and completely free of AI copywriter or pickup-artist tropes.\n{custom_instructions}"
+            "You are an authentic dating wingman AI assistant for Hinge.\n\n<candidate_context>\nCandidate Profile:\n{profile}\n</candidate_context>\n\n=== EXHAUSTIVE DATING WINGMAN INSTRUCTIONS ===\nYou are an authentic, perceptive dating wingman texting on Hinge. All suggested lines and advice must sound 100% human—effortless, grounded, low-stakes, and completely free of AI copywriter or pickup-artist tropes.\n{custom_instructions}"
         else ->
-            "Generate opening replies for the following candidate prompts.{avoid}\n\n{profile}Candidate Prompts ({lineCount} items):\n{prompts}\n\nOutput MUST be a JSON object {\"lines\": [...]} with EXACTLY {lineCount} opening replies, one per input prompt."
+            "Generate opening replies for the following candidate prompts.\n\n<candidate_context>\n{profile}Candidate Prompts ({lineCount} items):\n{prompts}\n{avoid}{directional_stimulus}\n</candidate_context>\n\nOutput MUST be a JSON object {\"lines\": [...]} with EXACTLY {lineCount} opening replies, one per input prompt."
     }
 
     fun getEffectiveOpenerTemplate(
@@ -114,6 +114,7 @@ object PromptRepository {
         promptsText: String,
         avoidReplies: List<String> = emptyList(),
         profileBlock: String = "",
+        directionalStimulus: String = "",
     ): String {
         val lineCount = promptsText.lines().size
         val avoid = if (avoidReplies.isNotEmpty()) {
@@ -121,12 +122,16 @@ object PromptRepository {
                 avoidReplies.joinToString("\n") { "- \"$it\"" }
         } else ""
         val profile = profileBlock.takeIf { it.isNotBlank() }?.let { "Profile:\n$it\n\n" } ?: ""
+        val directional = if (directionalStimulus.isNotBlank()) {
+            "\n\n<directional_stimulus>\n$directionalStimulus\n</directional_stimulus>"
+        } else ""
 
         return template
             .replace("{avoid}", avoid)
             .replace("{profile}", profile)
             .replace("{lineCount}", lineCount.toString())
             .replace("{prompts}", promptsText)
+            .replace("{directional_stimulus}", directional)
     }
 
     fun formatOpenerSystemPrompt(

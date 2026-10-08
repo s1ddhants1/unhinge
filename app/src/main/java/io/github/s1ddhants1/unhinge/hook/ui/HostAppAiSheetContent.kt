@@ -226,11 +226,15 @@ fun HostAppAiSheetContent(
     val isApiKeyRequired = AiWingmanHelper.isApiKeyRequired(prefs.aiProvider, prefs.openRouterModel)
     val isAiReady = !isApiKeyRequired || prefs.openRouterApiKey.isNotBlank()
 
+    var selectedVibe by remember { mutableStateOf("Auto") }
+
     fun requestWingmanGeneration(
         targets: List<PromptEntry> = promptEntries,
-        forceRefresh: Boolean = false
+        forceRefresh: Boolean = false,
+        vibe: String = selectedVibe,
     ) {
         if (!isAiReady || targets.isEmpty()) return
+        val directionalStimulus = if (vibe == "Auto") "" else vibe
         AiWingmanHelper.generateReplies(
             prompts = targets,
             apiKey = prefs.openRouterApiKey,
@@ -247,6 +251,7 @@ fun HostAppAiSheetContent(
             temperature = prefs.aiTemperature,
             topP = prefs.aiTopP,
             reasoningEffort = prefs.aiReasoningEffort,
+            directionalStimulus = directionalStimulus,
         )
     }
 
@@ -286,6 +291,7 @@ fun HostAppAiSheetContent(
     val pagerState = rememberPagerState(initialPage = 0) { totalCards }
 
     LaunchedEffect(candidate?.userId) {
+        selectedVibe = "Auto"
         customInteractions.clear()
         if (pagerState.currentPage != 0) {
             pagerState.scrollToPage(0)
@@ -873,6 +879,47 @@ fun HostAppAiSheetContent(
                     }
                 }
             }
+        } else {
+            val vibes = remember {
+                listOf(
+                    "Auto",
+                    "Playful Tease",
+                    "Micro-Debate",
+                    "Chaos Story",
+                    "Collaborative"
+                )
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 18.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                vibes.forEach { vibe ->
+                    val isSelected = selectedVibe == vibe
+                    VibeChip(
+                        label = vibe,
+                        isSelected = isSelected,
+                        selectedBg = actionBtnBg,
+                        selectedText = actionBtnText,
+                        unselectedBg = pillBg,
+                        unselectedBorder = pillBorder,
+                        unselectedText = textSecondary,
+                        font = modernEraMedium,
+                        onClick = {
+                            selectedVibe = vibe
+                            requestWingmanGeneration(
+                                targets = promptEntries,
+                                forceRefresh = true,
+                                vibe = vibe
+                            )
+                        }
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
         }
 
         HorizontalPager(
@@ -1575,6 +1622,35 @@ private fun QuickActionChip(
             fontWeight = FontWeight.Medium,
             color = textColor,
             modifier = Modifier.padding(horizontal = 13.dp, vertical = 6.dp)
+        )
+    }
+}
+
+@Composable
+private fun VibeChip(
+    label: String,
+    isSelected: Boolean,
+    selectedBg: Color,
+    selectedText: Color,
+    unselectedBg: Color,
+    unselectedBorder: Color,
+    unselectedText: Color,
+    font: FontFamily,
+    onClick: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(50),
+        color = if (isSelected) selectedBg else unselectedBg,
+        border = BorderStroke(1.dp, if (isSelected) selectedBg else unselectedBorder),
+        modifier = Modifier.clickable { onClick() }
+    ) {
+        Text(
+            text = label,
+            fontFamily = font,
+            fontSize = 12.sp,
+            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+            color = if (isSelected) selectedText else unselectedText,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
         )
     }
 }

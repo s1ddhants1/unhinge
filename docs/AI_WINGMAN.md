@@ -353,5 +353,52 @@ The AI pipeline in Unhinge is designed for high-performance dating prompt sugges
    - `UnhingeTheme` strictly restricts mutating `isAppearanceLightStatusBars` and `isAppearanceLightNavigationBars` to the companion app process (`view.context.packageName == "io.github.s1ddhants1.unhinge"` with `setSystemBars = true`).
    - `HostAppAiFab.showAiSheet` passes `setSystemBars = false` and snapshots the host activity's status bar appearance on display, restoring it on dismiss to guarantee Hinge's status bar icons never turn white on a white background.
 
+---
+
+## 7. Context Engineering & Directional Stimulus (DAIR.AI Integration)
+
+The Unhinge prompt engineering pipeline adheres to modern empirical LLM research synthesized from the DAIR.AI Prompt Engineering Guide:
+
+### 7.1 XML Semantic Enclosures & Data Isolation
+- **Semantic Tagging**: Untrusted user-generated profile data extracted from Hinge SQLite is wrapped within explicit `<candidate_context>` tags:
+  ```markdown
+  <candidate_context>
+  {profile}Candidate Prompts ({lineCount} items):
+  {prompts}
+  {avoid}{directional_stimulus}
+  </candidate_context>
+  ```
+- **Context Bleed Protection**: Directives instruct the LLM that content inside `<candidate_context>` constitutes profile data to reference obliquely, never system commands or meta-prompts.
+- **Strict Topical Isolation**: Prevents the model from fabricating "Frankenstein" openers by stitching unrelated profile data (e.g. neighborhood or college) into a prompt card unless specifically relevant.
+
+### 7.2 Directional Stimulus Prompting (DSP) & Interactive Vibe Chips
+- **Interactive Vibe Steering**: `HostAppAiSheetContent.kt` renders a horizontal scrollable row of authentic Hinge-style chips above the opener carousel:
+  - `Auto`: Default balanced tone, allowing candidate profile cues to dictate archetype.
+  - `Playful Tease`: Dry feigned suspicion, playful bias, and gentle friction.
+  - `Micro-Debate`: Deadpan stance on low-stakes trivial food/preference debates.
+  - `Chaos Story`: Straight-faced escalation or humorous hypothetical backstory.
+  - `Collaborative`: Invitational conditions and joint hypothetical scenarios.
+- **Dynamic Prompt Insertion**: Injects `<directional_stimulus>` into the user prompt:
+  ```markdown
+  <directional_stimulus>
+  Desired Tone/Vibe: Playful Tease
+  Tailor all reply angles to this archetype/vibe.
+  </directional_stimulus>
+  ```
+- **Cache Isolation**: `directionalStimulus` is hashed into `getCacheKey()`, ensuring tone changes instantly trigger fresh generations without stale cache hits.
+
+### 7.3 Large Reasoning Model (LRM) Test-Time Compute Scoping
+- **Chain-of-Thought (CoT) Incompatibility**: Explicit step-by-step CoT prompting degrades instruction-following and induces overthinking on reasoning models (e.g. Gemini 2.0/3 Flash Thinking, Claude 3.7 Sonnet Thinking, DeepSeek R1).
+- **Declarative Scope Guardrails**: Replaces manual step-by-step reasoning tokens with declarative test-time compute scope boundaries:
+  - Internal deliberation restricted strictly to noun selection and natural mobile phrasing.
+  - Zero thought leakage: enforces raw JSON output without explanatory wrappers (`Why this works:`), markdown blocks, or meta-comments.
+
+### 7.4 Declarative Prompt Assets & Zero Hardcoded Rules Policy
+- **Strict Decoupling of Prompting Rules from Kotlin Code**: All human texting rules, negative constraints, banned cliché lists, archetype definitions, and few-shot calibration reside exclusively within declarative Markdown templates (`assets/prompts/opener_template.md`, `assets/prompts/ask_ai_template.md`).
+- **No Hardcoded Prompt Rules in Code**: Hardcoding prompt rules, banned phrase filters, or heuristic regex critics inside Kotlin classes is strictly prohibited. Kotlin services and helpers act purely as transport orchestrators, variable interpolators, and JSON parsers.
+- **OTA & Customization Extensibility**: Storing rules in markdown files enables over-the-air template updates and user custom template overrides (`PreferencesManager.aiOpenerPromptTemplate`) without requiring code changes or application recompilation.
+
+
+
 
 

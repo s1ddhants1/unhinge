@@ -47,6 +47,7 @@ object GoogleGeminiService {
         topP: Float = Consts.DEFAULT_AI_TOP_P,
         reasoningEffort: String = Consts.DEFAULT_AI_REASONING_EFFORT,
         promptTemplate: String? = null,
+        directionalStimulus: String = "",
     ): Result<List<String>> =
         withContext(Dispatchers.IO) {
             if (text.isBlank()) return@withContext Result.failure(Exception("Input text is empty"))
@@ -56,7 +57,13 @@ object GoogleGeminiService {
                     val body =
                         buildGeminiRequest(
                             system = WingmanPrompts.openerSystemPrompt(text.lines().size, customSystemPrompt),
-                            user = WingmanPrompts.openerUserPrompt(text, avoidReplies, profileBlock, template = promptTemplate),
+                            user = WingmanPrompts.openerUserPrompt(
+                                text = text,
+                                avoidReplies = avoidReplies,
+                                profileBlock = profileBlock,
+                                template = promptTemplate,
+                                directionalStimulus = directionalStimulus,
+                            ),
                             model = safeModel,
                             temperature = temperature,
                             topP = topP,
@@ -96,6 +103,7 @@ object GoogleGeminiService {
         maxRetries: Int = 3,
         reasoningEffort: String = Consts.DEFAULT_AI_REASONING_EFFORT,
         promptTemplate: String? = null,
+        directionalStimulus: String = "",
     ): Flow<OpenRouterStreamingService.StreamChunk> =
         flow {
             if (text.isBlank()) {
@@ -109,7 +117,13 @@ object GoogleGeminiService {
                     val body =
                         buildGeminiRequest(
                             system = WingmanPrompts.openerSystemPrompt(text.lines().size, customSystemPrompt),
-                            user = WingmanPrompts.openerUserPrompt(text, avoidReplies, profileBlock, template = promptTemplate),
+                            user = WingmanPrompts.openerUserPrompt(
+                                text = text,
+                                avoidReplies = avoidReplies,
+                                profileBlock = profileBlock,
+                                template = promptTemplate,
+                                directionalStimulus = directionalStimulus,
+                            ),
                             model = safeModel,
                             temperature = temperature,
                             topP = topP,

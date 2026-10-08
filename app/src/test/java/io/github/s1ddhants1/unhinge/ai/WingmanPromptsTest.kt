@@ -93,4 +93,23 @@ class WingmanPromptsTest {
     fun askAiPromptOmitsCustomBlockWhenBlank() {
         assertFalse(WingmanPrompts.askAiSystemPrompt("Name: Ada", "").contains("Additional System"))
     }
+
+    @Test
+    fun openerUserPromptIncludesDirectionalStimulus() {
+        val user = WingmanPrompts.openerUserPrompt(
+            text = "Q: A",
+            directionalStimulus = "Micro-Debate"
+        )
+        assertTrue(user.contains("<directional_stimulus>"))
+        assertTrue(user.contains("Micro-Debate"))
+    }
+
+    @Test
+    fun openerUserPromptWrapsContextInXmlTags() {
+        val user = WingmanPrompts.openerUserPrompt("Q: A")
+        assertTrue(user.contains("<candidate_context>"))
+        assertTrue(user.contains("</candidate_context>"))
+        assertTrue(user.contains("=== CONTEXT ENGINEERING & DATA ISOLATION DIRECTIVE ==="))
+        assertTrue(user.contains("=== REASONING MODEL (LRM) TEST-TIME COMPUTE & BREVITY DIRECTIVE ==="))
+    }
 }

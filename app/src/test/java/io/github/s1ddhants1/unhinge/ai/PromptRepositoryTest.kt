@@ -47,15 +47,26 @@ class PromptRepositoryTest {
     @Test
     fun substitutesOpenerVariablesAccurately() {
         val formatted = PromptRepository.formatOpenerUserPrompt(
-            template = "Items ({lineCount}):\n{profile}{prompts}\n{avoid}",
+            template = "Items ({lineCount}):\n{profile}{prompts}\n{avoid}{directional_stimulus}",
             promptsText = "1. Prompt A\n2. Prompt B",
             avoidReplies = listOf("Avoid X"),
             profileBlock = "Alice, 25",
+            directionalStimulus = "Playful Tease",
         )
         assertTrue(formatted.contains("Items (2):"))
         assertTrue(formatted.contains("Profile:\nAlice, 25"))
         assertTrue(formatted.contains("1. Prompt A\n2. Prompt B"))
         assertTrue(formatted.contains("- \"Avoid X\""))
+        assertTrue(formatted.contains("<directional_stimulus>"))
+        assertTrue(formatted.contains("Playful Tease"))
+    }
+
+    @Test
+    fun openerTemplateContainsXmlDelimitersAndDirectionalStimulus() {
+        val template = PromptRepository.getEffectiveOpenerTemplate()
+        assertTrue(template.contains("<candidate_context>"))
+        assertTrue(template.contains("</candidate_context>"))
+        assertTrue(template.contains("{directional_stimulus}"))
     }
 
     @Test

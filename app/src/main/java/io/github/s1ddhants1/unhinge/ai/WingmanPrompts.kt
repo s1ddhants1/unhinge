@@ -29,6 +29,7 @@ object WingmanPrompts {
         template: String? = null,
         prefs: PreferencesManager? = null,
         context: Context? = null,
+        directionalStimulus: String = "",
     ): String {
         val effectiveTemplate = template?.takeIf { it.isNotBlank() }
             ?: PromptRepository.getEffectiveOpenerTemplate(prefs, context)
@@ -37,6 +38,7 @@ object WingmanPrompts {
             promptsText = text,
             avoidReplies = avoidReplies,
             profileBlock = profileBlock,
+            directionalStimulus = directionalStimulus,
         )
     }
 
