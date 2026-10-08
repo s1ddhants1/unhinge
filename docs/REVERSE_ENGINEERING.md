@@ -177,6 +177,23 @@ CREATE TABLE impressions (
 );
 ```
 
+#### `discover_filter` Table
+Server-synced Discover filter catalog with per-row paywall gating (verified
+on-device, `co.hinge.app` v10.4.0):
+```sql
+CREATE TABLE `discover_filter` (
+    `id` INTEGER NOT NULL,
+    `filterId` TEXT NOT NULL,
+    `pillType` TEXT NOT NULL,   -- "preference" (free) vs "filter" (gated)
+    `permission` TEXT NOT NULL, -- "" (free) vs "filters_plus" (Hinge+ paywall)
+    PRIMARY KEY(`id`)
+);
+```
+Observed rows: `age` / `height` / `dating_intentions` (free, empty permission);
+`active_today`, `new_here`, `filter_circle_members` (premium, `filters_plus`).
+Free accounts lack `filters_plus` in `default.xml` `USER_PERMISSIONS`, which is
+exactly what `HostActiveFilterHook` injects to unlock Active Today / Active Now.
+
 ---
 
 ## 5. Surveillance Ecosystem & Tracking Footprint

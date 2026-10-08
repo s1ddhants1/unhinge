@@ -232,6 +232,8 @@
     <string name="feednav_section">Feed Navigation &amp; Likes</string>
     <string name="feednav_likes_counter">Available Likes Counter</string>
     <string name="feednav_controls">Feed Navigation Controls</string>
+    <string name="feednav_active_filters">Unlock Active Today / Active Now Filters</string>
+    <string name="feednav_active_filters_desc">Removes the premium paywall on the Active Today and Active Now Discover filters. Requires Hinge restart. While on, filter-related API traffic is logged to logcat (ActiveFilterDiag) to verify the server honors it.</string>
     <string name="backup_section_export">Export Data</string>
     <string name="backup_export_full">Export Complete Backup</string>
     <string name="backup_export_settings">Export Settings</string>

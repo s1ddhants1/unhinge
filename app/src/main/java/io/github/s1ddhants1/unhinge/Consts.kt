@@ -36,6 +36,7 @@ object Consts {
 
     const val PREF_ENABLE_FEED_NAVIGATION = "enable_feed_navigation"
     const val PREF_SHOW_AVAILABLE_LIKES = "show_available_likes"
+    const val PREF_UNLOCK_ACTIVE_FILTERS = "unlock_active_filters"
 
     const val PREF_AI_PROVIDER = "ai_provider"
     const val PREF_OPENROUTER_API_KEY = "openrouter_api_key"

@@ -28,6 +28,7 @@ data class UnhingeSettingsBackup(
     val blockDataTransport: Boolean = true,
     val enableFeedNavigation: Boolean = true,
     val showAvailableLikes: Boolean = true,
+    val unlockActiveFilters: Boolean = false,
     val aiProvider: String = "Zen",
     val openRouterApiKey: String = "",
     val openRouterBaseUrl: String = Consts.ZEN_DEFAULT_BASE_URL,

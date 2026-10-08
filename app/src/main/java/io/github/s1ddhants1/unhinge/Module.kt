@@ -155,6 +155,7 @@ class Module : XposedModule() {
 
         HostFeedNavigationHook.apply(this, null, cl, prefs)
         io.github.s1ddhants1.unhinge.hook.ui.HostUndoHook.apply(this, null, cl, prefs)
+        io.github.s1ddhants1.unhinge.hook.ui.HostActiveFilterHook.apply(this, null, cl, prefs)
 
         attempt<Unit>("hook AccessibilityManager.isEnabled", silent = true) {
             hookFirst(

@@ -67,10 +67,13 @@ object HostAppAiFab {
             try {
                 ensureAccessibilityEnabled(activity)
                 ensureUnlimitedUndos(activity)
+                if (prefs.unlockActiveFilters) {
+                    HostActiveFilterHook.ensureActiveFiltersUnlocked(activity)
+                }
                 prefs.ensureBackupPrefs(activity)
                 activity.window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
 
-                val anyFeatureEnabled = prefs.showHostAppFab || prefs.showAvailableLikes || prefs.enableFeedNavigation
+                val anyFeatureEnabled = prefs.showHostAppFab || prefs.showAvailableLikes || prefs.enableFeedNavigation || prefs.unlockActiveFilters
                 if (!anyFeatureEnabled) {
                     remove(activity)
                     return@runOnUiThread

@@ -266,6 +266,7 @@ class PreferencesManager(
 
     var enableFeedNavigation by booleanPreference(Consts.PREF_ENABLE_FEED_NAVIGATION, true)
     var showAvailableLikes by booleanPreference(Consts.PREF_SHOW_AVAILABLE_LIKES, true)
+    var unlockActiveFilters by booleanPreference(Consts.PREF_UNLOCK_ACTIVE_FILTERS, false)
 
     var aiProvider by stringPreference(Consts.PREF_AI_PROVIDER, "Zen")
     var openRouterApiKey by stringPreference(Consts.PREF_OPENROUTER_API_KEY, "")
@@ -366,6 +367,7 @@ class PreferencesManager(
                 blockDataTransport = localPrefs.getBoolean(Consts.PREF_BLOCK_DATATRANSPORT, blockDataTransport)
                 enableFeedNavigation = localPrefs.getBoolean(Consts.PREF_ENABLE_FEED_NAVIGATION, enableFeedNavigation)
                 showAvailableLikes = localPrefs.getBoolean(Consts.PREF_SHOW_AVAILABLE_LIKES, showAvailableLikes)
+                unlockActiveFilters = localPrefs.getBoolean(Consts.PREF_UNLOCK_ACTIVE_FILTERS, unlockActiveFilters)
                 val providerInStorage = localPrefs.getString(Consts.PREF_AI_PROVIDER, "") ?: ""
                 if (providerInStorage.isNotBlank()) {
                     aiProvider = providerInStorage
@@ -401,6 +403,7 @@ class PreferencesManager(
                         .putBoolean(Consts.PREF_BLOCK_DATATRANSPORT, blockDataTransport)
                         .putBoolean(Consts.PREF_ENABLE_FEED_NAVIGATION, enableFeedNavigation)
                         .putBoolean(Consts.PREF_SHOW_AVAILABLE_LIKES, showAvailableLikes)
+                        .putBoolean(Consts.PREF_UNLOCK_ACTIVE_FILTERS, unlockActiveFilters)
                         .putString(Consts.PREF_AI_PROVIDER, aiProvider)
                         .putString(Consts.PREF_OPENROUTER_API_KEY, openRouterApiKey)
                         .putString(Consts.PREF_OPENROUTER_BASE_URL, openRouterBaseUrl)
@@ -439,6 +442,7 @@ class PreferencesManager(
                                 .putBoolean(Consts.PREF_BLOCK_DATATRANSPORT, blockDataTransport)
                                 .putBoolean(Consts.PREF_ENABLE_FEED_NAVIGATION, enableFeedNavigation)
                                 .putBoolean(Consts.PREF_SHOW_AVAILABLE_LIKES, showAvailableLikes)
+                                .putBoolean(Consts.PREF_UNLOCK_ACTIVE_FILTERS, unlockActiveFilters)
                                 .putString(Consts.PREF_AI_PROVIDER, aiProvider)
                                 .putString(Consts.PREF_OPENROUTER_API_KEY, openRouterApiKey)
                                 .putString(Consts.PREF_OPENROUTER_BASE_URL, openRouterBaseUrl)
@@ -492,6 +496,7 @@ class PreferencesManager(
             blockDataTransport = blockDataTransport,
             enableFeedNavigation = enableFeedNavigation,
             showAvailableLikes = showAvailableLikes,
+            unlockActiveFilters = unlockActiveFilters,
             aiProvider = aiProvider,
             openRouterApiKey = openRouterApiKey,
             openRouterBaseUrl = openRouterBaseUrl,
@@ -527,6 +532,7 @@ class PreferencesManager(
         blockDataTransport = settings.blockDataTransport
         enableFeedNavigation = settings.enableFeedNavigation
         showAvailableLikes = settings.showAvailableLikes
+        unlockActiveFilters = settings.unlockActiveFilters
         aiProvider = settings.aiProvider
         openRouterApiKey = settings.openRouterApiKey
         openRouterBaseUrl = settings.openRouterBaseUrl
