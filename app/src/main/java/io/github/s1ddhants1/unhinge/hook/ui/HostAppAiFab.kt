@@ -345,7 +345,7 @@ object HostAppAiFab {
                     setImageDrawable(ChevronDrawable(iconColor, ChevronDrawable.Direction.LEFT))
                 })
                 setOnClickListener {
-                    if (FeedNavigator.navigateBack(activity)) notifyNavUpdated(activity)
+                    FeedNavigator.navigateBack(activity)
                 }
             }
 
@@ -378,7 +378,7 @@ object HostAppAiFab {
                     setImageDrawable(ChevronDrawable(iconColor, ChevronDrawable.Direction.RIGHT))
                 })
                 setOnClickListener {
-                    if (FeedNavigator.navigateForward(activity)) notifyNavUpdated(activity)
+                    FeedNavigator.navigateForward(activity)
                 }
             }
 
@@ -413,6 +413,9 @@ object HostAppAiFab {
         val rect = passRect ?: findPassButtonBounds(container.rootView)
 
         val hasActiveCandidate = rect != null
+        if (!hasActiveCandidate && FeedNavigator.isNavigated) {
+            FeedNavigator.reset(activity)
+        }
         if (hasActiveCandidate && prefs.enableFeedNavigation) {
             FeedNavigator.refreshTotal(activity)
         }
@@ -559,7 +562,10 @@ object HostAppAiFab {
             val rect = Rect()
             node.getBoundsInScreen(rect)
 
-            if (rect.width() > 0 && rect.height() > 0 && rect.left < 360 && rect.top > 800) {
+            val displayMetrics = android.content.res.Resources.getSystem().displayMetrics
+            val maxLeft = displayMetrics.widthPixels * 0.45f
+            val minTop = displayMetrics.heightPixels * 0.45f
+            if (rect.width() > 0 && rect.height() > 0 && rect.left < maxLeft && rect.top > minTop) {
                 return rect
             }
         }
@@ -604,98 +610,6 @@ object HostAppAiFab {
         }
     }
 
-    fun dispatchPassTap(activity: Activity, onComplete: (() -> Unit)? = null): Boolean {
-        val decor = activity.window?.decorView ?: return false
-        val passBounds = findPassButtonBounds(decor)
-        if (passBounds != null && passBounds.width() > 0 && passBounds.height() > 0) {
-            val passX = passBounds.exactCenterX()
-            val passY = passBounds.exactCenterY()
-            Log.i(Consts.TAG, "dispatchPassTap: tapping dynamic Pass bounds ($passX, $passY)")
-            return dispatchTap(decor, passX, passY, onComplete)
-        }
-
-        val density = activity.resources.displayMetrics.density
-        val (screenWidth, screenHeight) = getWindowDimensions(activity)
-        val bottomNavTop = findBottomNavTop(decor as? ViewGroup, screenHeight)
-            ?: (screenHeight - (76 * density).toInt())
-        val fabSize = (60 * density).toInt()
-        val margin = (20 * density).toInt()
-
-        val passX = margin + fabSize / 2f
-        val passY = bottomNavTop - margin - fabSize / 2f
-        Log.i(Consts.TAG, "dispatchPassTap: tapping fallback coordinates ($passX, $passY)")
-        return dispatchTap(decor, passX, passY, onComplete)
-    }
-
-    internal fun findUndoButtonBounds(rootView: View?): Rect? {
-        if (rootView == null) return null
-        val provider = rootView.accessibilityNodeProvider
-        if (provider != null) {
-            val found = searchForUndoButtonNode(provider, AccessibilityNodeProvider.HOST_VIEW_ID)
-            if (found != null) return found
-        }
-        if (rootView is ViewGroup) {
-            for (i in 0 until rootView.childCount) {
-                val found = findUndoButtonBounds(rootView.getChildAt(i))
-                if (found != null) return found
-            }
-        }
-        return null
-    }
-
-    private fun searchForUndoButtonNode(
-        provider: AccessibilityNodeProvider,
-        virtualId: Int,
-        visited: MutableSet<Int> = mutableSetOf(),
-        depth: Int = 0
-    ): Rect? {
-        if (depth > 40 || !visited.add(virtualId)) return null
-        val node = try {
-            provider.createAccessibilityNodeInfo(virtualId)
-        } catch (_: Throwable) { null } ?: return null
-
-        val desc = node.contentDescription?.toString()?.trim()
-        val text = node.text?.toString()?.trim()
-        val isUndoLabel = (desc != null && (desc.contains("Undo", ignoreCase = true) || desc.contains("Rewind", ignoreCase = true))) ||
-                (text != null && (text.contains("Undo", ignoreCase = true) || text.contains("Rewind", ignoreCase = true)))
-
-        if (isUndoLabel) {
-            val rect = Rect()
-            node.getBoundsInScreen(rect)
-            if (rect.width() > 0 && rect.height() > 0 && rect.top < 800) {
-                return rect
-            }
-        }
-
-        val childCount = node.childCount
-        for (i in 0 until childCount) {
-            val childId = getChildVirtualId(node, i) ?: continue
-            val found = searchForUndoButtonNode(provider, childId, visited, depth + 1)
-            if (found != null) return found
-        }
-        return null
-    }
-
-    fun dispatchUndoTap(activity: Activity, onComplete: (() -> Unit)? = null): Boolean {
-        val decor = activity.window?.decorView ?: return false
-        val undoBounds = findUndoButtonBounds(decor)
-        if (undoBounds != null && undoBounds.width() > 0 && undoBounds.height() > 0) {
-            val undoX = undoBounds.exactCenterX()
-            val undoY = undoBounds.exactCenterY()
-            Log.i(Consts.TAG, "dispatchUndoTap: tapping dynamic Undo bounds ($undoX, $undoY)")
-            return dispatchTap(decor, undoX, undoY, onComplete)
-        }
-
-        val density = activity.resources.displayMetrics.density
-        val (screenWidth, _) = getWindowDimensions(activity)
-        val statusBarHeight = getStatusBarHeight(activity)
-
-        val undoX = screenWidth - (80 * density)
-        val undoY = statusBarHeight + (122 * density)
-        Log.i(Consts.TAG, "dispatchUndoTap: tapping fallback coordinates ($undoX, $undoY)")
-        return dispatchTap(decor, undoX, undoY, onComplete)
-    }
-
     fun ensureUnlimitedUndos(context: Context) {
         attempt("ensure unlimited undos in default prefs", silent = true) {
             val prefs = context.getSharedPreferences("default", Context.MODE_PRIVATE)
@@ -708,24 +622,6 @@ object HostAppAiFab {
                 Log.i(Consts.TAG, "HostAppAiFab: granted undo_skip_replenish_unlimited in default prefs")
             }
         }
-    }
-
-    internal fun dispatchTap(view: View, x: Float, y: Float, onComplete: (() -> Unit)? = null): Boolean {
-        view.post {
-            val downTime = SystemClock.uptimeMillis()
-            val down = MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, x, y, 0)
-            view.dispatchTouchEvent(down)
-            down.recycle()
-
-            view.postDelayed({
-                val upTime = SystemClock.uptimeMillis()
-                val up = MotionEvent.obtain(downTime, upTime, MotionEvent.ACTION_UP, x, y, 0)
-                view.dispatchTouchEvent(up)
-                up.recycle()
-                onComplete?.invoke()
-            }, 50)
-        }
-        return true
     }
 
     private fun getStatusBarHeight(activity: Activity): Int {
@@ -1046,9 +942,8 @@ private fun updateNavCounter(container: View) {
         counterView.text = newText
     }
 
-    val isBusy = FeedNavigator.isReloading
-    val canGoBack = !isBusy && FeedNavigator.currentOffset > 0
-    val canGoForward = !isBusy && ((total < 0) || (total > 1 && FeedNavigator.currentOffset < total - 1))
+    val canGoBack = FeedNavigator.currentOffset > 0
+    val canGoForward = (total < 0) || (total > 1 && FeedNavigator.currentOffset < total - 1)
 
     backBtn?.alpha = if (canGoBack) 1.0f else 0.35f
     backBtn?.isEnabled = canGoBack

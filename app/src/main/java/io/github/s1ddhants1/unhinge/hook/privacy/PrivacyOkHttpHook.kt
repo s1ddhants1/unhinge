@@ -22,10 +22,6 @@ object PrivacyOkHttpHook : HookHandler {
             classLoader, cn, "execute", "http_sync",
             exceptionMode = XposedInterface.ExceptionMode.PASSTHROUGH
         ) { chain ->
-            if (isVirtualNavRequest(chain.thisObject)) {
-                Log.w(Consts.TAG, "Blocked sync virtual navigation request")
-                throw IOException("Unhinge: virtual navigation request dropped")
-            }
             if (!prefs.isEffective(prefs.blockOkHttpTelemetry)) return@hookFirst chain.proceed()
             val host = requestHost(chain.thisObject)
             if (host != null && isTelemetryHost(host)) {
@@ -36,18 +32,6 @@ object PrivacyOkHttpHook : HookHandler {
         }
 
         module.hookFirst(classLoader, cn, "enqueue", "http_async") { chain ->
-            if (isVirtualNavRequest(chain.thisObject)) {
-                Log.w(Consts.TAG, "Blocked async virtual navigation request")
-                try {
-                    val cb = chain.getArg(0)
-                    val callIface = Class.forName("okhttp3.Call", false, chain.thisObject.javaClass.classLoader)
-                    cb?.javaClass?.getMethod("onFailure", callIface, IOException::class.java)
-                        ?.invoke(cb, chain.thisObject, IOException("Unhinge: virtual navigation request dropped"))
-                } catch (t: Throwable) {
-                    Log.w(Consts.TAG, "OkHttp enqueue callback fail: ${t.message}")
-                }
-                return@hookFirst null
-            }
             if (!prefs.isEffective(prefs.blockOkHttpTelemetry)) return@hookFirst chain.proceed()
             val host = requestHost(chain.thisObject)
             if (host != null && isTelemetryHost(host)) {
@@ -69,21 +53,6 @@ object PrivacyOkHttpHook : HookHandler {
     private fun isTelemetryHost(host: String): Boolean {
         val h = host.lowercase()
         return Consts.TELEMETRY_HOST_SUBSTRINGS.any { h.contains(it) }
-    }
-
-    private fun isVirtualNavRequest(realCall: Any?): Boolean {
-        if (!io.github.s1ddhants1.unhinge.hook.ui.FeedNavigator.isVirtualBrowsing &&
-            !io.github.s1ddhants1.unhinge.hook.ui.FeedNavigator.isNavigated) return false
-        if (realCall == null) return false
-        return try {
-            val req = getRequest(realCall) ?: return false
-            val url = req.javaClass.getMethod("url").invoke(req)?.toString() ?: ""
-            url.contains("/ratings", ignoreCase = true) ||
-            url.contains("/rating", ignoreCase = true) ||
-            url.contains("/undo", ignoreCase = true)
-        } catch (_: Throwable) {
-            false
-        }
     }
 
     private fun getRequest(realCall: Any?): Any? {

@@ -140,22 +140,47 @@ class FeedNavigationTest {
     }
 
     @Test
-    fun testVirtualSkipStackOperations() {
+    fun testFeedNavigatorNonDestructiveOffsetTransitions() {
         assertEquals(0, FeedNavigator.currentOffset)
         assertEquals(1, FeedNavigator.displayPosition)
         assertFalse(FeedNavigator.isNavigated)
 
-        FeedNavigator.onVirtualSkipInserted("user_1")
+        // Navigate forward
+        assertTrue(FeedNavigator.navigateForward())
         assertEquals(1, FeedNavigator.currentOffset)
         assertEquals(2, FeedNavigator.displayPosition)
         assertTrue(FeedNavigator.isNavigated)
 
-        FeedNavigator.onVirtualSkipInserted("user_2")
+        // Navigate forward again
+        assertTrue(FeedNavigator.navigateForward())
         assertEquals(2, FeedNavigator.currentOffset)
         assertEquals(3, FeedNavigator.displayPosition)
+        assertTrue(FeedNavigator.isNavigated)
 
-        FeedNavigator.onVirtualSkipInserted("user_2")
-        assertEquals(2, FeedNavigator.currentOffset)
+        // Navigate back
+        assertTrue(FeedNavigator.navigateBack())
+        assertEquals(1, FeedNavigator.currentOffset)
+        assertEquals(2, FeedNavigator.displayPosition)
+        assertTrue(FeedNavigator.isNavigated)
+
+        // Navigate back to origin
+        assertTrue(FeedNavigator.navigateBack())
+        assertEquals(0, FeedNavigator.currentOffset)
+        assertEquals(1, FeedNavigator.displayPosition)
+        assertFalse(FeedNavigator.isNavigated)
+
+        // Underflow prevented
+        assertFalse(FeedNavigator.navigateBack())
+        assertEquals(0, FeedNavigator.currentOffset)
+    }
+
+    @Test
+    fun testFeedNavigatorReset() {
+        FeedNavigator.navigateForward()
+        FeedNavigator.navigateForward()
+        FeedNavigator.navigateForward()
+        assertEquals(3, FeedNavigator.currentOffset)
+        assertTrue(FeedNavigator.isNavigated)
 
         FeedNavigator.reset()
         assertEquals(0, FeedNavigator.currentOffset)
@@ -164,112 +189,11 @@ class FeedNavigationTest {
     }
 
     @Test
-    fun testPendingRatingsColumnParsing() {
-        val sql = "INSERT OR REPLACE INTO `pending_ratings` (`id`,`subjectId`,`sessionId`,`rating`,`origin`,`ratingSource`,`token`,`hasPairing`,`created`,`content`,`initiatedWith`,`topPhotoContentId`,`data`,`sentTime`,`ratingId`,`sortType`,`hcmRunId`,`secondChanceEligible`) VALUES (nullif(?, 0),?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
-        val parenStart = sql.indexOf('(')
-        val parenEnd = sql.indexOf(')', parenStart)
-        val cols = sql.substring(parenStart + 1, parenEnd).split(',').map { it.trim().trim('`', '"', '[', ']', ' ') }
-
-        val ratingSourceIdx = cols.indexOfFirst { it.equals("ratingSource", ignoreCase = true) }
-        val sentTimeIdx = cols.indexOfFirst { it.equals("sentTime", ignoreCase = true) }
-        val subjectIdIdx = cols.indexOfFirst { it.equals("subjectId", ignoreCase = true) }
-
-        assertEquals(5, ratingSourceIdx)
-        assertEquals(13, sentTimeIdx)
-        assertEquals(1, subjectIdIdx)
-    }
-
-    @Test
-    fun testFeedNavigationTargetQueryFilteringWithPendingRatings() {
-        val rawDiscoverQuery = "SELECT userId FROM discover_subject ORDER BY batchId ASC, positionInBatch ASC LIMIT 1"
-        assertTrue(HostFeedNavigationHook.isTargetQuery(rawDiscoverQuery))
-        assertFalse(rawDiscoverQuery.contains("pending_ratings", ignoreCase = true))
-
+    fun testFeedNavigationTargetQueryAllowsPendingRatingsFilter() {
         val filteredQuery = "SELECT userId FROM discover_subject WHERE userId NOT IN (SELECT subjectId FROM pending_ratings WHERE subjectId IS NOT NULL) ORDER BY batchId ASC LIMIT 1"
         assertTrue(HostFeedNavigationHook.isTargetQuery(filteredQuery))
-        assertTrue(filteredQuery.contains("pending_ratings", ignoreCase = true))
-    }
 
-    @Test
-    fun testVirtualSkipStackSequentialOrder() {
-        FeedNavigator.reset()
-        assertEquals(0, FeedNavigator.currentOffset)
-
-        FeedNavigator.onVirtualSkipInserted("user_alpha")
-        assertEquals(1, FeedNavigator.currentOffset)
-        assertEquals(2, FeedNavigator.displayPosition)
-
-        FeedNavigator.onVirtualSkipInserted("user_beta")
-        assertEquals(2, FeedNavigator.currentOffset)
-        assertEquals(3, FeedNavigator.displayPosition)
-
-        FeedNavigator.onVirtualSkipInserted("user_gamma")
-        assertEquals(3, FeedNavigator.currentOffset)
-        assertEquals(4, FeedNavigator.displayPosition)
-
-        FeedNavigator.reset()
-        assertEquals(0, FeedNavigator.currentOffset)
-        assertEquals(1, FeedNavigator.displayPosition)
-        assertFalse(FeedNavigator.isNavigated)
-    }
-
-    @Test
-    fun testConfirmBackNavigationSuccessPopsTop() {
-        FeedNavigator.onVirtualSkipInserted("user_1")
-        FeedNavigator.onVirtualSkipInserted("user_2")
-        assertEquals(2, FeedNavigator.currentOffset)
-
-        assertTrue(FeedNavigator.confirmBackNavigation("user_2", true))
-        assertEquals(1, FeedNavigator.currentOffset)
-        assertEquals(2, FeedNavigator.displayPosition)
-    }
-
-    @Test
-    fun testConfirmBackNavigationFailureKeepsStack() {
-        FeedNavigator.onVirtualSkipInserted("user_1")
-        FeedNavigator.onVirtualSkipInserted("user_2")
-
-        assertFalse(FeedNavigator.confirmBackNavigation("user_2", false))
-        assertEquals(2, FeedNavigator.currentOffset)
-        assertEquals(3, FeedNavigator.displayPosition)
-    }
-
-    @Test
-    fun testConfirmBackNavigationRejectsBlankOrMissing() {
-        assertFalse(FeedNavigator.confirmBackNavigation(null, true))
-        assertFalse(FeedNavigator.confirmBackNavigation("", true))
-        assertFalse(FeedNavigator.confirmBackNavigation("ghost", true))
-        assertEquals(0, FeedNavigator.currentOffset)
-    }
-
-    @Test
-    fun testConfirmBackNavigationDesyncRemovesOccurrence() {
-        FeedNavigator.onVirtualSkipInserted("user_1")
-        FeedNavigator.onVirtualSkipInserted("user_2")
-
-        assertTrue(FeedNavigator.confirmBackNavigation("user_1", true))
-        assertEquals(1, FeedNavigator.currentOffset)
-    }
-
-    @Test
-    fun testSelectUnknownIdReturnsFirstUnknown() {
-        val known = setOf("user_1", "user_2")
-        assertEquals("user_3", FeedNavigator.selectUnknownId(known, listOf("user_2", "user_3", "user_4")))
-    }
-
-    @Test
-    fun testSelectUnknownIdSkipsBlanksAndKnown() {
-        val known = setOf("user_1")
-        assertEquals("user_2", FeedNavigator.selectUnknownId(known, listOf("", "user_1", "user_2")))
-        assertEquals(null, FeedNavigator.selectUnknownId(known, listOf("", "user_1")))
-        assertEquals(null, FeedNavigator.selectUnknownId(known, emptyList()))
-    }
-
-    @Test
-    fun testNavigateWithNullContextTouchesNothing() {
-        assertFalse(FeedNavigator.navigateBack(null))
-        assertFalse(FeedNavigator.navigateForward(null))
-        assertEquals(0, FeedNavigator.currentOffset)
-        assertFalse(FeedNavigator.isNavigated)
+        val modified = HostFeedNavigationHook.injectOffset(filteredQuery, 2)
+        assertEquals("SELECT userId FROM discover_subject WHERE userId NOT IN (SELECT subjectId FROM pending_ratings WHERE subjectId IS NOT NULL) ORDER BY batchId ASC LIMIT 1 OFFSET 2", modified)
     }
 }

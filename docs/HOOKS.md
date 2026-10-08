@@ -129,25 +129,28 @@ This guide documents the technical specifications, target classes, intercepted m
   6. **Contextual Visibility**: Controls automatically switch to `View.GONE` when not on an active candidate profile (Standouts carousel, Matches, Profile tabs) and restore to `View.VISIBLE` on Discover.
   7. **Real-Time Available Likes Extraction (`HostLikesReader`)**: Reads Hinge's live remaining likes (`localAvailableLikes`/`apiAvailableLikes`) and roses (`localAvailableSuperlikes`/`apiAvailableSuperLikes`) directly from Hinge's private SharedPreferences (`default.xml`). Uses a strong-referenced `OnSharedPreferenceChangeListener` to immediately reflect decrements upon sending likes. Injects an authentic pill badge (`TAG_AVAILABLE_LIKES`) docked 6dp above the AI FAB with authentic Hinge vector icons (`HingeIcons`), dynamic warning color tiers, and interactive summary tooltips.
 
-### 2.14 Feed Navigation & Native Rewind/Undo (`HostFeedNavigationHook`)
-- **Target**: `android.app.SharedPreferencesImpl.getStringSet(...)`, `android.database.sqlite.SQLiteDatabase.insertWithOnConflict(...)`, `android.database.sqlite.SQLiteDatabase.rawQueryWithFactory(...)`, and `androidx.room.RoomDatabase`.
-- **State Manager**: `FeedNavigator` (singleton, `ArrayDeque<String>` virtual skip stack, `AtomicInteger` offset, `WeakReference` SQLite and Room InvalidationTracker references, `ThreadLocal` re-entrancy guard).
+### 2.14 Non-Destructive Feed Navigation (`HostFeedNavigationHook`)
+- **Target**: `android.database.sqlite.SQLiteDatabase.rawQueryWithFactory(...)`, `androidx.room.RoomDatabase`, and `android.app.SharedPreferencesImpl.getStringSet(...)`.
+- **State Manager**: `FeedNavigator` (singleton, in-memory `AtomicInteger navOffset`, `WeakReference` SQLite and Room InvalidationTracker references, `ThreadLocal` re-entrancy guard).
 - **Interception Mechanism**:
-  1. **Unlimited Native Rewind Entitlement Injection**:
+  1. **Non-Destructive In-Memory Paging (Zero Touch Synthetic Motion, Zero Profile Rejection)**:
+     - **Forward (`navigateForward`)**: Increments in-memory `navOffset`, signals Room's `InvalidationTracker` (`notifyObserversByTableNames("discover_subject")` and `refreshVersionsAsync()`), and touches `discover_subject` in SQLite. Hinge's Room query re-runs with `LIMIT ... OFFSET $navOffset`, advancing the candidate view in-place.
+     - **Back (`navigateBack`)**: Decrements in-memory `navOffset` and signals Room's `InvalidationTracker`, returning to previous candidates seamlessly.
+     - **Zero writes to `pending_ratings`**: Candidates are never marked as skipped or rejected during browsing. Multi-step forward and backward browsing (e.g. forward 10, back 10) works without limitation.
+  2. **Query Offset Injection**:
+     - Hooks `rawQueryWithFactory` on `SQLiteDatabase`.
+     - Detects Hinge's candidate queries matching `discover_subject` (including queries filtering `NOT IN pending_ratings`).
+     - Appends or modifies query suffix with `LIMIT ... OFFSET $navOffset`.
+  3. **Native Action Compatibility**:
+     - When the user decides to like or pass the active candidate at `navOffset > 0`, Hinge natively executes its rating pipeline.
+     - `HostFeedNavigationHook` detects the insert on `pending_ratings` and invokes `FeedNavigator.onRatingInserted()`, clamping `navOffset` to prevent out-of-bounds queue indices.
+     - Legitimate user ratings flow directly through OkHttp to Hinge's servers without network interception drops.
+  4. **Unlimited Native Rewind Entitlement Injection**:
      - Hooks `SharedPreferencesImpl.getStringSet` for key `"USER_PERMISSIONS"` and injects `"undo_skip_replenish_unlimited"`.
-     - `HostAppAiFab.ensureUnlimitedUndos(activity)` proactively persists `"undo_skip_replenish_unlimited"` into Hinge's `default.xml` user permissions set.
-     - Completely bypasses Hinge's Hinge+ upgrade paywall modal when the native Undo button is tapped, directly activating Hinge's internal `UndoLastDiscoverSkipUseCaseImpl`.
-  2. **In-Place Native UI Dispatch (Zero Tab Flipping)**:
-     - **Forward (`navigateForward`)**: Dispatches a synthetic motion tap (`dispatchPassTap`) directly on Hinge's native Pass ("X") button. Hinge's native swipe animation executes, Room updates, and Compose StateFlow advances to the next candidate in place. After the tap completes, the stack is verified to have grown; if the insert bypassed the tracked paths, the newest unsynced `pending_ratings` skip row is recovered into `virtualSkipStack` so every forward step stays returnable.
-     - **Back (`navigateBack`)**: Peeks (never pops) the top of `virtualSkipStack`, then dispatches a synthetic motion tap (`dispatchUndoTap`) directly on Hinge's native Undo/Rewind button (located via Compose `AccessibilityNodeProvider` or calibrated top-right action bar coordinates). `UndoLastDiscoverSkipUseCaseImpl` executes natively, popping the last skip from `pending_ratings` and animating the previous candidate back into view. The stack entry is popped only after a DB read-back confirms the target's `pending_ratings` row is gone; on verification failure the entry is kept so the candidate is never stranded behind an untracked skip.
-  3. **Domain & Entity Schema Compatibility**:
-     - Hooks `SQLiteDatabase.insertWithOnConflict` on `pending_ratings`: tracks `subjectId` into `FeedNavigator.virtualSkipStack` without altering `ratingSource` (kept as `"discover"`) or `sentTime` (kept as `null`).
-     - Preserving native column values ensures Hinge's strict `UndoLastDiscoverSkipUseCaseImpl` validation (`origin == "discover"`, `ratingSource == "discover"`, `rating == "skip"`, `sentTime == null`) succeeds seamlessly without throwing `SkipFailedException` ("SentAlready").
-  4. **Virtual Navigation Network Isolation (`PrivacyOkHttpHook`)**:
-     - When `FeedNavigator.isVirtualBrowsing` (or `offset > 0`), `PrivacyOkHttpHook` intercepts and drops outgoing OkHttp requests to `/ratings`, `/rating`, and `/undo`.
-     - Guarantees zero virtual skips or undos reach Hinge's backend servers while browsing.
-  5. **Session Reset & Cleanup (`reset`, `cleanOrphanedVirtualRatings`)**:
-     - On user reset, tab change, or activity pause, `FeedNavigator.reset()` purges all recorded virtual skip IDs from `pending_ratings` (`subjectId = ? AND rating = 'skip'`) and notifies Room's `InvalidationTracker`. Orphan cleanup deletes the same tracked IDs, never a synthetic `ratingSource` marker.
+     - `HostAppAiFab.ensureUnlimitedUndos(activity)` persists `"undo_skip_replenish_unlimited"` into Hinge's `default.xml` user permissions set.
+     - `HostUndoHook` sets `localAvailableSkipUndos` and `apiAvailableSkipUndos` to 999.
+  5. **Session Reset & Screen Lifecycle**:
+     - On user reset, tab change away from Discover, or activity pause, `FeedNavigator.reset()` resets `navOffset` back to 0 and re-triggers Room invalidation.
   6. **Unified Navigation Capsule**: Centered horizontally between the native Pass button and AI FAB (`[ ‹  pos / total  › ]`, 36dp height, 18dp corner radius, 12dp elevation). Chevrons dynamically enable/disable based on navigation position. Suppressed on Standouts and non-candidate screens.
 - **Framework Stability**: Targets public Android framework contracts (`SharedPreferencesImpl`, `SQLiteDatabase`, `SQLiteOpenHelper`) and public AndroidX Room interfaces (`RoomDatabase`, `InvalidationTracker`) exclusively — no obfuscated R8 class names. Resilient across all Hinge updates.
 

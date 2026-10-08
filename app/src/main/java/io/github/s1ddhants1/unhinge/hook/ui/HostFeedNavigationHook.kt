@@ -56,7 +56,7 @@ object HostFeedNavigationHook : HookHandler {
                     }
 
                     val sql = chain.args.getOrNull(1) as? String
-                    if (sql != null && isTargetQuery(sql) && !sql.contains("pending_ratings", ignoreCase = true)) {
+                    if (sql != null && isTargetQuery(sql)) {
                         val offset = FeedNavigator.currentOffset
                         if (offset > 0) {
                             val modified = injectOffset(sql, offset)
@@ -126,33 +126,13 @@ object HostFeedNavigationHook : HookHandler {
                         FeedNavigator.setDbReference(db)
                     }
 
-                    var preSubjectId: String? = null
                     val isPendingRatings = sql != null && sql.contains("pending_ratings", ignoreCase = true) &&
                             (sql.startsWith("INSERT", ignoreCase = true) || sql.contains("INSERT", ignoreCase = true))
 
-                    if (isPendingRatings && FeedNavigator.isVirtualBrowsing) {
-                        val bindArgs = getStatementBindArgs(stmt)
-                        if (bindArgs != null) {
-                            val parenStart = sql.indexOf('(')
-                            val parenEnd = sql.indexOf(')', parenStart)
-                            if (parenStart != -1 && parenEnd != -1) {
-                                val cols = sql.substring(parenStart + 1, parenEnd)
-                                    .split(',')
-                                    .map { it.trim().trim('`', '"', '[', ']', ' ') }
-
-                                val subjectIdIdx = cols.indexOfFirst { it.equals("subjectId", ignoreCase = true) }
-                                if (subjectIdIdx in bindArgs.indices) {
-                                    preSubjectId = bindArgs[subjectIdIdx] as? String
-                                }
-                            }
-                        }
-                    }
-
                     val result = chain.proceed()
 
-                    if (isPendingRatings && FeedNavigator.isVirtualBrowsing) {
-                        val rowId = (result as? Long) ?: -1L
-                        handleVirtualRatingInserted(db, rowId, preSubjectId)
+                    if (isPendingRatings) {
+                        FeedNavigator.onRatingInserted()
                     }
 
                     result
@@ -171,32 +151,13 @@ object HostFeedNavigationHook : HookHandler {
                         FeedNavigator.setDbReference(db)
                     }
 
-                    var preSubjectId: String? = null
                     val isPendingRatings = sql != null && sql.contains("pending_ratings", ignoreCase = true) &&
                             (sql.startsWith("INSERT", ignoreCase = true) || sql.contains("INSERT", ignoreCase = true))
 
-                    if (isPendingRatings && FeedNavigator.isVirtualBrowsing) {
-                        val bindArgs = getStatementBindArgs(stmt)
-                        if (bindArgs != null) {
-                            val parenStart = sql.indexOf('(')
-                            val parenEnd = sql.indexOf(')', parenStart)
-                            if (parenStart != -1 && parenEnd != -1) {
-                                val cols = sql.substring(parenStart + 1, parenEnd)
-                                    .split(',')
-                                    .map { it.trim().trim('`', '"', '[', ']', ' ') }
-
-                                val subjectIdIdx = cols.indexOfFirst { it.equals("subjectId", ignoreCase = true) }
-                                if (subjectIdIdx in bindArgs.indices) {
-                                    preSubjectId = bindArgs[subjectIdIdx] as? String
-                                }
-                            }
-                        }
-                    }
-
                     val result = chain.proceed()
 
-                    if (isPendingRatings && FeedNavigator.isVirtualBrowsing) {
-                        handleVirtualRatingInserted(db, -1L, preSubjectId)
+                    if (isPendingRatings) {
+                        FeedNavigator.onRatingInserted()
                     }
 
                     result
@@ -219,16 +180,13 @@ object HostFeedNavigationHook : HookHandler {
                     }
 
                     val table = chain.args.getOrNull(0) as? String
-                    if (table == "pending_ratings" && FeedNavigator.isVirtualBrowsing) {
-                        val values = chain.args.getOrNull(2) as? android.content.ContentValues
-                        val subjectId = values?.getAsString("subjectId")
-                        if (!subjectId.isNullOrBlank()) {
-                            FeedNavigator.onVirtualSkipInserted(subjectId)
-                            Log.i(Consts.TAG, "HostFeedNavigationHook: intercepted pending_ratings insert for $subjectId (recorded virtual skip)")
-                        }
+                    val result = chain.proceed()
+
+                    if (table == "pending_ratings") {
+                        FeedNavigator.onRatingInserted()
                     }
 
-                    chain.proceed()
+                    result
                 }
         }
 
@@ -275,12 +233,6 @@ object HostFeedNavigationHook : HookHandler {
         }
     }
 
-    private val bindArgsField: Field? by lazy {
-        attempt("find SQLiteProgram.mBindArgs field", silent = true) {
-            findProgramField("mBindArgs")
-        }
-    }
-
     private fun findProgramField(name: String): Field? {
         var c: Class<*>? = SQLiteStatement::class.java
         while (c != null) {
@@ -308,40 +260,6 @@ object HostFeedNavigationHook : HookHandler {
     fun getStatementDb(stmt: Any?): SQLiteDatabase? {
         if (stmt == null) return null
         return (dbField?.get(stmt) as? SQLiteDatabase) ?: FeedNavigator.getWritableDb()
-    }
-
-    @Suppress("UNCHECKED_CAST")
-    fun getStatementBindArgs(stmt: Any?): Array<Any?>? {
-        if (stmt == null) return null
-        return bindArgsField?.get(stmt) as? Array<Any?>
-    }
-
-    private fun handleVirtualRatingInserted(db: SQLiteDatabase?, rowId: Long, preSubjectId: String?) {
-        val subjectId = preSubjectId ?: run {
-            val actualDb = db ?: FeedNavigator.getWritableDb()
-            if (actualDb != null && actualDb.isOpen) {
-                FeedNavigator.isInternalQuery.set(true)
-                try {
-                    val query = if (rowId > 0) {
-                        "SELECT subjectId FROM pending_ratings WHERE rowid = ?"
-                    } else {
-                        "SELECT subjectId FROM pending_ratings ORDER BY id DESC LIMIT 1"
-                    }
-                    val args = if (rowId > 0) arrayOf(rowId.toString()) else null
-                    actualDb.rawQuery(query, args).use { c ->
-                        if (c.moveToFirst()) c.getString(0) else null
-                    }
-                } catch (_: Exception) { null }
-                finally {
-                    FeedNavigator.isInternalQuery.set(false)
-                }
-            } else null
-        }
-
-        if (!subjectId.isNullOrBlank()) {
-            FeedNavigator.onVirtualSkipInserted(subjectId)
-            Log.i(Consts.TAG, "HostFeedNavigationHook: virtual skip successfully recorded for subjectId=$subjectId (rowId=$rowId)")
-        }
     }
 
     fun isTargetQuery(sql: String): Boolean {
