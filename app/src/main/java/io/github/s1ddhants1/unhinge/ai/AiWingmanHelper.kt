@@ -3,6 +3,7 @@ package io.github.s1ddhants1.unhinge.ai
 import android.content.Context
 import io.github.s1ddhants1.unhinge.Consts
 import io.github.s1ddhants1.unhinge.R
+import io.github.s1ddhants1.unhinge.model.ChatMessageRecord
 import io.github.s1ddhants1.unhinge.util.PreferencesManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -532,6 +533,177 @@ object AiWingmanHelper {
                 if (e !is kotlinx.coroutines.CancellationException && isCompositionActive) {
                     val errorMessage = e.message ?: safeErrorString(context, R.string.ai_error_generation_failed, "Generation failed")
                     _status.value = WingmanStatus.Error(errorMessage)
+                }
+            } finally {
+                prompts.forEach { it.isGeneratingFlow.value = false }
+            }
+        }
+    }
+
+    fun formatConversationHistory(matchName: String, messages: List<ChatMessageRecord>): String {
+        if (messages.isEmpty()) return "No messages sent yet. (Fresh match!)"
+        val displayName = matchName.ifBlank { "Match" }
+        return messages.takeLast(15).joinToString("\n") { msg ->
+            val sender = if (msg.sentBySubject) displayName else "You"
+            val content = when {
+                msg.isVoiceNote && msg.voiceTranscript.isNotBlank() -> "[Voice note: \"${msg.voiceTranscript}\"]"
+                msg.isVoiceNote -> "[Sent a voice note]"
+                else -> msg.body
+            }
+            "$sender: $content"
+        }
+    }
+
+    fun generateChatReplies(
+        matchName: String,
+        profileBlock: String,
+        conversationHistory: List<ChatMessageRecord>,
+        prompts: List<PromptEntry>,
+        apiKey: String,
+        baseUrl: String,
+        model: String,
+        scope: CoroutineScope,
+        context: Context,
+        prefs: PreferencesManager? = null,
+        provider: String = "OpenRouter",
+        useStreaming: Boolean = true,
+        forceRefresh: Boolean = false,
+        temperature: Float = Consts.DEFAULT_AI_TEMPERATURE,
+        topP: Float = Consts.DEFAULT_AI_TOP_P,
+        reasoningEffort: String = prefs?.aiReasoningEffort ?: Consts.DEFAULT_AI_REASONING_EFFORT,
+        directionalStimulus: String = "",
+    ) {
+        if (!forceRefresh) {
+            generationJob?.cancel()
+        }
+        _status.value = WingmanStatus.Generating
+
+        prompts.forEach { it.isGeneratingFlow.value = true }
+        if (!forceRefresh) {
+            prompts.forEach { it.suggestedReplyFlow.value = null }
+        }
+
+        generationJob = scope.launch(Dispatchers.IO) {
+            try {
+                if (isApiKeyRequired(provider, model) && apiKey.isBlank()) {
+                    val err = if (provider.equals("Zen", ignoreCase = true)) {
+                        safeErrorString(context, R.string.ai_error_zen_paid_key_required, "An API key is required for paid Zen models. Switch to a free model or set an API key in Settings.")
+                    } else {
+                        safeErrorString(context, R.string.ai_error_api_key_required, "API key is required")
+                    }
+                    _status.value = WingmanStatus.Error(err)
+                    return@launch
+                }
+
+                val (protocol, effectiveBaseUrl, effectiveModel) =
+                    resolveEffectiveEndpoint(provider, apiKey, baseUrl, model)
+
+                val historyText = formatConversationHistory(matchName, conversationHistory)
+                val cacheKey = getCacheKey("chat_${matchName}_${historyText.hashCode()}", profileBlock, directionalStimulus, temperature, topP)
+
+                if (!forceRefresh) {
+                    val cachedReplies = replyCache[cacheKey]
+                    if (cachedReplies != null && cachedReplies.size >= prompts.size) {
+                        prompts.forEachIndexed { idx, entry ->
+                            if (idx < cachedReplies.size) {
+                                entry.addReply(cachedReplies[idx], selectNew = true)
+                            }
+                        }
+                        _hasActiveSuggestions.value = true
+                        _status.value = WingmanStatus.Success
+
+                        delay(3000)
+                        if (_status.value is WingmanStatus.Success && isCompositionActive) {
+                            _status.value = WingmanStatus.Idle
+                        }
+                        return@launch
+                    }
+                } else {
+                    replyCache.remove(cacheKey)
+                }
+
+                val avoidReplies = prompts.flatMap { it.repliesFlow.value }
+                val systemPrompt = WingmanPrompts.chatReplySystemPrompt(
+                    custom = prefs?.aiCustomSystemPrompt.orEmpty(),
+                    prefs = prefs,
+                    context = context
+                )
+                val userPrompt = WingmanPrompts.chatReplyUserPrompt(
+                    matchName = matchName,
+                    conversationHistoryText = historyText,
+                    profileBlock = profileBlock,
+                    avoidReplies = avoidReplies,
+                    prefs = prefs,
+                    context = context,
+                    directionalStimulus = directionalStimulus,
+                    replyCount = prompts.size
+                )
+
+                val contentAccumulator = StringBuilder()
+                var hasError = false
+                var errorMessage = ""
+
+                streamCustomChat(
+                    userPrompt = userPrompt,
+                    systemPrompt = systemPrompt,
+                    apiKey = apiKey,
+                    baseUrl = effectiveBaseUrl,
+                    model = effectiveModel,
+                    provider = provider,
+                    temperature = temperature,
+                    topP = topP,
+                    reasoningEffort = reasoningEffort,
+                ).collect { chunk ->
+                    when (chunk) {
+                        is OpenRouterStreamingService.ChatStreamChunk.Content -> {
+                            contentAccumulator.append(chunk.text)
+                            val partialResult = tryParsePartialReplies(contentAccumulator.toString(), prompts.size)
+                            if (partialResult.isNotEmpty()) {
+                                partialResult.forEachIndexed { idx, reply ->
+                                    if (idx < prompts.size && reply.isNotBlank()) {
+                                        prompts[idx].suggestedReplyFlow.value = reply
+                                    }
+                                }
+                                _status.value = WingmanStatus.Generating
+                            }
+                        }
+                        is OpenRouterStreamingService.ChatStreamChunk.Complete -> {
+                            // Handled after flow collects
+                        }
+                        is OpenRouterStreamingService.ChatStreamChunk.Error -> {
+                            hasError = true
+                            errorMessage = chunk.message
+                        }
+                    }
+                }
+
+                val finalFullText = contentAccumulator.toString()
+                val parsedReplies = tryParsePartialReplies(finalFullText, prompts.size)
+
+                if (parsedReplies.isNotEmpty() && !hasError) {
+                    parsedReplies.forEachIndexed { idx, reply ->
+                        if (idx < prompts.size) {
+                            prompts[idx].addReply(reply, selectNew = true)
+                        }
+                    }
+                    replyCache[cacheKey] = parsedReplies
+                    _hasActiveSuggestions.value = true
+                    _status.value = WingmanStatus.Success
+
+                    delay(3000)
+                    if (_status.value is WingmanStatus.Success && isCompositionActive) {
+                        _status.value = WingmanStatus.Idle
+                    }
+                } else if (hasError) {
+                    if (!isCompositionActive) return@launch
+                    _status.value = WingmanStatus.Error(errorMessage)
+                } else {
+                    _status.value = WingmanStatus.Error("Failed to parse reply suggestions")
+                }
+            } catch (e: Exception) {
+                if (e !is kotlinx.coroutines.CancellationException && isCompositionActive) {
+                    val msg = e.message ?: safeErrorString(context, R.string.ai_error_generation_failed, "Generation failed")
+                    _status.value = WingmanStatus.Error(msg)
                 }
             } finally {
                 prompts.forEach { it.isGeneratingFlow.value = false }

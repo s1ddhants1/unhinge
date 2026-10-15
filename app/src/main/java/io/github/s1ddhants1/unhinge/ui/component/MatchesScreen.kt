@@ -39,23 +39,33 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil3.compose.SubcomposeAsyncImage
+import io.github.s1ddhants1.unhinge.data.HostCandidateReader
+import io.github.s1ddhants1.unhinge.hook.ui.HostAppAiSheetContent
+import io.github.s1ddhants1.unhinge.model.CachedCandidateProfile
 import io.github.s1ddhants1.unhinge.model.ChatMessageRecord
 import io.github.s1ddhants1.unhinge.model.MatchRecord
 import io.github.s1ddhants1.unhinge.ui.theme.AccentGold
 import io.github.s1ddhants1.unhinge.ui.theme.AccentSuccess
+import io.github.s1ddhants1.unhinge.util.PreferencesManager
 import java.text.SimpleDateFormat
 import java.util.*
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MatchesScreen(
     matches: List<MatchRecord>,
+    prefs: PreferencesManager? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
+    val resolvedPrefs = remember(prefs, context) {
+        prefs ?: PreferencesManager(context.getSharedPreferences("unhinge_prefs", Context.MODE_PRIVATE))
+    }
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var selectedFilter by rememberSaveable { mutableStateOf("All") }
     var activeChatSubjectId by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedAiMatch by remember { mutableStateOf<MatchRecord?>(null) }
 
     fun copy(label: String, text: String) {
         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -214,6 +224,9 @@ fun MatchesScreen(
                         onOpenChat = {
                             activeChatSubjectId = match.subjectId
                         },
+                        onOpenAiWingman = {
+                            selectedAiMatch = match
+                        },
                         onCopyId = { copy("User ID", match.subjectId) }
                     )
                 }
@@ -225,8 +238,53 @@ fun MatchesScreen(
         ChatTranscriptDialog(
             match = activeChatMatch,
             onDismiss = { activeChatSubjectId = null },
+            onOpenAiWingman = { selectedAiMatch = it },
             onCopy = { label, text -> copy(label, text) }
         )
+    }
+
+    if (selectedAiMatch != null) {
+        val chatMatch = selectedAiMatch!!
+        val chatContext = remember(chatMatch) {
+            val lastMsg = chatMatch.messages.lastOrNull() ?: if (chatMatch.lastMessageText.isNotBlank()) {
+                ChatMessageRecord(
+                    subjectId = chatMatch.subjectId,
+                    body = chatMatch.lastMessageText,
+                    createdTimestamp = chatMatch.lastMessageTimestamp,
+                    sentBySubject = chatMatch.lastMessageSentBySubject
+                )
+            } else null
+            val isTurn = !chatMatch.chatEnded && (chatMatch.lastMessageSentBySubject || chatMatch.messages.isEmpty())
+            val candidate = CachedCandidateProfile(
+                userId = chatMatch.subjectId,
+                firstName = chatMatch.firstName,
+                age = chatMatch.age,
+                jobTitle = chatMatch.jobTitle,
+                photos = if (chatMatch.photoUrl.isNotBlank()) listOf(chatMatch.photoUrl) else emptyList()
+            )
+            HostCandidateReader.MatchChatContext(
+                candidate = candidate,
+                match = chatMatch,
+                messages = chatMatch.messages,
+                lastMessage = lastMsg,
+                isMyTurn = isTurn,
+                draftMessage = chatMatch.draftMessage
+            )
+        }
+
+        AppBottomSheet(
+            onDismissRequest = { selectedAiMatch = null }
+        ) {
+            HostAppAiSheetContent(
+                prefs = resolvedPrefs,
+                onDismiss = { selectedAiMatch = null },
+                showDragHandle = false,
+                standalone = false,
+                isChatMode = true,
+                initialChatContext = chatContext,
+                hostActivity = null
+            )
+        }
     }
 }
 
@@ -289,6 +347,7 @@ private fun KpiItem(title: String, value: String, icon: ImageVector) {
 private fun MatchCard(
     match: MatchRecord,
     onOpenChat: () -> Unit,
+    onOpenAiWingman: () -> Unit,
     onCopyId: () -> Unit
 ) {
     UnhingeDoubleBezelCard(
@@ -488,13 +547,29 @@ private fun MatchCard(
                     color = MaterialTheme.colorScheme.outline,
                     modifier = Modifier.clickable { onCopyId() }
                 )
-                TextButton(
-                    onClick = onOpenChat,
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text(stringResource(R.string.action_view_transcript), style = MaterialTheme.typography.labelMedium)
+                    IconButton(
+                        onClick = onOpenAiWingman,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.AutoAwesome,
+                            contentDescription = "AI Wingman",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(17.dp)
+                        )
+                    }
+                    TextButton(
+                        onClick = onOpenChat,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp)
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text(stringResource(R.string.action_view_transcript), style = MaterialTheme.typography.labelMedium)
+                    }
                 }
             }
         }
@@ -505,6 +580,7 @@ private fun MatchCard(
 private fun ChatTranscriptDialog(
     match: MatchRecord,
     onDismiss: () -> Unit,
+    onOpenAiWingman: (MatchRecord) -> Unit,
     onCopy: (String, String) -> Unit
 ) {
     Dialog(
@@ -528,7 +604,7 @@ private fun ChatTranscriptDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = match.firstName.ifBlank { stringResource(R.string.match_fallback_name) },
                             style = MaterialTheme.typography.titleMedium,
@@ -540,25 +616,50 @@ private fun ChatTranscriptDialog(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = stringResource(R.string.action_close))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilledTonalButton(
+                            onClick = { onOpenAiWingman(match) },
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            shape = RoundedCornerShape(50)
+                        ) {
+                            Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("AI Wingman", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                        }
+                        IconButton(onClick = onDismiss) {
+                            Icon(Icons.Default.Close, contentDescription = stringResource(R.string.action_close))
+                        }
                     }
                 }
 
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
 
                 if (match.messages.isEmpty()) {
-                    Box(
+                    Column(
                         modifier = Modifier
                             .weight(1f)
-                            .fillMaxWidth(),
-                        contentAlignment = Alignment.Center
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
                     ) {
                         Text(
                             text = stringResource(R.string.match_empty_chat),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        Spacer(Modifier.height(16.dp))
+                        OutlinedButton(
+                            onClick = { onOpenAiWingman(match) },
+                            shape = RoundedCornerShape(50)
+                        ) {
+                            Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Suggest replies", style = MaterialTheme.typography.labelMedium)
+                        }
                     }
                 } else {
                     LazyColumn(

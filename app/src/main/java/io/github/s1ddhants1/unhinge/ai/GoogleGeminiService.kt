@@ -293,22 +293,24 @@ object GoogleGeminiService {
         generateUrl(baseUrl, model).replace(":generateContent", ":streamGenerateContent")
 
     private fun buildPost(url: String, apiKey: String, json: String, model: String = ""): Request =
-        Request
-            .Builder()
-            .url(url)
-            .apply {
-                if (ZenRouter.isZenUrl(url)) {
-                    ZenRouter.injectZenHeaders(this, apiKey, model)
-                } else {
-                    if (apiKey.isNotBlank()) {
-                        addHeader("Authorization", "Bearer ${apiKey.trim()}")
+        ZenRouter.normalizeBaseUrl(url).let { targetUrl ->
+            Request
+                .Builder()
+                .url(targetUrl)
+                .apply {
+                    if (ZenRouter.isZenUrl(targetUrl)) {
+                        ZenRouter.injectZenHeaders(this, apiKey, model)
+                    } else {
+                        if (apiKey.isNotBlank()) {
+                            addHeader("Authorization", "Bearer ${apiKey.trim()}")
+                        }
+                        addHeader("HTTP-Referer", "https://github.com/s1ddhants1/unhinge")
+                        addHeader("X-Title", "Unhinge")
                     }
-                    addHeader("HTTP-Referer", "https://github.com/s1ddhants1/unhinge")
-                    addHeader("X-Title", "Unhinge")
-                }
-            }.addHeader("Content-Type", "application/json")
-            .post(json.toRequestBody(jsonMediaType))
-            .build()
+                }.addHeader("Content-Type", "application/json")
+                .post(json.toRequestBody(jsonMediaType))
+                .build()
+        }
 }
 
 internal fun buildGeminiRequest(

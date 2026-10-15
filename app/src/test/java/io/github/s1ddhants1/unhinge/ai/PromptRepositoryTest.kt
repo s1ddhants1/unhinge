@@ -175,4 +175,45 @@ class PromptRepositoryTest {
         )
         assertEquals("MY CUSTOM OPENER TEMPLATE: Testing 123", formatted)
     }
+
+    @Test
+    fun loadsChatReplyTemplateDynamically() {
+        val template = PromptRepository.getEffectiveChatReplyTemplate()
+        assertTrue(template.isNotBlank())
+        assertTrue(template.contains("{conversation_history}"))
+        assertTrue(template.contains("{replyCount}"))
+        assertTrue(template.contains("{profile}"))
+        assertTrue(template.contains("{avoid}"))
+        assertTrue(template.contains("Playful Tease", ignoreCase = true))
+        assertTrue(template.contains("Date Pitch", ignoreCase = true))
+        assertTrue(template.contains("Witty Callback", ignoreCase = true))
+        assertTrue(template.contains("Casual", ignoreCase = true))
+    }
+
+    @Test
+    fun substitutesChatReplyVariablesAccurately() {
+        val formatted = PromptRepository.formatChatReplyUserPrompt(
+            template = "Lines: {replyCount}\n{profile}\nMatch: {match_name}\nHistory:\n{conversation_history}\n{avoid}",
+            matchName = "Alex",
+            conversationHistoryText = "Alex: Hey\nYou: What's up?",
+            profileBlock = "Alex, 28",
+            avoidReplies = listOf("Avoid this cliché"),
+            replyCount = 4,
+        )
+        assertTrue(formatted.contains("Lines: 4"))
+        assertTrue(formatted.contains("Alex, 28"))
+        assertTrue(formatted.contains("Match: Alex"))
+        assertTrue(formatted.contains("Alex: Hey\nYou: What's up?"))
+        assertTrue(formatted.contains("- \"Avoid this cliché\""))
+    }
+
+    @Test
+    fun substitutesChatReplySystemPromptAccurately() {
+        val formatted = PromptRepository.formatChatReplySystemPrompt(
+            customInstructions = "Keep replies snappy.",
+        )
+        assertTrue(formatted.contains("dating wingman AI assistant for Hinge"))
+        assertTrue(formatted.contains("Keep replies snappy."))
+    }
 }
+

@@ -112,4 +112,34 @@ class WingmanPromptsTest {
         assertTrue(user.contains("=== CONTEXT ENGINEERING & DATA ISOLATION DIRECTIVE ==="))
         assertTrue(user.contains("=== REASONING MODEL (LRM) TEST-TIME COMPUTE & BREVITY DIRECTIVE ==="))
     }
+
+    @Test
+    fun chatReplySystemPromptContainsRequiredConstraints() {
+        val prompt = WingmanPrompts.chatReplySystemPrompt(custom = "Be brief")
+        assertTrue(prompt.contains("dating wingman AI assistant for Hinge"))
+        assertTrue(prompt.contains("Be brief"))
+    }
+
+    @Test
+    fun chatReplyUserPromptFormatsChatContextAndAvoidList() {
+        val userPrompt = WingmanPrompts.chatReplyUserPrompt(
+            matchName = "Taylor",
+            conversationHistoryText = "Taylor: Coffee tomorrow?\nYou: Which spot?",
+            profileBlock = "Taylor, 26",
+            avoidReplies = listOf("Sounds like a plan"),
+            replyCount = 4,
+        )
+        assertTrue(userPrompt.contains("<match_context>"))
+        assertTrue(userPrompt.contains("Match: Taylor"))
+        assertTrue(userPrompt.contains("Taylor, 26"))
+        assertTrue(userPrompt.contains("<conversation_history>"))
+        assertTrue(userPrompt.contains("Taylor: Coffee tomorrow?"))
+        assertTrue(userPrompt.contains("- \"Sounds like a plan\""))
+        assertTrue(userPrompt.contains("1. Playful Tease / Banter"))
+        assertTrue(userPrompt.contains("2. Date Pitch / Move to Meet"))
+        assertTrue(userPrompt.contains("3. Witty Callback / Story"))
+        assertTrue(userPrompt.contains("4. Casual / Low-Key"))
+    }
 }
+
+

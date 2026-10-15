@@ -266,12 +266,13 @@ object AnthropicMessagesService {
             emit(OpenRouterStreamingService.ChatStreamChunk.Error(lastError))
         }.flowOn(Dispatchers.IO)
 
-    private fun buildPost(url: String, apiKey: String, json: String, model: String = ""): Request =
-        Request
+    private fun buildPost(url: String, apiKey: String, json: String, model: String = ""): Request {
+        val targetUrl = ZenRouter.normalizeBaseUrl(url)
+        return Request
             .Builder()
-            .url(url)
+            .url(targetUrl)
             .apply {
-                if (ZenRouter.isZenUrl(url)) {
+                if (ZenRouter.isZenUrl(targetUrl)) {
                     ZenRouter.injectZenHeaders(this, apiKey, model)
                     if (!ZenRouter.isFreeModel(model) && apiKey.isNotBlank()) {
                         addHeader("x-api-key", apiKey.trim())
@@ -288,6 +289,7 @@ object AnthropicMessagesService {
             .addHeader("anthropic-version", "2023-06-01")
             .post(json.toRequestBody(jsonMediaType))
             .build()
+    }
 }
 
 internal fun buildMessagesRequest(

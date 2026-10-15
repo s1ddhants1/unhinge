@@ -57,7 +57,7 @@ object OpenAiResponsesService {
             if (text.isBlank()) return@withContext Result.failure(Exception("Input text is empty"))
             val expectedCount = promptCount ?: text.lines().size
             val safeModel = ZenRouter.normalizeModelId(model)
-            val effectiveBaseUrl = baseUrl.ifBlank { ZenResponsesDefaultBaseUrl }
+            val effectiveBaseUrl = ZenRouter.normalizeBaseUrl(baseUrl.ifBlank { ZenResponsesDefaultBaseUrl })
             val isZen = ZenRouter.isZenUrl(effectiveBaseUrl)
             val isFree = isZen && ZenRouter.isFreeModel(safeModel)
             repeat(maxRetries) { attempt ->
@@ -157,7 +157,7 @@ object OpenAiResponsesService {
             }
             val expectedCount = promptCount ?: text.lines().size
             val safeModel = ZenRouter.normalizeModelId(model)
-            val effectiveBaseUrl = baseUrl.ifBlank { ZenResponsesDefaultBaseUrl }
+            val effectiveBaseUrl = ZenRouter.normalizeBaseUrl(baseUrl.ifBlank { ZenResponsesDefaultBaseUrl })
             var lastError = "Max retries exceeded"
             for (attempt in 0 until maxRetries) {
                 try {
@@ -263,7 +263,7 @@ object OpenAiResponsesService {
                 return@flow
             }
             val effectiveModel = ZenRouter.normalizeModelId(model).ifBlank { Consts.ZEN_DEFAULT_MODEL }
-            val effectiveBaseUrl = baseUrl.ifBlank { ZenResponsesDefaultBaseUrl }
+            val effectiveBaseUrl = ZenRouter.normalizeBaseUrl(baseUrl.ifBlank { ZenResponsesDefaultBaseUrl })
             var lastError = "Max retries exceeded"
             for (attempt in 0 until maxRetries) {
                 try {
@@ -336,12 +336,13 @@ object OpenAiResponsesService {
         json: String,
         model: String = "",
         sessionId: String = ZenRouter.generateSessionId(),
-    ): Request =
-        Request
+    ): Request {
+        val targetUrl = ZenRouter.normalizeBaseUrl(url)
+        return Request
             .Builder()
-            .url(url)
+            .url(targetUrl)
             .apply {
-                if (ZenRouter.isZenUrl(url)) {
+                if (ZenRouter.isZenUrl(targetUrl)) {
                     ZenRouter.injectZenHeaders(this, apiKey, model, sessionId)
                 } else {
                     if (apiKey.isNotBlank()) {
@@ -353,6 +354,7 @@ object OpenAiResponsesService {
             }.addHeader("Content-Type", "application/json")
             .post(json.toRequestBody(jsonMediaType))
             .build()
+    }
 }
 
 internal fun buildResponsesRequest(

@@ -7,6 +7,8 @@ import android.util.Log
 import io.github.s1ddhants1.unhinge.Consts
 import io.github.s1ddhants1.unhinge.model.CachedCandidateProfile
 import io.github.s1ddhants1.unhinge.model.CandidatePromptItem
+import io.github.s1ddhants1.unhinge.model.ChatMessageRecord
+import io.github.s1ddhants1.unhinge.model.MatchRecord
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -223,12 +225,22 @@ object HostCandidateReader {
         DISCOVER,
         STANDOUTS,
         LIKES_YOU,
+        MATCH_CHAT,
         UNKNOWN
     }
 
     data class ScreenClues(
         val visibleTexts: Set<String> = emptySet(),
         val activeContext: ScreenContext = ScreenContext.UNKNOWN
+    )
+
+    data class MatchChatContext(
+        val candidate: CachedCandidateProfile,
+        val match: MatchRecord,
+        val messages: List<ChatMessageRecord>,
+        val lastMessage: ChatMessageRecord?,
+        val isMyTurn: Boolean,
+        val draftMessage: String = "",
     )
 
     suspend fun readTargetCandidate(
@@ -360,6 +372,7 @@ object HostCandidateReader {
             ScreenContext.LIKES_YOU -> {
                 if (candidate.isIncomingLike) score += 100
             }
+            ScreenContext.MATCH_CHAT -> {}
             ScreenContext.UNKNOWN -> {}
         }
 
@@ -568,5 +581,285 @@ object HostCandidateReader {
         }
 
         return null
+    }
+
+    suspend fun readCurrentMatchChat(
+        context: Context,
+        screenClues: ScreenClues? = null
+    ): MatchChatContext? = withContext(Dispatchers.IO) {
+        readCurrentMatchChatSync(context, screenClues)
+    }
+
+    fun readCurrentMatchChatSync(
+        context: Context,
+        screenClues: ScreenClues? = null
+    ): MatchChatContext? {
+        val dbFile = context.getDatabasePath("db")
+        val targetPath = if (dbFile.exists()) dbFile.absolutePath else "/data/data/co.hinge.app/databases/db"
+        if (!File(targetPath).exists()) {
+            Log.w(Consts.TAG, "HostCandidateReader: Hinge DB does not exist at $targetPath")
+            return null
+        }
+
+        try {
+            SQLiteDatabase.openDatabase(targetPath, null, SQLiteDatabase.OPEN_READONLY).use { db ->
+                data class MatchCandidate(
+                    val subjectId: String,
+                    val firstName: String,
+                    val reciprocatedMatch: Long,
+                    val lastMessageTime: Long,
+                    val lastMessageBody: String,
+                )
+
+                val matchCandidates = mutableListOf<MatchCandidate>()
+                val query = """
+                    SELECT m.subjectId, p.firstName, m.reciprocatedMatch,
+                           (SELECT MAX(created) FROM chat_messages WHERE subjectId = m.subjectId),
+                           (SELECT body FROM chat_messages WHERE subjectId = m.subjectId ORDER BY created DESC LIMIT 1)
+                    FROM matches m
+                    LEFT JOIN profiles p ON m.subjectId = p.userId
+                """.trimIndent()
+
+                db.rawQuery(query, null).use { c ->
+                    while (c.moveToNext()) {
+                        val sId = c.getString(0) ?: continue
+                        val fName = c.getString(1) ?: ""
+                        val recip = c.getLong(2)
+                        val lastMsgTime = if (c.isNull(3)) 0L else c.getLong(3)
+                        val lastMsgBody = c.getString(4) ?: ""
+                        matchCandidates.add(MatchCandidate(sId, fName, recip, lastMsgTime, lastMsgBody))
+                    }
+                }
+
+                if (matchCandidates.isEmpty()) {
+                    Log.d(Consts.TAG, "HostCandidateReader: No matches in database")
+                    return null
+                }
+
+                var targetSubjectId: String? = null
+                if (screenClues != null && screenClues.visibleTexts.isNotEmpty()) {
+                    val normalizedTexts = screenClues.visibleTexts.map { it.trim().lowercase() }
+                    val nameMatches = matchCandidates.filter { m ->
+                        val nameLower = m.firstName.trim().lowercase()
+                        nameLower.isNotBlank() && (
+                            normalizedTexts.any {
+                                it == nameLower ||
+                                it.startsWith("$nameLower,") ||
+                                it.startsWith("$nameLower ") ||
+                                it.contains("$nameLower:")
+                            }
+                        )
+                    }
+
+                    if (nameMatches.size == 1) {
+                        targetSubjectId = nameMatches.first().subjectId
+                        Log.i(Consts.TAG, "HostCandidateReader: Match resolved via screen name: ${nameMatches.first().firstName} ($targetSubjectId)")
+                    } else if (nameMatches.size > 1) {
+                        val withMsgMatch = nameMatches.firstOrNull { m ->
+                            m.lastMessageBody.isNotBlank() && normalizedTexts.any { it.contains(m.lastMessageBody.lowercase()) }
+                        }
+                        targetSubjectId = withMsgMatch?.subjectId ?: nameMatches.maxByOrNull { maxOf(it.lastMessageTime, it.reciprocatedMatch) }?.subjectId
+                    } else {
+                        val msgMatch = matchCandidates.firstOrNull { m ->
+                            m.lastMessageBody.isNotBlank() && normalizedTexts.any { it.contains(m.lastMessageBody.lowercase()) }
+                        }
+                        if (msgMatch != null) {
+                            targetSubjectId = msgMatch.subjectId
+                            Log.i(Consts.TAG, "HostCandidateReader: Match resolved via message text: ${msgMatch.firstName} ($targetSubjectId)")
+                        }
+                    }
+                }
+
+                if (targetSubjectId == null) {
+                    targetSubjectId = matchCandidates.maxByOrNull { maxOf(it.lastMessageTime, it.reciprocatedMatch) }?.subjectId
+                    Log.d(Consts.TAG, "HostCandidateReader: Defaulting to latest active match: $targetSubjectId")
+                }
+
+                if (targetSubjectId == null) return null
+                return readMatchChatInternal(db, targetSubjectId)
+            }
+        } catch (e: Exception) {
+            Log.e(Consts.TAG, "HostCandidateReader: Error reading current match chat: ${e.message}", e)
+            return null
+        }
+    }
+
+    suspend fun readMatchChat(
+        context: Context,
+        subjectId: String
+    ): MatchChatContext? = withContext(Dispatchers.IO) {
+        readMatchChatSync(context, subjectId)
+    }
+
+    fun readMatchChatSync(context: Context, subjectId: String): MatchChatContext? {
+        val dbFile = context.getDatabasePath("db")
+        val targetPath = if (dbFile.exists()) dbFile.absolutePath else "/data/data/co.hinge.app/databases/db"
+        if (!File(targetPath).exists()) return null
+
+        return try {
+            SQLiteDatabase.openDatabase(targetPath, null, SQLiteDatabase.OPEN_READONLY).use { db ->
+                readMatchChatInternal(db, subjectId)
+            }
+        } catch (e: Exception) {
+            Log.e(Consts.TAG, "HostCandidateReader: Error reading match chat for $subjectId: ${e.message}", e)
+            null
+        }
+    }
+
+    private fun readMatchChatInternal(db: SQLiteDatabase, targetId: String): MatchChatContext? {
+        val transcriptsMap = mutableMapOf<String, String>()
+        try {
+            db.rawQuery("SELECT messageId, transcript FROM chat_voice_note_audio_transcript", null).use { c ->
+                while (c.moveToNext()) {
+                    val mId = c.getString(0) ?: continue
+                    val t = c.getString(1) ?: ""
+                    if (t.isNotBlank()) transcriptsMap[mId] = t
+                }
+            }
+        } catch (_: Exception) {}
+
+        val messages = mutableListOf<ChatMessageRecord>()
+        try {
+            db.rawQuery(
+                """
+                SELECT localId, subjectId, body, created, sentBySubject, unread,
+                       subjectReactions, playerReactions, voiceNoteData
+                FROM chat_messages
+                WHERE subjectId = ?
+                ORDER BY created ASC
+                """.trimIndent(),
+                arrayOf(targetId)
+            ).use { c ->
+                while (c.moveToNext()) {
+                    val mId = c.getString(0) ?: continue
+                    val sId = c.getString(1) ?: continue
+                    val body = c.getString(2) ?: ""
+                    val created = c.getLong(3)
+                    val sentBySub = c.getInt(4) == 1
+                    val unread = c.getInt(5) == 1
+                    val sReactions = c.getString(6) ?: ""
+                    val pReactions = c.getString(7) ?: ""
+                    val voiceData = c.getString(8) ?: ""
+                    val hasVoice = voiceData.isNotBlank()
+                    val reactions = when {
+                        sReactions.isNotBlank() && pReactions.isNotBlank() -> "$sReactions | $pReactions"
+                        sReactions.isNotBlank() -> sReactions
+                        else -> pReactions
+                    }
+                    val transcript = transcriptsMap[mId] ?: ""
+
+                    messages.add(
+                        ChatMessageRecord(
+                            localId = mId,
+                            subjectId = sId,
+                            body = body,
+                            createdTimestamp = created,
+                            sentBySubject = sentBySub,
+                            unread = unread,
+                            reactions = reactions,
+                            isVoiceNote = hasVoice,
+                            voiceTranscript = transcript
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(Consts.TAG, "HostCandidateReader: Error reading chat_messages for $targetId: ${e.message}", e)
+        }
+
+        var draft = ""
+        try {
+            db.rawQuery("SELECT body FROM draft_messages WHERE subjectId = ?", arrayOf(targetId)).use { c ->
+                if (c.moveToFirst()) {
+                    draft = c.getString(0) ?: ""
+                }
+            }
+        } catch (_: Exception) {}
+
+        var matchRecord: MatchRecord? = null
+        try {
+            db.rawQuery(
+                """
+                SELECT m.subjectId, m.playerInitiated, m.reciprocatedMatch, m.initiatedMatch,
+                       m.initiatedWith, m.originatedFromPriorityLike, m.phoneNumberExchanged,
+                       m.socialMediaExchanged, m.replyNudgeDaysSinceSubjectMessage,
+                       m.isHidden, m.chatEnded, m.chatEndedByMe,
+                       p.firstName, p.age, p.jobTitleText
+                FROM matches m
+                LEFT JOIN profiles p ON m.subjectId = p.userId
+                WHERE m.subjectId = ?
+                """.trimIndent(),
+                arrayOf(targetId)
+            ).use { c ->
+                if (c.moveToFirst()) {
+                    val sId = c.getString(0) ?: targetId
+                    val pInitiated = c.getInt(1) == 1
+                    val reciprocated = c.getLong(2)
+                    val initiated = c.getLong(3)
+                    val initWith = c.getString(4) ?: ""
+                    val priorityLike = c.getInt(5) == 1
+                    val phoneEx = c.getInt(6) == 1
+                    val socialEx = c.getInt(7) == 1
+                    val replyNudge = c.getInt(8)
+                    val isHidden = c.getInt(9) == 1
+                    val chatEnded = c.getInt(10) == 1
+                    val chatEndedByMe = c.getInt(11) == 1
+                    val fName = c.getString(12) ?: ""
+                    val age = c.getInt(13)
+                    val job = c.getString(14) ?: ""
+
+                    val lastMsg = messages.lastOrNull()
+
+                    matchRecord = MatchRecord(
+                        subjectId = sId,
+                        firstName = fName,
+                        photoUrl = "",
+                        age = age,
+                        jobTitle = job,
+                        playerInitiated = pInitiated,
+                        reciprocatedTimestamp = reciprocated,
+                        initiatedTimestamp = initiated,
+                        initiatedWith = initWith,
+                        originatedFromPriorityLike = priorityLike,
+                        phoneNumberExchanged = phoneEx,
+                        socialMediaExchanged = socialEx,
+                        replyNudgeDays = replyNudge,
+                        isHidden = isHidden,
+                        chatEnded = chatEnded,
+                        chatEndedByMe = chatEndedByMe,
+                        draftMessage = draft,
+                        lastMessageText = lastMsg?.body ?: "",
+                        lastMessageTimestamp = lastMsg?.createdTimestamp ?: 0L,
+                        lastMessageSentBySubject = lastMsg?.sentBySubject ?: false,
+                        messageCount = messages.size,
+                        messages = messages
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(Consts.TAG, "HostCandidateReader: Error reading matches for $targetId: ${e.message}", e)
+        }
+
+        val candidate = readSingleProfile(db, targetId) ?: CachedCandidateProfile(
+            userId = targetId,
+            firstName = matchRecord?.firstName ?: ""
+        )
+
+        val lastMsg = messages.lastOrNull()
+        val isMyTurn = lastMsg == null || lastMsg.sentBySubject
+
+        return MatchChatContext(
+            candidate = candidate,
+            match = matchRecord ?: MatchRecord(
+                subjectId = targetId,
+                firstName = candidate.firstName,
+                messages = messages,
+                messageCount = messages.size
+            ),
+            messages = messages,
+            lastMessage = lastMsg,
+            isMyTurn = isMyTurn,
+            draftMessage = draft
+        )
     }
 }

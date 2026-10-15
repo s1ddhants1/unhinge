@@ -79,7 +79,7 @@ object OpenRouterStreamingService {
                             directionalStimulus = directionalStimulus,
                             promptCount = expectedCount,
                         )
-                    val targetUrl = baseUrl.ifBlank { OpenRouterDefaultBaseUrl }
+                    val targetUrl = ZenRouter.normalizeBaseUrl(baseUrl.ifBlank { OpenRouterDefaultBaseUrl })
                     val request =
                         Request
                             .Builder()
@@ -238,7 +238,7 @@ object OpenRouterStreamingService {
                         }
                     }
 
-                    val targetUrl = baseUrl.ifBlank { OpenRouterDefaultBaseUrl }
+                    val targetUrl = ZenRouter.normalizeBaseUrl(baseUrl.ifBlank { OpenRouterDefaultBaseUrl })
                     val request =
                         Request
                             .Builder()

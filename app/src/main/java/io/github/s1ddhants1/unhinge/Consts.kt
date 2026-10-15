@@ -61,7 +61,7 @@ object Consts {
     const val OPENROUTER_DEFAULT_MODEL = "inception/mercury-2.5-preview"
 
     const val LEGACY_OPENROUTER_DEFAULT_MODEL = "google/gemini-2.5-flash-lite"
-    const val ZEN_DEFAULT_BASE_URL = "https://opencode.ai/zen/v1/chat/completions"
+    const val ZEN_DEFAULT_BASE_URL = "https://opencode.ai/inference/v1/chat/completions"
     const val ZEN_DEFAULT_MODEL = "space-bunny-free"
     const val DEFAULT_THEME_COLOR = 0xFFED5564L
     const val DEFAULT_AI_TEMPERATURE = 0.85f

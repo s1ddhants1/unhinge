@@ -59,7 +59,7 @@ jobs:
             echo "has_keystore=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Sign APK
+      - name: Sign APK (Custom Keystore)
         if: steps.check_keystore.outputs.has_keystore == 'true'
         uses: ilharp/sign-android-release@v2.0.0
         with:
@@ -70,6 +70,52 @@ jobs:
           keyPassword: ${{ secrets.KEY_PASSWORD }}
           buildToolsVersion: 36.0.0
 
+      - name: Restore Nightly Fallback Keystore
+        if: steps.check_keystore.outputs.has_keystore != 'true'
+        id: fallback_keystore_cache
+        uses: actions/cache/restore@v6
+        with:
+          path: app/build/keystore/nightly-fallback.keystore
+          key: unhinge-nightly-fallback-keystore
+
+      - name: Generate Fallback Keystore if not cached
+        if: steps.check_keystore.outputs.has_keystore != 'true' && steps.fallback_keystore_cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p app/build/keystore
+          keytool -genkeypair -v \
+            -keystore app/build/keystore/nightly-fallback.keystore \
+            -storepass android \
+            -alias unhingenightly \
+            -keypass android \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=Unhinge Nightly,O=Unhinge,C=US"
+
+      - name: Save Fallback Keystore to cache
+        if: steps.check_keystore.outputs.has_keystore != 'true' && steps.fallback_keystore_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: app/build/keystore/nightly-fallback.keystore
+          key: unhinge-nightly-fallback-keystore
+
+      - name: Prepare Fallback Keystore Base64
+        if: steps.check_keystore.outputs.has_keystore != 'true'
+        run: |
+          FALLBACK_B64=$(base64 -w 0 app/build/keystore/nightly-fallback.keystore)
+          echo "FALLBACK_KEYSTORE_B64=$FALLBACK_B64" >> $GITHUB_ENV
+
+      - name: Sign APK (Fallback Nightly Keystore)
+        if: steps.check_keystore.outputs.has_keystore != 'true'
+        uses: ilharp/sign-android-release@v2.0.0
+        with:
+          releaseDir: app/build/outputs/apk/release/
+          signingKey: ${{ env.FALLBACK_KEYSTORE_B64 }}
+          keyAlias: unhingenightly
+          keyStorePassword: android
+          keyPassword: android
+          buildToolsVersion: 36.0.0
+
       - name: Move and prepare Release APK
         run: |
           OUTPUT_DIR="app/build/outputs/apk/release"
@@ -78,9 +124,15 @@ jobs:
           if [ -n "$SIGNED_APK" ] && [ -f "$SIGNED_APK" ]; then
             cp "$SIGNED_APK" "$OUTPUT_DIR/out/unhinge-release.apk"
           else
-            RELEASE_APK=$(find "$OUTPUT_DIR" -name "*.apk" | head -1)
-            cp "$RELEASE_APK" "$OUTPUT_DIR/out/unhinge-release.apk"
+            echo "::error::Signed APK not found in $OUTPUT_DIR!"
+            exit 1
           fi
+
+      - name: Verify APK Signature
+        run: |
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -n 1)
+          echo "Verifying APK signature using $APKSIGNER"
+          "$APKSIGNER" verify --verbose app/build/outputs/apk/release/out/unhinge-release.apk
 
       - name: Upload Release APK
         uses: actions/upload-artifact@v7

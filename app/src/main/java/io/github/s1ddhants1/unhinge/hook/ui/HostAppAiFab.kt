@@ -139,11 +139,13 @@ object HostAppAiFab {
                 try {
                     activity.window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
                     val passRect = findPassButtonBounds(decor)
+                    val chatInputRect = if (passRect == null) findChatInputBounds(decor) else null
+                    val hasTarget = passRect != null || chatInputRect != null
                     val attached = findAttachedContainer(activity)
                     val contentFrame = (activity.findViewById(android.R.id.content) as? ViewGroup)
                         ?: (decor as? ViewGroup)
 
-                    if (passRect != null) {
+                    if (hasTarget) {
                         val container = if (attached != null && attached.parent === contentFrame) {
                             attached
                         } else {
@@ -153,9 +155,8 @@ object HostAppAiFab {
                             bindLayoutListener(newContainer, activity, prefs)
                             newContainer
                         }
-                        updateControlsState(container, activity, prefs, passRect)
+                        updateControlsState(container, activity, prefs, passRect, chatInputRect)
                     } else {
-
                         attached?.visibility = View.GONE
                     }
                 } catch (e: Throwable) {
@@ -233,8 +234,10 @@ object HostAppAiFab {
             addView(iconView)
 
             setOnClickListener {
-                Log.i(Consts.TAG, "HostAppAiFab clicked! Launching showAiSheet...")
-                showAiSheet(activity, prefs)
+                val isChat = findPassButtonBounds(activity.window?.decorView) == null &&
+                        findChatInputBounds(activity.window?.decorView) != null
+                Log.i(Consts.TAG, "HostAppAiFab clicked! Launching showAiSheet(isChatMode=$isChat)...")
+                showAiSheet(activity, prefs, isChatMode = isChat)
             }
         }
         container.addView(fab)
@@ -407,29 +410,38 @@ object HostAppAiFab {
         layoutListeners[container] = listener
     }
 
-    private fun updateControlsState(container: View, activity: Activity, prefs: PreferencesManager, passRect: Rect? = null) {
+    private fun updateControlsState(
+        container: View,
+        activity: Activity,
+        prefs: PreferencesManager,
+        passRect: Rect? = null,
+        chatInputRect: Rect? = null,
+    ) {
         if (activity.isFinishing || activity.isDestroyed) return
 
-        val rect = passRect ?: findPassButtonBounds(container.rootView)
+        val pRect = passRect ?: findPassButtonBounds(container.rootView)
+        val cRect = if (pRect == null) (chatInputRect ?: findChatInputBounds(container.rootView)) else null
 
-        val hasActiveCandidate = rect != null
-        if (!hasActiveCandidate && FeedNavigator.isNavigated) {
+        val isFeedMode = pRect != null
+        val isChatMode = !isFeedMode && cRect != null
+
+        if (!isFeedMode && FeedNavigator.isNavigated) {
             FeedNavigator.reset(activity)
         }
-        if (hasActiveCandidate && prefs.enableFeedNavigation) {
+        if (isFeedMode && prefs.enableFeedNavigation) {
             FeedNavigator.refreshTotal(activity)
         }
         val totalCandidates = FeedNavigator.totalCandidates
-        Log.i(Consts.TAG, "updateControlsState: passRect=$rect, hasActive=$hasActiveCandidate, totalCandidates=$totalCandidates")
+        Log.i(Consts.TAG, "updateControlsState: passRect=$pRect, chatInputRect=$cRect, isFeed=$isFeedMode, isChat=$isChatMode, total=$totalCandidates")
 
         val screenClues = extractScreenClues(activity)
-        val activeCandidate = HostCandidateReader.readTargetCandidateSync(activity, screenClues)
+        val activeCandidate = if (isFeedMode) HostCandidateReader.readTargetCandidateSync(activity, screenClues) else null
         val isStandoutCandidate = screenClues.activeContext == HostCandidateReader.ScreenContext.STANDOUTS ||
                 activeCandidate?.isStandout == true
 
-        val shouldShowFab = hasActiveCandidate && prefs.showHostAppFab
-        val showNav = !isStandoutCandidate && hasActiveCandidate && prefs.enableFeedNavigation && (totalCandidates > 1 || FeedNavigator.isNavigated)
-        val showLikes = hasActiveCandidate && prefs.showAvailableLikes
+        val shouldShowFab = (isFeedMode || isChatMode) && prefs.showHostAppFab
+        val showNav = isFeedMode && !isStandoutCandidate && prefs.enableFeedNavigation && (totalCandidates > 1 || FeedNavigator.isNavigated)
+        val showLikes = isFeedMode && prefs.showAvailableLikes
 
         val fab = container.findViewWithTag<View>(TAG_FAB_BUTTON)
         val navCapsule = container.findViewWithTag<View>(TAG_NAV_CONTAINER)
@@ -449,19 +461,25 @@ object HostAppAiFab {
         val shouldShowContainer = shouldShowFab || showNav || showLikes
         container.visibility = if (shouldShowContainer) View.VISIBLE else View.GONE
 
-        Log.i(Consts.TAG, "updateControlsState: passRect=$rect, hasActive=$hasActiveCandidate, total=$totalCandidates, fab=$shouldShowFab, nav=$showNav, likes=$showLikes, standout=$isStandoutCandidate, containerVis=${if (shouldShowContainer) "VISIBLE" else "GONE"}")
+        Log.i(Consts.TAG, "updateControlsState: pRect=$pRect, cRect=$cRect, fab=$shouldShowFab, nav=$showNav, likes=$showLikes, standout=$isStandoutCandidate, containerVis=${if (shouldShowContainer) "VISIBLE" else "GONE"}")
 
         if (shouldShowContainer) {
-            updateControlsPosition(container, activity, rect)
+            updateControlsPosition(container, activity, pRect, cRect)
         }
     }
 
-    private fun updateControlsPosition(container: View, activity: Activity, passRect: Rect? = null) {
+    private fun updateControlsPosition(
+        container: View,
+        activity: Activity,
+        passRect: Rect? = null,
+        chatInputRect: Rect? = null,
+    ) {
         val density = activity.resources.displayMetrics.density
         val (screenWidth, screenHeight) = getWindowDimensions(activity)
         val containerWidth = container.width.takeIf { it > 0 } ?: screenWidth
 
-        val rect = passRect ?: findPassButtonBounds(container.rootView)
+        val pRect = passRect ?: findPassButtonBounds(container.rootView)
+        val cRect = if (pRect == null) (chatInputRect ?: findChatInputBounds(container.rootView)) else null
 
         val loc = IntArray(2)
         container.getLocationOnScreen(loc)
@@ -472,14 +490,17 @@ object HostAppAiFab {
         val targetX: Float
         val targetY: Float
 
-        if (rect != null && rect.width() > 0 && rect.height() > 0) {
-
-            fabSize = rect.width()
-            val leftMargin = rect.left - containerScreenX
+        if (pRect != null && pRect.width() > 0 && pRect.height() > 0) {
+            fabSize = pRect.width()
+            val leftMargin = pRect.left - containerScreenX
             targetX = (containerWidth - leftMargin - fabSize).toFloat()
-            targetY = (rect.top - containerScreenY).toFloat()
+            targetY = (pRect.top - containerScreenY).toFloat()
+        } else if (cRect != null && cRect.width() > 0 && cRect.height() > 0) {
+            fabSize = (48 * density).toInt()
+            val margin = (16 * density).toInt()
+            targetX = (containerWidth - margin - fabSize).toFloat()
+            targetY = (cRect.top - containerScreenY) - (8 * density) - fabSize
         } else {
-
             fabSize = (60 * density).toInt()
             val margin = (20 * density).toInt()
             val bottomNavTop = findBottomNavTop(container.rootView, screenHeight)
@@ -575,6 +596,122 @@ object HostAppAiFab {
             val childId = getChildVirtualId(node, i) ?: continue
             val found = searchForPassButtonNode(provider, childId, visited, depth + 1)
             if (found != null) return found
+        }
+        return null
+    }
+
+    internal fun findChatInputBounds(rootView: View?): Rect? {
+        if (rootView == null) return null
+        val provider = rootView.accessibilityNodeProvider
+        if (provider != null) {
+            val found = searchForChatInputNode(provider, AccessibilityNodeProvider.HOST_VIEW_ID)
+            if (found != null) return found
+        }
+        val direct = searchForChatInputView(rootView)
+        if (direct != null) return direct
+        return null
+    }
+
+    private fun searchForChatInputNode(
+        provider: AccessibilityNodeProvider,
+        virtualId: Int,
+        visited: MutableSet<Int> = mutableSetOf(),
+        depth: Int = 0
+    ): Rect? {
+        if (depth > 40 || !visited.add(virtualId)) return null
+        val node = try {
+            provider.createAccessibilityNodeInfo(virtualId)
+        } catch (_: Throwable) { null } ?: return null
+
+        val desc = node.contentDescription?.toString()?.trim().orEmpty()
+        val text = node.text?.toString()?.trim().orEmpty()
+        val viewId = node.viewIdResourceName?.orEmpty() ?: ""
+
+        val isChatInput = viewId.contains("messageComposition", ignoreCase = true) ||
+                desc.equals("Record voice note", ignoreCase = true) ||
+                desc.equals("Send message", ignoreCase = true) ||
+                text.equals("Send a message", ignoreCase = true) ||
+                text.equals("Type a message", ignoreCase = true)
+
+        if (isChatInput) {
+            val rect = Rect()
+            node.getBoundsInScreen(rect)
+            if (rect.width() > 0 && rect.height() > 0 && rect.top > 300) {
+                return rect
+            }
+        }
+
+        val childCount = node.childCount
+        for (i in 0 until childCount) {
+            val childId = getChildVirtualId(node, i) ?: continue
+            val found = searchForChatInputNode(provider, childId, visited, depth + 1)
+            if (found != null) return found
+        }
+        return null
+    }
+
+    private fun searchForChatInputView(rootView: View): Rect? {
+        if (rootView.visibility != View.VISIBLE) return null
+        val resName = try {
+            if (rootView.id > 0) rootView.resources.getResourceEntryName(rootView.id) else ""
+        } catch (_: Throwable) { "" }
+
+        if (resName.contains("messageCompositionContainer", ignoreCase = true) ||
+            resName.contains("messageComposition", ignoreCase = true) ||
+            resName.contains("sendChatButtonContainer", ignoreCase = true)
+        ) {
+            val rect = Rect()
+            rootView.getGlobalVisibleRect(rect)
+            if (rect.width() > 0 && rect.height() > 0 && rect.top > 300) {
+                return rect
+            }
+        }
+
+        if (rootView is android.widget.EditText) {
+            val hint = rootView.hint?.toString() ?: ""
+            val text = rootView.text?.toString() ?: ""
+            if (hint.contains("message", ignoreCase = true) || text.contains("message", ignoreCase = true) ||
+                resName.contains("message", ignoreCase = true)
+            ) {
+                val rect = Rect()
+                rootView.getGlobalVisibleRect(rect)
+                if (rect.width() > 0 && rect.height() > 0 && rect.top > 300) {
+                    return rect
+                }
+            }
+        }
+
+        if (rootView is ViewGroup) {
+            for (i in 0 until rootView.childCount) {
+                val found = searchForChatInputView(rootView.getChildAt(i))
+                if (found != null) return found
+            }
+        }
+        return null
+    }
+
+    fun insertReplyIntoChatInput(activity: Activity, text: String): Boolean {
+        val decor = activity.window?.decorView ?: return false
+        val id = try {
+            activity.resources.getIdentifier("messageComposition", "id", activity.packageName)
+        } catch (_: Throwable) { 0 }
+        val direct = if (id > 0) activity.findViewById<android.widget.EditText>(id) else null
+        val editText = direct ?: findMessageEditText(decor) ?: return false
+        activity.runOnUiThread {
+            editText.setText(text)
+            editText.setSelection(text.length)
+            editText.requestFocus()
+        }
+        return true
+    }
+
+    private fun findMessageEditText(view: View): android.widget.EditText? {
+        if (view is android.widget.EditText) return view
+        if (view is ViewGroup) {
+            for (i in 0 until view.childCount) {
+                val found = findMessageEditText(view.getChildAt(i))
+                if (found != null) return found
+            }
         }
         return null
     }
@@ -743,7 +880,15 @@ object HostAppAiFab {
             (it.contains("Get more", ignoreCase = true) && it.contains("Safety", ignoreCase = true))
         }
 
+        val isChatScreen = visibleTexts.any {
+            it.equals("Send a message", ignoreCase = true) ||
+            it.equals("Type a message", ignoreCase = true) ||
+            it.equals("Record voice note", ignoreCase = true) ||
+            it.contains("messageComposition", ignoreCase = true)
+        } || (visibleTexts.any { it.equals("Chat", ignoreCase = true) } && visibleTexts.any { it.equals("Profile", ignoreCase = true) })
+
         val activeContext = when {
+            isChatScreen -> HostCandidateReader.ScreenContext.MATCH_CHAT
             isStandoutsScreen -> HostCandidateReader.ScreenContext.STANDOUTS
             isLikesYouScreen -> HostCandidateReader.ScreenContext.LIKES_YOU
             isMatchesScreen || isProfileScreen -> HostCandidateReader.ScreenContext.UNKNOWN
@@ -814,7 +959,7 @@ object HostAppAiFab {
         }
     }
 
-    private fun showAiSheet(activity: Activity, prefs: PreferencesManager) {
+    private fun showAiSheet(activity: Activity, prefs: PreferencesManager, isChatMode: Boolean = false) {
         if (activity.isFinishing || activity.isDestroyed) return
         try {
             prefs.ensureBackupPrefs(activity)
@@ -853,7 +998,9 @@ object HostAppAiFab {
                             screenClues = screenClues,
                             prefs = prefs,
                             onDismiss = { dialog.dismiss() },
-                            showDragHandle = true
+                            showDragHandle = true,
+                            isChatMode = isChatMode,
+                            hostActivity = activity,
                         )
                     }
                 }

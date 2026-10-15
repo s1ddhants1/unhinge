@@ -8,6 +8,9 @@ signing/
 keystores/
 persistent-debug.keystore
 pr-debug.keystore
+*password*
+*.secret
+
 
 # Android & Build Output Artifacts
 *.apk

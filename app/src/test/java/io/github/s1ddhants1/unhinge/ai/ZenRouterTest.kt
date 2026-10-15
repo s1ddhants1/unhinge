@@ -21,6 +21,10 @@ class ZenRouterTest {
         assertTrue(ZenRouter.isFreeModel("mimo-v2.5-free"))
         assertTrue(ZenRouter.isFreeModel("nemotron-3-ultra-free"))
         assertTrue(ZenRouter.isFreeModel("nemotron-3.5-lightning-free"))
+        assertTrue(ZenRouter.isFreeModel("cat-jam-free"))
+        assertTrue(ZenRouter.isFreeModel("deepseek-v4.1-flash-free"))
+        assertTrue(ZenRouter.isFreeModel("step-5-preview-free"))
+        assertTrue(ZenRouter.isFreeModel("grok-code"))
         assertTrue(ZenRouter.isFreeModel(""))
         assertTrue(ZenRouter.isFreeModel("custom-free-model"))
     }
@@ -314,6 +318,10 @@ class ZenRouterTest {
 
     @Test
     fun isZenUrlIdentifiesZenDomains() {
+        assertTrue(ZenRouter.isZenUrl("https://opencode.ai/inference/v1/chat/completions"))
+        assertTrue(ZenRouter.isZenUrl("https://opencode.ai/inference/v1/responses"))
+        assertTrue(ZenRouter.isZenUrl("https://opencode.ai/inference/v1/messages"))
+        assertTrue(ZenRouter.isZenUrl("https://opencode.ai/inference/v1/models/gemini-3.8-flash:generateContent"))
         assertTrue(ZenRouter.isZenUrl("https://opencode.ai/zen/v1/chat/completions"))
         assertTrue(ZenRouter.isZenUrl("https://opencode.ai/zen/v1/responses"))
         assertTrue(ZenRouter.isZenUrl("https://opencode.ai/zen/v1/messages"))
@@ -324,9 +332,29 @@ class ZenRouterTest {
     }
 
     @Test
+    fun normalizeBaseUrlConvertsLegacyZenEndpoints() {
+        assertEquals(
+            "https://opencode.ai/inference/v1/chat/completions",
+            ZenRouter.normalizeBaseUrl("https://opencode.ai/zen/v1/chat/completions")
+        )
+        assertEquals(
+            "https://opencode.ai/inference/v1/responses",
+            ZenRouter.normalizeBaseUrl("https://opencode.ai/zen/v1/responses")
+        )
+        assertEquals(
+            "https://opencode.ai/inference/v1/messages",
+            ZenRouter.normalizeBaseUrl("https://opencode.ai/zen/v1/messages")
+        )
+        assertEquals(
+            "https://openrouter.ai/api/v1/chat/completions",
+            ZenRouter.normalizeBaseUrl("https://openrouter.ai/api/v1/chat/completions")
+        )
+    }
+
+    @Test
     fun injectZenHeadersSetsAllRequiredOpenCodeHeaders() {
         val requestWithNoKey = okhttp3.Request.Builder()
-            .url("https://opencode.ai/zen/v1/chat/completions")
+            .url("https://opencode.ai/inference/v1/chat/completions")
             .also { ZenRouter.injectZenHeaders(it, "") }
             .build()
 
@@ -336,14 +364,16 @@ class ZenRouterTest {
         assertEquals(ZenRouter.OPENCODE_PROJECT_ID, requestWithNoKey.header("x-opencode-project"))
         val sessionHeader = requestWithNoKey.header("x-opencode-session")
         assertTrue(sessionHeader != null && sessionHeader.startsWith("ses_"))
+        assertEquals(sessionHeader, requestWithNoKey.header("x-opencode-session-id"))
         assertEquals(sessionHeader, requestWithNoKey.header("x-session-affinity"))
         assertEquals(sessionHeader, requestWithNoKey.header("x-session-id"))
+        assertEquals(sessionHeader, requestWithNoKey.header("X-Session-Id"))
         assertTrue(requestWithNoKey.header("traceparent")?.startsWith("00-") == true)
         assertTrue(requestWithNoKey.header("b3")?.contains("-1-") == true)
 
         val customKey = "sk-custom-zen-key-123"
         val requestWithKey = okhttp3.Request.Builder()
-            .url("https://opencode.ai/zen/v1/chat/completions")
+            .url("https://opencode.ai/inference/v1/chat/completions")
             .also { ZenRouter.injectZenHeaders(it, customKey) }
             .build()
         assertEquals("Bearer $customKey", requestWithKey.header("Authorization"))
@@ -355,7 +385,7 @@ class ZenRouterTest {
 
         for (freeModel in ZenRouter.FreeModels) {
             val request = okhttp3.Request.Builder()
-                .url("https://opencode.ai/zen/v1/chat/completions")
+                .url(ZenChatBaseUrl)
                 .also { ZenRouter.injectZenHeaders(it, apiKey = leftoverKey, model = freeModel) }
                 .build()
             assertEquals("Free model $freeModel must strictly use Bearer public", "Bearer public", request.header("Authorization"))
@@ -367,19 +397,19 @@ class ZenRouterTest {
         val paidKey = "sk-opencode-paid-key"
 
         val requestPaid = okhttp3.Request.Builder()
-            .url("https://opencode.ai/zen/v1/responses")
+            .url(ZenResponsesDefaultBaseUrl)
             .also { ZenRouter.injectZenHeaders(it, apiKey = paidKey, model = "gpt-5.6-sol") }
             .build()
         assertEquals("Bearer $paidKey", requestPaid.header("Authorization"))
 
         val requestClaude = okhttp3.Request.Builder()
-            .url("https://opencode.ai/zen/v1/messages")
+            .url(ZenMessagesBaseUrl)
             .also { ZenRouter.injectZenHeaders(it, apiKey = paidKey, model = "claude-sonnet-5") }
             .build()
         assertEquals("Bearer $paidKey", requestClaude.header("Authorization"))
 
         val requestPaidNoKey = okhttp3.Request.Builder()
-            .url("https://opencode.ai/zen/v1/responses")
+            .url(ZenResponsesDefaultBaseUrl)
             .also { ZenRouter.injectZenHeaders(it, apiKey = "", model = "gpt-5.6-sol") }
             .build()
         assertEquals("Bearer public", requestPaidNoKey.header("Authorization"))

@@ -16,6 +16,7 @@ object PromptRepository {
     const val ASSET_OPENER_TEMPLATE_PATH = "prompts/opener_template.md"
     const val ASSET_SYSTEM_PROMPT_TEMPLATE_PATH = "prompts/system_prompt_template.md"
     const val ASSET_ASK_AI_TEMPLATE_PATH = "prompts/ask_ai_template.md"
+    const val ASSET_CHAT_REPLY_TEMPLATE_PATH = "prompts/chat_reply_template.md"
 
     private val templateCache = ConcurrentHashMap<String, String>()
 
@@ -77,6 +78,8 @@ object PromptRepository {
             "You are a dating wingman AI assistant for Hinge. Every message must sound like a real, effortless human texting from their couch—never like an AI bot, copywriter, or pickup artist.\n{custom_instructions}\nOutput ONLY a valid JSON object {\"lines\": [...]} with EXACTLY {lineCount} opening replies, one per input prompt."
         ASSET_ASK_AI_TEMPLATE_PATH ->
             "You are an authentic dating wingman AI assistant for Hinge.\n\n<candidate_context>\nCandidate Profile:\n{profile}\n</candidate_context>\n\n=== EXHAUSTIVE DATING WINGMAN INSTRUCTIONS ===\nYou are an authentic, perceptive dating wingman texting on Hinge. All suggested lines and advice must sound 100% human—effortless, grounded, low-stakes, and completely free of AI copywriter or pickup-artist tropes.\n{custom_instructions}"
+        ASSET_CHAT_REPLY_TEMPLATE_PATH ->
+            "You are an authentic dating wingman AI assistant for Hinge. Suggest natural, engaging, high-converting replies to continue this conversation on Hinge.\n\n<match_context>\nMatch: {match_name}\n{profile}\n</match_context>\n\n<conversation_history>\n{conversation_history}\n</conversation_history>\n\nGenerate EXACTLY {replyCount} reply options matching distinct conversation archetypes (Playful Tease, Date Pitch, Witty Callback, Casual).\n{avoid}{directional_stimulus}\n\nOutput MUST be a JSON object with a \"lines\" array containing EXACTLY {replyCount} reply strings:\n{\"lines\": [\"...\", \"...\", \"...\", \"...\"]}"
         else ->
             "Generate opening replies for the following candidate prompts.\n\n<candidate_context>\n{profile}Candidate Prompts ({lineCount} items):\n{prompts}\n</candidate_context>{avoid}{directional_stimulus}\n\nOutput MUST be a JSON object {\"lines\": [...]} with EXACTLY {lineCount} opening replies, one per input prompt."
     }
@@ -88,6 +91,13 @@ object PromptRepository {
         val userCustom = prefs?.aiOpenerPromptTemplate?.takeIf { it.isNotBlank() }
         if (userCustom != null) return userCustom
         return loadTemplate(ASSET_OPENER_TEMPLATE_PATH, context)
+    }
+
+    fun getEffectiveChatReplyTemplate(
+        prefs: PreferencesManager? = null,
+        context: Context? = null,
+    ): String {
+        return loadTemplate(ASSET_CHAT_REPLY_TEMPLATE_PATH, context)
     }
 
     fun getEffectiveSystemPromptTemplate(
@@ -163,6 +173,41 @@ object PromptRepository {
             .replace("{profile}", PromptSanitizer.sanitizeUntrusted(profileSummary))
             .replace("{custom_instructions}", custom)
             .trim()
+    }
+
+    fun formatChatReplyUserPrompt(
+        template: String,
+        matchName: String,
+        conversationHistoryText: String,
+        profileBlock: String = "",
+        avoidReplies: List<String> = emptyList(),
+        directionalStimulus: String = "",
+        replyCount: Int = 4,
+    ): String {
+        val avoid = if (avoidReplies.isNotEmpty()) {
+            "\n\nPreviously suggested replies (generate completely fresh and DIFFERENT angles; do NOT repeat or reuse similar angles):\n" +
+                avoidReplies.joinToString("\n") { "- \"${PromptSanitizer.sanitizeUntrusted(it)}\"" }
+        } else ""
+        val sanitizedProfile = profileBlock.takeIf { it.isNotBlank() }?.let { PromptSanitizer.sanitizeUntrusted(it) } ?: ""
+        val sanitizedHistory = PromptSanitizer.sanitizeUntrusted(conversationHistoryText)
+        val directional = if (directionalStimulus.isNotBlank()) {
+            "\n\n<directional_stimulus>\n${PromptSanitizer.sanitizeUntrusted(directionalStimulus).trim()}\n</directional_stimulus>"
+        } else ""
+
+        return template
+            .replace("{match_name}", PromptSanitizer.sanitizeUntrusted(matchName.ifBlank { "Match" }))
+            .replace("{profile}", sanitizedProfile)
+            .replace("{conversation_history}", sanitizedHistory.ifBlank { "No messages sent yet. Fresh match!" })
+            .replace("{replyCount}", replyCount.toString())
+            .replace("{avoid}", avoid)
+            .replace("{directional_stimulus}", directional)
+    }
+
+    fun formatChatReplySystemPrompt(
+        customInstructions: String = "",
+    ): String {
+        val base = "You are an authentic dating wingman AI assistant for Hinge. Every suggested reply must sound like a real, effortless human texting from their couch—never like an AI bot, copywriter, or pickup artist."
+        return if (customInstructions.isNotBlank()) "$base\n$customInstructions\n" else base
     }
 
     fun validateOpenerTemplate(template: String): Result<Unit> {

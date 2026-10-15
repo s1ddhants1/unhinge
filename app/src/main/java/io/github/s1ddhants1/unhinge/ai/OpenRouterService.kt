@@ -79,7 +79,7 @@ object OpenRouterService {
                             directionalStimulus = directionalStimulus,
                             promptCount = expectedCount,
                         )
-                    val targetUrl = baseUrl.ifBlank { OpenRouterDefaultBaseUrl }
+                    val targetUrl = ZenRouter.normalizeBaseUrl(baseUrl.ifBlank { OpenRouterDefaultBaseUrl })
                     val request =
                         Request
                             .Builder()

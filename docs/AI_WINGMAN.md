@@ -187,9 +187,13 @@ The AI pipeline in Unhinge is designed for high-performance dating prompt sugges
    - Lightweight, zero-dependency Android `Log` proxy allowing structured logging without external runtime dependencies.
 
 9. **[ZenRouter.kt](../app/src/main/java/io/github/s1ddhants1/unhinge/ai/ZenRouter.kt)**:
-   - Canonical routing hub and OpenCode client emulator for Zen endpoints (`/v1/responses`, `/v1/chat/completions`, `/v1/messages`, `/v1/models/<id>`).
+   - Canonical routing hub and OpenCode client emulator for Zen endpoints (`/inference/v1/responses`, `/inference/v1/chat/completions`, `/inference/v1/messages`, `/inference/v1/models/<id>`).
    - Recognizes zero-cost OpenCode Zen free models requiring zero API keys and automatically defaulting `Authorization: Bearer public`:
      - `space-bunny-free` (default high-capability reasoning model)
+     - `cat-jam-free`
+     - `deepseek-v4.1-flash-free`
+     - `step-5-preview-free`
+     - `grok-code`
      - `muse-spark-1.3-contributor-free` (Muse Spark 1.3 Free; aliases `muse-spark-1.3-free`)
      - `big-pickle`
      - `fledge-alpha-free`
@@ -199,20 +203,20 @@ The AI pipeline in Unhinge is designed for high-performance dating prompt sugges
      - `mimo-v2.5-free`
      - `nemotron-3-ultra-free`
      - `nemotron-3.5-lightning-free`
-   - Generates reverse-engineered OpenCode timestamp-encoded session IDs (`ses_` + 12 hex chars `~((now * 4096) + p)` + 14 random base62 chars), W3C traceparents, client header (`x-opencode-client: cli`), project identifier (`x-opencode-project: fbfbb8ecca77fbf4f585927700f1baa979cb6a94`), session affinity headers, and user-agent (`opencode/latest/2.0.18/cli`).
+   - Generates reverse-engineered OpenCode timestamp-encoded session IDs (`ses_` + 12 hex chars `~((now * 4096) + p)` + 14 random base62 chars), W3C traceparents, client header (`x-opencode-client: cli`), project identifier (`x-opencode-project: fbfbb8ecca77fbf4f585927700f1baa979cb6a94`), session affinity headers (`x-opencode-session-id`, `X-Session-Id`, `x-session-id`, `x-session-affinity`, `x-opencode-session`), and user-agent (`opencode/latest/2.0.29/cli`).
    - Emulates the full 12 OpenCode CLI tools (`edit`, `glob`, `grep`, `question`, `read`, `shell`, `skill`, `subagent`, `webfetch`, `websearch`, `write`, `execute`) in `DefaultZenChatTools` (Chat Completions format) and `DefaultZenResponsesTools` (Responses format with top-level `name`/`parameters`) to satisfy OpenCode's gateway agent validation on keyless free-tier requests.
 
 10. **[OpenAiResponsesService.kt](../app/src/main/java/io/github/s1ddhants1/unhinge/ai/OpenAiResponsesService.kt)**:
-   - Client for OpenAI Responses API (`POST /v1/responses`) utilized by Muse Spark, GPT, and Grok on Zen.
+   - Client for OpenAI Responses API (`POST /inference/v1/responses`) utilized by Muse Spark, GPT, and Grok on Zen.
    - For free-tier models (`muse-spark-1.3-contributor-free`), automatically injects `DefaultZenResponsesTools`, `prompt_cache_key = sessionId`, `include = ["reasoning.encrypted_content"]`, and consumes streaming SSE deltas (`stream = true`) to comply with OpenCode gateway free tier constraints.
    - Handles `instructions` + `input` structure, parses `output[].content[].text` (or streaming `response.output_text.delta`), and propagates reasoning effort configuration (`reasoning: { effort: reasoningEffort }`).
 
 11. **[AnthropicMessagesService.kt](../app/src/main/java/io/github/s1ddhants1/unhinge/ai/AnthropicMessagesService.kt)**:
-   - Client for Anthropic Messages API (`POST /v1/messages`) used by Claude and Qwen on Zen.
+   - Client for Anthropic Messages API (`POST /inference/v1/messages`) used by Claude and Qwen on Zen.
    - Handles `system` + `messages` format, `anthropic-version: 2023-06-01`, and `x-api-key` alongside Bearer authorization.
 
 11. **[GoogleGeminiService.kt](../app/src/main/java/io/github/s1ddhants1/unhinge/ai/GoogleGeminiService.kt)**:
-   - Client for Google Gemini native API (`POST /v1/models/<id>:generateContent` and `:streamGenerateContent`) used for Gemini models on Zen.
+   - Client for Google Gemini native API (`POST /inference/v1/models/<id>:generateContent` and `:streamGenerateContent`) used for Gemini models on Zen.
    - Handles `system_instruction` + `contents[].parts[].text` and parses `candidates[].content.parts[].text`.
 
 ### 5.2 OpenCode Zen Free Model Emulation Mechanics
@@ -225,8 +229,8 @@ The AI pipeline in Unhinge is designed for high-performance dating prompt sugges
      - `x-opencode-client`: `cli`.
      - `x-opencode-project`: Stable SHA-1 workspace hash (`fbfbb8ecca77fbf4f585927700f1baa979cb6a94`).
      - `x-opencode-session`: Must follow OpenCode's internal `XC(true)` encoding format within an active validity timestamp window.
-     - `x-session-affinity` & `x-session-id`: Mirrored session ID.
-     - `User-Agent`: `opencode/latest/2.0.18/cli`.
+     - `x-opencode-session-id`, `X-Session-Id`, `x-session-id`, `x-session-affinity`: Mirrored session ID across canonical and legacy header keys.
+     - `User-Agent`: `opencode/latest/2.0.29/cli`.
      - `traceparent` & `b3`: W3C distributed trace context and B3 trace headers.
      - Zero leakage of OpenRouter attribution headers (`HTTP-Referer`, `X-Title`) to prevent Cloudflare/gateway detection.
 
@@ -275,7 +279,7 @@ The AI pipeline in Unhinge is designed for high-performance dating prompt sugges
      - Robust content parser in `OpenRouterService.parseGeneratedContent`: handles raw JSON strings, unwraps `JsonPrimitive` values, and strips markdown quotes/formatting (`**Opener**`, `> "..."`, `---`, `Why it works:`) so models like Space Bunny never fail with "Failed to parse response".
 
 4. **Zero-Configuration Out-of-the-Box UX**:
-   - `PreferencesManager` defaults to the `Zen` provider on `Consts.ZEN_DEFAULT_BASE_URL` (`https://opencode.ai/zen/v1/chat/completions`) / `Consts.ZEN_DEFAULT_MODEL` (`space-bunny-free`), so a fresh install generates openers and answers Ask AI queries without an account, key, or billing configuration.
+   - `PreferencesManager` defaults to the `Zen` provider on `Consts.ZEN_DEFAULT_BASE_URL` (`https://opencode.ai/inference/v1/chat/completions`) / `Consts.ZEN_DEFAULT_MODEL` (`space-bunny-free`), so a fresh install generates openers and answers Ask AI queries without an account, key, or billing configuration.
    - `AiWingmanSettingsPage` groups all 9 free models under `(Free - No Key Required)`, and clearly labels paid Zen models with `(Requires Zen key)`.
    - `AiWingmanHelper.isApiKeyRequired(provider, model)` is the single gate consumed by both the settings page and the in-app sheet (`HostAppAiSheetContent`); the Zen branch of `resolveEffectiveEndpoint` only honours a base URL as an override when it points at a genuine third-party proxy, so a stale URL from another provider can never hijack Zen routing.
 
@@ -408,6 +412,60 @@ The Unhinge prompt engineering pipeline adheres to modern empirical LLM research
 ### 7.8 Template Schema Validation & Output Auditing
 - **Schema Guardrails**: `PromptRepository.validateOpenerTemplate()` verifies that remote or custom user templates contain mandatory placeholders (`{prompts}` and `{lineCount}`) before activation, preventing broken generation states.
 - **Output Sanitization**: `PromptSanitizer.cleanOpenerReply()` strips markdown wrappers, analytical preambles (`Why this works:`), conversational throat-clearing, and normalizes excessive interrogation questions.
+
+---
+
+## 8. Match Chat Reply Wingman Architecture
+
+The AI Wingman extends seamlessly from candidate profile openers into active match chat conversations, providing contextual reply suggestions calibrated to conversation momentum and human texting dynamics.
+
+### 8.1 In-Process Chat Context Extraction (`HostCandidateReader.kt`)
+- **Screen Context Classification**: `HostCandidateReader.detectScreenContext` classifies active chat screens as `ScreenContext.MATCH_CHAT` by identifying Hinge's chat input composable (`messageComposition`, `messageCompositionContainer`, or hint `"Send a message"`).
+- **Match Chat Extraction (`readCurrentMatchChat`)**:
+  - Traverses Hinge's active activity view tree to extract the visible match name from the action bar or chat header, any active draft message text in `messageComposition`, and on-screen message text.
+  - Queries Hinge's internal SQLite database (`/data/data/co.hinge.app/databases/db`) asynchronously in strict `SQLiteDatabase.OPEN_READONLY` mode.
+  - Reads matching candidate demographic attributes from `profiles` and full conversation transcripts from `subject_messages` (or `messages`):
+    - Identifies message directions (`sentBySubject = true` for match, `false` for user).
+    - Unpacks voice note records (`isVoiceNote = true`) and transcribed text (`voiceTranscript`).
+    - Sorts chronologically, formatting the most recent 15 messages via `AiWingmanHelper.formatConversationHistory`:
+      ```text
+      Alex: Hey! How was your weekend?
+      You: Pretty good, went hiking in Marin.
+      Alex: [Voice note: "Oh nice, which trail did you do?"]
+      ```
+    - Computes `isMyTurn`: determined by whether the final message in the transcript was sent by the match.
+
+### 8.2 The 4 Empirically Proven Human Chat Reply Archetypes (`chat_reply_template.md`)
+Unlike generic chatbots that produce robotic praise or interrogation lists, Unhinge generates exactly 4 distinct replies matching validated dating conversation archetypes:
+1. **Playful Tease / Banter**: Lighthearted friction, teasing assumption, or mock disagreement that creates flirty tension without being mean-spirited.
+2. **Date Pitch / Move to Meet**: Smooth, low-stakes escalation proposing coffee, drinks, or an activity based on a shared topic in the conversation.
+3. **Witty Callback / Story**: Sharp callback to a specific detail mentioned earlier in the chat or on their profile prompts.
+4. **Casual / Low-Key**: Natural, low-effort follow-up maintaining momentum without looking overly eager.
+
+### 8.3 In-App Overlay Positioning & Direct Text Injection (`HostAppAiFab.kt`)
+- **Dynamic Keyboard-Grounded Docking**:
+  - In chat mode, `findChatInputBounds(rootView)` locates Hinge's native chat input container.
+  - Docks a compact 48dp sparkle FAB at the bottom-right corner directly above the input box:
+    ```kotlin
+    val targetX = containerWidth - 16.dp - fabSize
+    val targetY = chatInputRect.top - containerScreenY - 8.dp - fabSize
+    ```
+  - As the Android soft keyboard appears or resizes, layout passes automatically adjust `chatInputRect.top`, keeping the FAB docked right above the input field.
+- **Direct Reply Injection (`insertReplyIntoChatInput`)**:
+  - Tapping **"Insert into Chat"** in the reply sheet directly populates Hinge's `messageComposition` `EditText`:
+    ```kotlin
+    val editText = activity.findViewById<EditText>(resId)
+    editText.setText(text)
+    editText.setSelection(text.length)
+    editText.requestFocus()
+    ```
+  - Closes the AI sheet immediately, leaving the user with the generated reply ready to review and send with a single tap.
+- **1-Tap Clipboard Copying**: Secondary "Copy" button places the selected reply on the Android clipboard with temporary visual confirmation.
+
+### 8.4 Companion Application Integration (`MatchesScreen.kt`)
+- **Match Card Quick-Action**: Each match item in the companion app's `MatchesScreen` displays an AI sparkle button for instantaneous reply suggestion generation.
+- **Transcript Dialog AI Sheet**: Opening the chat transcript dialog provides an **"AI Wingman"** header action and a **"Suggest replies"** prompt in empty conversation states.
+- **Shared Compose Sheet**: Invokes `HostAppAiSheetContent(isChatMode = true, initialChatContext = chatContext)`, ensuring unified styling, archetype selection, and regeneration workflows across both the host app overlay and the companion app.
 
 
 

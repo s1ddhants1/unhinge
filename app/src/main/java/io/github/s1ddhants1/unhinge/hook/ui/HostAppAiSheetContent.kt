@@ -1,5 +1,6 @@
 package io.github.s1ddhants1.unhinge.hook.ui
 
+import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -40,6 +41,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -68,6 +70,8 @@ import io.github.s1ddhants1.unhinge.ai.PromptEntry
 import io.github.s1ddhants1.unhinge.ai.WingmanPrompts
 import io.github.s1ddhants1.unhinge.data.HostCandidateReader
 import io.github.s1ddhants1.unhinge.model.CachedCandidateProfile
+import io.github.s1ddhants1.unhinge.model.ChatMessageRecord
+import io.github.s1ddhants1.unhinge.model.MatchRecord
 import io.github.s1ddhants1.unhinge.ui.theme.HingeFonts
 import io.github.s1ddhants1.unhinge.util.PreferencesManager
 import io.github.s1ddhants1.unhinge.util.ThemeMode
@@ -136,6 +140,12 @@ data class CustomAiInteraction(
     val error: String? = null,
 )
 
+private data class ChatArchetype(
+    val title: String,
+    val subtitle: String,
+    val description: String,
+)
+
 @Composable
 fun HostAppAiSheetContent(
     prefs: PreferencesManager,
@@ -145,6 +155,9 @@ fun HostAppAiSheetContent(
     screenClues: HostCandidateReader.ScreenClues? = null,
     showDragHandle: Boolean = false,
     standalone: Boolean = true,
+    isChatMode: Boolean = false,
+    hostActivity: Activity? = null,
+    initialChatContext: HostCandidateReader.MatchChatContext? = null,
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -175,38 +188,105 @@ fun HostAppAiSheetContent(
     val modernEraBold = remember(context) { HingeFonts.modernEraBold(context) }
 
     var loadedCandidate by remember { mutableStateOf(candidateList?.firstOrNull()) }
-    var isLoadingCandidate by remember { mutableStateOf(candidateList == null) }
+    var isLoadingCandidate by remember { mutableStateOf(!isChatMode && candidateList == null) }
+    var loadedChatContext by remember { mutableStateOf(initialChatContext) }
+    var isLoadingChat by remember { mutableStateOf(isChatMode && initialChatContext == null) }
 
-    LaunchedEffect(candidateList, screenClues) {
-        if (candidateList != null) {
-            loadedCandidate = candidateList.firstOrNull()
-            isLoadingCandidate = false
+    LaunchedEffect(candidateList, screenClues, isChatMode) {
+        if (isChatMode) {
+            if (initialChatContext != null) {
+                loadedChatContext = initialChatContext
+                isLoadingChat = false
+            } else {
+                isLoadingChat = true
+                val chat = HostCandidateReader.readCurrentMatchChat(context, screenClues)
+                loadedChatContext = chat
+                isLoadingChat = false
+            }
         } else {
-            isLoadingCandidate = true
-            val current = HostCandidateReader.readTargetCandidate(context, screenClues)
-                ?: HostCandidateReader.readActiveCandidates(context).firstOrNull()
-            loadedCandidate = current
-            isLoadingCandidate = false
+            if (candidateList != null) {
+                loadedCandidate = candidateList.firstOrNull()
+                isLoadingCandidate = false
+            } else {
+                isLoadingCandidate = true
+                val current = HostCandidateReader.readTargetCandidate(context, screenClues)
+                    ?: HostCandidateReader.readActiveCandidates(context).firstOrNull()
+                loadedCandidate = current
+                isLoadingCandidate = false
+            }
         }
     }
 
-    val candidate = loadedCandidate
+    val chatContext = loadedChatContext
+    val chatMatch = chatContext?.match
+    val candidate = if (isChatMode) (chatContext?.candidate ?: loadedCandidate) else loadedCandidate
+    val chatMessages = chatContext?.messages.orEmpty()
+    val chatLastMessage = chatContext?.lastMessage
+    val isMyTurn = chatContext?.isMyTurn ?: true
+
+    val matchDisplayName = chatMatch?.firstName?.ifBlank { candidate?.firstName.orEmpty() }
+        ?: candidate?.firstName.orEmpty()
+    val matchAge = if (chatMatch != null && chatMatch.age > 0) chatMatch.age else (candidate?.age ?: 0)
+    val matchPhotoUrl = chatMatch?.photoUrl?.ifBlank { candidate?.photos?.firstOrNull().orEmpty() }
+        ?: candidate?.photos?.firstOrNull().orEmpty()
 
     val status by AiWingmanHelper.status.collectAsState()
 
-    val promptEntries = remember(candidate?.userId, candidate?.prompts) {
-        val prompts = candidate?.prompts.orEmpty()
-        if (prompts.isNotEmpty()) {
-            prompts.map { PromptEntry(text = "${it.question}: ${it.answer.replace("\\n", "\n")}") }
-        } else if (candidate != null) {
-            val bio = listOfNotNull(
-                candidate.jobTitle.takeIf { it.isNotBlank() }?.let { "Job: $it" },
-                candidate.location.takeIf { it.isNotBlank() }?.let { "Location: $it" },
-                candidate.datingIntention.takeIf { it.isNotBlank() }?.let { "Dating Intentions: $it" }
-            ).joinToString(", ")
-            if (bio.isNotBlank()) listOf(PromptEntry(text = bio)) else emptyList()
+    val chatArchetypes = remember {
+        listOf(
+            ChatArchetype(
+                title = "Playful Tease / Banter",
+                subtitle = "Playful push-pull banter",
+                description = "Light mock-challenge or push-pull that invites a fun, defensive laugh."
+            ),
+            ChatArchetype(
+                title = "Date Pitch / Move to Meet",
+                subtitle = "Transition chat to meeting up",
+                description = "Natural, low-pressure transition from the topic into grabbing drinks or food."
+            ),
+            ChatArchetype(
+                title = "Witty Callback / Story",
+                subtitle = "Clever callback & relatable take",
+                description = "Tie their comment back to a shared interest, prior message, or short quip."
+            ),
+            ChatArchetype(
+                title = "Casual / Low-Key",
+                subtitle = "Effortless, relaxed momentum",
+                description = "Low-investment, smooth 1-2 sentence response keeping the conversation flowing."
+            )
+        )
+    }
+
+    val chatPromptEntries = remember(chatMatch?.subjectId, chatMessages.size) {
+        if (isChatMode) {
+            chatArchetypes.map { archetype ->
+                PromptEntry(text = archetype.title)
+            }
         } else {
             emptyList()
+        }
+    }
+
+    val promptEntries = if (isChatMode) {
+        chatPromptEntries
+    } else {
+        remember(candidate?.userId, candidate?.prompts) {
+            val prompts = candidate?.prompts.orEmpty()
+            if (prompts.isNotEmpty()) {
+                prompts.map {
+                    val cleanAnswer = it.answer.replace("\\n", "\n")
+                    PromptEntry(text = "${it.question}: $cleanAnswer")
+                }
+            } else if (candidate != null) {
+                val bio = listOfNotNull(
+                    candidate.jobTitle.takeIf { it.isNotBlank() }?.let { "Job: $it" },
+                    candidate.location.takeIf { it.isNotBlank() }?.let { "Location: $it" },
+                    candidate.datingIntention.takeIf { it.isNotBlank() }?.let { "Dating Intentions: $it" }
+                ).joinToString(", ")
+                if (bio.isNotBlank()) listOf(PromptEntry(text = bio)) else emptyList()
+            } else {
+                emptyList()
+            }
         }
     }
 
@@ -222,27 +302,56 @@ fun HostAppAiSheetContent(
     ) {
         if (!isAiReady || targets.isEmpty()) return
         val directionalStimulus = if (vibe == "Auto") "" else vibe
-        AiWingmanHelper.generateReplies(
-            prompts = targets,
-            apiKey = prefs.openRouterApiKey,
-            baseUrl = prefs.openRouterBaseUrl,
-            model = prefs.openRouterModel,
-            scope = coroutineScope,
-            context = context,
-            prefs = prefs,
-            provider = prefs.aiProvider,
-            useStreaming = true,
-            systemPrompt = prefs.aiCustomSystemPrompt,
-            profileBlock = candidate?.let(::openerProfileBlock).orEmpty(),
-            forceRefresh = forceRefresh,
-            temperature = prefs.aiTemperature,
-            topP = prefs.aiTopP,
-            reasoningEffort = prefs.aiReasoningEffort,
-            directionalStimulus = directionalStimulus,
-        )
+        if (isChatMode) {
+            val profileBlock = candidate?.let(::openerProfileBlock) ?: (matchDisplayName.takeIf { it.isNotBlank() } ?: "")
+            AiWingmanHelper.generateChatReplies(
+                matchName = matchDisplayName,
+                profileBlock = profileBlock,
+                conversationHistory = chatMessages,
+                prompts = targets,
+                apiKey = prefs.openRouterApiKey,
+                baseUrl = prefs.openRouterBaseUrl,
+                model = prefs.openRouterModel,
+                scope = coroutineScope,
+                context = context,
+                prefs = prefs,
+                provider = prefs.aiProvider,
+                useStreaming = true,
+                forceRefresh = forceRefresh,
+                temperature = prefs.aiTemperature,
+                topP = prefs.aiTopP,
+                reasoningEffort = prefs.aiReasoningEffort,
+                directionalStimulus = directionalStimulus,
+            )
+        } else {
+            AiWingmanHelper.generateReplies(
+                prompts = targets,
+                apiKey = prefs.openRouterApiKey,
+                baseUrl = prefs.openRouterBaseUrl,
+                model = prefs.openRouterModel,
+                scope = coroutineScope,
+                context = context,
+                prefs = prefs,
+                provider = prefs.aiProvider,
+                useStreaming = true,
+                systemPrompt = prefs.aiCustomSystemPrompt,
+                profileBlock = candidate?.let(::openerProfileBlock).orEmpty(),
+                forceRefresh = forceRefresh,
+                temperature = prefs.aiTemperature,
+                topP = prefs.aiTopP,
+                reasoningEffort = prefs.aiReasoningEffort,
+                directionalStimulus = directionalStimulus,
+            )
+        }
     }
 
-    LaunchedEffect(candidate?.userId, prefs.openRouterApiKey, prefs.aiProvider, prefs.openRouterModel) {
+    LaunchedEffect(
+        isChatMode,
+        if (isChatMode) chatMatch?.subjectId ?: chatContext?.candidate?.userId else candidate?.userId,
+        prefs.openRouterApiKey,
+        prefs.aiProvider,
+        prefs.openRouterModel
+    ) {
         if (isAiReady && promptEntries.isNotEmpty()) {
             requestWingmanGeneration()
         }
@@ -267,17 +376,21 @@ fun HostAppAiSheetContent(
     var isAskAiGenerating by remember { mutableStateOf(false) }
     val customInteractions = remember { mutableStateListOf<CustomAiInteraction>() }
 
-    val promptCardsCount = remember(candidate?.userId, candidate?.prompts, promptEntries.size) {
-        if (candidate?.prompts.isNullOrEmpty()) {
-            if (promptEntries.isNotEmpty()) 1 else 0
-        } else {
-            candidate.prompts.size
+    val promptCardsCount = if (isChatMode) {
+        chatArchetypes.size
+    } else {
+        remember(candidate?.userId, candidate?.prompts, promptEntries.size) {
+            if (candidate?.prompts.isNullOrEmpty()) {
+                if (promptEntries.isNotEmpty()) 1 else 0
+            } else {
+                candidate.prompts.size
+            }
         }
     }
     val totalCards = (promptCardsCount + customInteractions.size).coerceAtLeast(1)
     val pagerState = rememberPagerState(initialPage = 0) { totalCards }
 
-    LaunchedEffect(candidate?.userId) {
+    LaunchedEffect(candidate?.userId, chatMatch?.subjectId) {
         selectedVibe = "Auto"
         customInteractions.clear()
         if (pagerState.currentPage != 0) {
@@ -310,9 +423,15 @@ fun HostAppAiSheetContent(
         }
 
         val candidateProfileSummary = buildString {
+            if (isChatMode) {
+                append("Name: ${matchDisplayName.ifBlank { "Candidate" }}")
+                if (matchAge > 0) append(", Age: $matchAge")
+            }
             if (candidate != null) {
-                append("Name: ${candidate.firstName.ifBlank { "Candidate" }}")
-                if (candidate.age > 0) append(", Age: ${candidate.age}")
+                if (!isChatMode) {
+                    append("Name: ${candidate.firstName.ifBlank { "Candidate" }}")
+                    if (candidate.age > 0) append(", Age: ${candidate.age}")
+                }
                 if (candidate.jobTitle.isNotBlank()) append("\nWork: ${candidate.jobTitle}")
                 if (candidate.employer.isNotBlank()) append(" at ${candidate.employer}")
                 if (candidate.school.isNotBlank()) append("\nSchool: ${candidate.school}")
@@ -325,24 +444,55 @@ fun HostAppAiSheetContent(
                 if (candidate.prompts.isNotEmpty()) {
                     append("\n\nPrompts:")
                     candidate.prompts.forEachIndexed { i, p ->
-                        append("\n${i + 1}. ${p.question}: ${p.answer.replace("\\n", "\n")}")
+                        val cleanAns = p.answer.replace("\\n", "\n")
+                        append("\n${i + 1}. ${p.question}: $cleanAns")
                     }
                 }
             }
         }
 
-        val systemPrompt = WingmanPrompts.askAiSystemPrompt(
-            profileSummary = candidateProfileSummary,
-            custom = prefs.aiCustomSystemPrompt,
-            prefs = prefs,
-            context = context,
-        )
+        val historyText = if (isChatMode && chatMessages.isNotEmpty()) {
+            AiWingmanHelper.formatConversationHistory(matchDisplayName, chatMessages)
+        } else {
+            "No messages yet."
+        }
+
+        val systemPrompt = if (isChatMode) {
+            WingmanPrompts.chatReplySystemPrompt(
+                custom = prefs.aiCustomSystemPrompt,
+                prefs = prefs,
+                context = context,
+            )
+        } else {
+            WingmanPrompts.askAiSystemPrompt(
+                profileSummary = candidateProfileSummary,
+                custom = prefs.aiCustomSystemPrompt,
+                prefs = prefs,
+                context = context,
+            )
+        }
+
+        val userPrompt = if (isChatMode) {
+            """
+Match: $matchDisplayName${if (matchAge > 0) ", $matchAge" else ""}
+Bio Details:
+$candidateProfileSummary
+
+Recent Conversation:
+$historyText
+
+User Request / Question:
+$query
+            """.trimIndent()
+        } else {
+            query
+        }
 
         coroutineScope.launch {
             try {
                 val contentAccumulator = StringBuilder()
                 AiWingmanHelper.streamCustomChat(
-                    userPrompt = query,
+                    userPrompt = userPrompt,
                     systemPrompt = systemPrompt,
                     apiKey = activeKey,
                     baseUrl = prefs.openRouterBaseUrl,
@@ -542,7 +692,108 @@ fun HostAppAiSheetContent(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            if (candidate != null) {
+            if (isChatMode) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .then(dragModifier)
+                ) {
+                    if (matchPhotoUrl.isNotBlank()) {
+                        SubcomposeAsyncImage(
+                            model = matchPhotoUrl,
+                            imageLoader = imageLoader,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(cardBg)
+                        )
+                    } else {
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = cardBg,
+                            border = BorderStroke(1.dp, cardBorder),
+                            modifier = Modifier.size(48.dp)
+                        ) {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = matchDisplayName.take(1).ifBlank { "?" },
+                                    fontFamily = modernEraBold,
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = textPrimary
+                                )
+                            }
+                        }
+                    }
+
+                    Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            val title = buildString {
+                                append(matchDisplayName.ifBlank { "Match" })
+                                if (matchAge > 0) append(", $matchAge")
+                            }
+                            Text(
+                                text = title,
+                                fontFamily = modernEraBold,
+                                fontSize = 21.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = textPrimary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+
+                            Surface(
+                                color = Color(0xFF8E24AA).copy(alpha = 0.12f),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.AutoAwesome,
+                                        contentDescription = null,
+                                        tint = Color(0xFFAB47BC),
+                                        modifier = Modifier.size(10.dp)
+                                    )
+                                    Text(
+                                        text = "Match Chat",
+                                        fontFamily = modernEraBold,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Color(0xFFAB47BC)
+                                    )
+                                }
+                            }
+                        }
+
+                        val subtitle = if (chatLastMessage != null) {
+                            if (isMyTurn) "Your turn to reply" else "Waiting on their reply"
+                        } else if (chatMessages.isNotEmpty()) {
+                            "${chatMessages.size} messages exchanged"
+                        } else {
+                            "Ready for your first message"
+                        }
+
+                        Text(
+                            text = subtitle,
+                            fontFamily = modernEraRegular,
+                            fontSize = 13.sp,
+                            color = textSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            } else if (candidate != null) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -761,7 +1012,34 @@ fun HostAppAiSheetContent(
 
         Spacer(Modifier.height(14.dp))
 
-        if (isLoadingCandidate) {
+        if (isChatMode && isLoadingChat) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .padding(horizontal = 18.dp)
+                    .then(dragModifier),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(32.dp),
+                        strokeWidth = 2.5.dp,
+                        color = actionBtnBg
+                    )
+                    Text(
+                        text = "Reading match chat...",
+                        fontFamily = modernEraRegular,
+                        fontSize = 14.sp,
+                        color = textSecondary
+                    )
+                }
+            }
+            return@Column
+        } else if (!isChatMode && isLoadingCandidate) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -790,7 +1068,52 @@ fun HostAppAiSheetContent(
             return@Column
         }
 
-        if (candidate == null) {
+        if (isChatMode && chatContext == null && candidate == null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .padding(horizontal = 18.dp)
+                    .then(dragModifier),
+                contentAlignment = Alignment.Center
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(22.dp),
+                    color = cardBg,
+                    border = BorderStroke(1.dp, cardBorder),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.padding(24.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ChatBubbleOutline,
+                            contentDescription = null,
+                            modifier = Modifier.size(40.dp),
+                            tint = textSecondary
+                        )
+                        Text(
+                            text = "No match chat detected",
+                            fontFamily = modernEraBold,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = textPrimary
+                        )
+                        Text(
+                            text = "Open a conversation from your Hinge Matches tab, then tap the AI button to load reply suggestions for that match.",
+                            fontFamily = modernEraRegular,
+                            fontSize = 13.5.sp,
+                            color = textSecondary,
+                            textAlign = TextAlign.Center,
+                            lineHeight = 19.sp
+                        )
+                    }
+                }
+            }
+            return@Column
+        } else if (!isChatMode && candidate == null) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -869,7 +1192,7 @@ fun HostAppAiSheetContent(
                         text = if (prefs.aiProvider.equals("Zen", ignoreCase = true)) {
                             "An API key is required for paid model ${prefs.openRouterModel}. Switch to a free model (e.g. muse-spark-1.3-contributor-free) or configure your key in Settings."
                         } else {
-                            "Configure your ${prefs.aiProvider} token in Unhinge Settings to generate conversation starters for ${candidate.firstName.ifBlank { "this profile" }}."
+                            "Configure your ${prefs.aiProvider} token in Unhinge Settings to generate conversation starters for ${candidate?.firstName?.ifBlank { matchDisplayName.ifBlank { "this profile" } } ?: matchDisplayName.ifBlank { "this profile" }}."
                         },
                         fontFamily = modernEraRegular,
                         fontSize = 13.sp,
@@ -897,14 +1220,18 @@ fun HostAppAiSheetContent(
                 }
             }
         } else {
-            val vibes = remember {
-                listOf(
-                    "Auto",
-                    "Playful Tease",
-                    "Micro-Debate",
-                    "Chaos Story",
-                    "Collaborative"
-                )
+            val vibes = remember(isChatMode) {
+                if (isChatMode) {
+                    listOf("Auto", "Playful Tease", "Date Pitch", "Witty Banter", "Casual", "Bold")
+                } else {
+                    listOf(
+                        "Auto",
+                        "Playful Tease",
+                        "Micro-Debate",
+                        "Chaos Story",
+                        "Collaborative"
+                    )
+                }
             }
             Row(
                 modifier = Modifier
@@ -937,6 +1264,69 @@ fun HostAppAiSheetContent(
                 }
             }
             Spacer(Modifier.height(8.dp))
+
+            if (isChatMode && chatContext != null) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = commentBg,
+                    border = BorderStroke(1.dp, cardBorder),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 18.dp, vertical = 2.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(if (isMyTurn) Color(0xFF2E7D32) else textSecondary)
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = if (chatLastMessage != null) {
+                                        if (chatLastMessage.sentBySubject) "${matchDisplayName.ifBlank { "Match" }}'s last message" else "Your last message"
+                                    } else "Conversation",
+                                    fontFamily = modernEraBold,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = textSecondary
+                                )
+                                Text(
+                                    text = if (isMyTurn) "Your turn" else "Waiting on reply",
+                                    fontFamily = modernEraMedium,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (isMyTurn) Color(0xFF2E7D32) else textSecondary
+                                )
+                            }
+                            val previewBody = when {
+                                chatLastMessage == null -> "Fresh match. Send the first message to kick off the chat."
+                                chatLastMessage.isVoiceNote && chatLastMessage.voiceTranscript.isNotBlank() -> "[Voice note]: \"${chatLastMessage.voiceTranscript}\""
+                                chatLastMessage.isVoiceNote -> "[Sent a voice note]"
+                                else -> chatLastMessage.body.ifBlank { "Sent a message" }
+                            }
+                            Text(
+                                text = previewBody,
+                                fontFamily = tiemposRegular,
+                                fontSize = 14.sp,
+                                color = textPrimary,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+            }
         }
 
         HorizontalPager(
@@ -947,7 +1337,119 @@ fun HostAppAiSheetContent(
                 .fillMaxWidth()
                 .weight(1f)
         ) { page ->
-            if (page < promptCardsCount) {
+            if (isChatMode && page < promptCardsCount) {
+                val archetype = chatArchetypes.getOrNull(page)
+                val entry = chatPromptEntries.getOrNull(page)
+                val reply by (entry?.suggestedReplyFlow?.collectAsState() ?: remember { mutableStateOf(null) })
+
+                if (archetype != null) {
+                    Surface(
+                        shape = RoundedCornerShape(22.dp),
+                        color = cardBg,
+                        border = BorderStroke(
+                            width = if (pagerState.currentPage == page) 1.5.dp else 1.dp,
+                            color = if (pagerState.currentPage == page) (if (isDark) Color(0xFF4A4A4A) else Color(0xFFC0C0BE)) else cardBorder
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .fillMaxHeight()
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(18.dp)
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "${page + 1} of ${chatArchetypes.size} · Reply Suggestion",
+                                        fontFamily = modernEraBold,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = textSecondary
+                                    )
+
+                                    Surface(
+                                        shape = RoundedCornerShape(50),
+                                        color = pillBg,
+                                        border = BorderStroke(1.dp, pillBorder),
+                                        modifier = Modifier.clickable {
+                                            submitAskAi("Give me a sharper, ultra-witty reply variation for $matchDisplayName using the \"${archetype.title}\" style.")
+                                        }
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.AutoAwesome,
+                                                contentDescription = null,
+                                                tint = textSecondary,
+                                                modifier = Modifier.size(11.dp)
+                                            )
+                                            Text(
+                                                text = "Ask AI",
+                                                fontFamily = modernEraMedium,
+                                                fontSize = 11.sp,
+                                                color = textSecondary
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Text(
+                                    text = archetype.title,
+                                    fontFamily = modernEraBold,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = textPrimary
+                                )
+
+                                Text(
+                                    text = archetype.description,
+                                    fontFamily = modernEraRegular,
+                                    fontSize = 13.sp,
+                                    color = textSecondary,
+                                    lineHeight = 18.sp
+                                )
+                            }
+
+                            Spacer(Modifier.height(14.dp))
+
+                            NativeHingeCommentBubble(
+                                entry = entry,
+                                replyText = reply,
+                                status = status,
+                                isCopied = copiedIndex == page,
+                                commentBg = commentBg,
+                                textPrimary = textPrimary,
+                                textSecondary = textSecondary,
+                                actionBtnBg = actionBtnBg,
+                                actionBtnText = actionBtnText,
+                                onCopy = { copyOpener(page, it) },
+                                onRegenerate = { entry?.let { requestWingmanGeneration(listOf(it), forceRefresh = true) } },
+                                onOpenSettings = { launchUnhingeSettings(context) },
+                                onInsert = if (hostActivity != null) {
+                                    { replyTextToInsert ->
+                                        HostAppAiFab.insertReplyIntoChatInput(hostActivity, replyTextToInsert)
+                                        copyOpener(page, replyTextToInsert)
+                                        Toast.makeText(context, "Inserted reply into chat", Toast.LENGTH_SHORT).show()
+                                        dismissWithAnimation()
+                                    }
+                                } else null,
+                                isChatMode = true
+                            )
+                        }
+                    }
+                }
+            } else if (!isChatMode && page < promptCardsCount && candidate != null) {
                 if (candidate.prompts.isEmpty()) {
 
                     val fallbackEntry = promptEntries.firstOrNull()
@@ -1164,7 +1666,16 @@ fun HostAppAiSheetContent(
                         },
                         onRefine = { refinementQuery ->
                             submitAskAi(refinementQuery)
-                        }
+                        },
+                        onInsert = if (hostActivity != null && isChatMode) {
+                            { textToInsert ->
+                                HostAppAiFab.insertReplyIntoChatInput(hostActivity, textToInsert)
+                                val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                cm.setPrimaryClip(ClipData.newPlainText("Unhinge AI Response", textToInsert))
+                                Toast.makeText(context, "Inserted reply into chat", Toast.LENGTH_SHORT).show()
+                                dismissWithAnimation()
+                            }
+                        } else null
                     )
                 }
             }
@@ -1216,58 +1727,110 @@ fun HostAppAiSheetContent(
                 .padding(horizontal = 18.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            QuickActionChip(
-                label = "Vibe check",
-                bg = pillBg,
-                border = pillBorder,
-                textColor = textPrimary,
-                font = modernEraMedium
-            ) {
-                val candidateName = candidate.firstName.ifBlank { "her" }
-                submitAskAi("Give me a sharp, 2-sentence vibe check and best conversational angle for $candidateName.")
-            }
+            if (isChatMode) {
+                QuickActionChip(
+                    label = "Ask them out",
+                    bg = pillBg,
+                    border = pillBorder,
+                    textColor = textPrimary,
+                    font = modernEraMedium
+                ) {
+                    submitAskAi("Help me craft a smooth, natural transition to ask $matchDisplayName out for coffee, drinks, or tacos based on our chat.")
+                }
 
-            QuickActionChip(
-                label = "Playful roast",
-                bg = pillBg,
-                border = pillBorder,
-                textColor = textPrimary,
-                font = modernEraMedium
-            ) {
-                submitAskAi("Give me a light, teasing roast about one of her prompt answers that invites a laugh.")
-            }
+                QuickActionChip(
+                    label = "Keep it playful",
+                    bg = pillBg,
+                    border = pillBorder,
+                    textColor = textPrimary,
+                    font = modernEraMedium
+                ) {
+                    submitAskAi("Give me 2 playful, teasing banter replies to keep the momentum going with $matchDisplayName.")
+                }
 
-            QuickActionChip(
-                label = "First date pitch",
-                bg = pillBg,
-                border = pillBorder,
-                textColor = textPrimary,
-                font = modernEraMedium
-            ) {
-                val candidateName = candidate.firstName.ifBlank { "her" }
-                submitAskAi("Suggest a low-pressure, tailored first date idea based on $candidateName's bio and interests.")
-            }
+                QuickActionChip(
+                    label = "Revive dry chat",
+                    bg = pillBg,
+                    border = pillBorder,
+                    textColor = textPrimary,
+                    font = modernEraMedium
+                ) {
+                    submitAskAi("Our chat is slowing down. Suggest an unexpected, highly engaging question or callback for $matchDisplayName.")
+                }
 
-            QuickActionChip(
-                label = "Hidden hook",
-                bg = pillBg,
-                border = pillBorder,
-                textColor = textPrimary,
-                font = modernEraMedium
-            ) {
-                val candidateName = candidate.firstName.ifBlank { "her" }
-                submitAskAi("Spot an understated, witty detail in $candidateName's answers that most matches miss.")
-            }
+                QuickActionChip(
+                    label = "Analyze vibe",
+                    bg = pillBg,
+                    border = pillBorder,
+                    textColor = textPrimary,
+                    font = modernEraMedium
+                ) {
+                    submitAskAi("Analyze the vibe, tone, and interest level of this chat so far. Give me tactical advice.")
+                }
 
-            QuickActionChip(
-                label = "Green & red flags",
-                bg = pillBg,
-                border = pillBorder,
-                textColor = textPrimary,
-                font = modernEraMedium
-            ) {
-                val candidateName = candidate.firstName.ifBlank { "her" }
-                submitAskAi("Highlight 2 major green flags and any subtle friction points in $candidateName's profile.")
+                QuickActionChip(
+                    label = "Translate subtext",
+                    bg = pillBg,
+                    border = pillBorder,
+                    textColor = textPrimary,
+                    font = modernEraMedium
+                ) {
+                    submitAskAi("What is the underlying tone or subtext of what $matchDisplayName sent, and how should I match that energy?")
+                }
+            } else {
+                QuickActionChip(
+                    label = "Vibe check",
+                    bg = pillBg,
+                    border = pillBorder,
+                    textColor = textPrimary,
+                    font = modernEraMedium
+                ) {
+                    val candidateName = candidate?.firstName?.ifBlank { "her" } ?: "her"
+                    submitAskAi("Give me a sharp, 2-sentence vibe check and best conversational angle for $candidateName.")
+                }
+
+                QuickActionChip(
+                    label = "Playful roast",
+                    bg = pillBg,
+                    border = pillBorder,
+                    textColor = textPrimary,
+                    font = modernEraMedium
+                ) {
+                    submitAskAi("Give me a light, teasing roast about one of her prompt answers that invites a laugh.")
+                }
+
+                QuickActionChip(
+                    label = "First date pitch",
+                    bg = pillBg,
+                    border = pillBorder,
+                    textColor = textPrimary,
+                    font = modernEraMedium
+                ) {
+                    val candidateName = candidate?.firstName?.ifBlank { "her" } ?: "her"
+                    submitAskAi("Suggest a low-pressure, tailored first date idea based on $candidateName's bio and interests.")
+                }
+
+                QuickActionChip(
+                    label = "Hidden hook",
+                    bg = pillBg,
+                    border = pillBorder,
+                    textColor = textPrimary,
+                    font = modernEraMedium
+                ) {
+                    val candidateName = candidate?.firstName?.ifBlank { "her" } ?: "her"
+                    submitAskAi("Spot an understated, witty detail in $candidateName's answers that most matches miss.")
+                }
+
+                QuickActionChip(
+                    label = "Green & red flags",
+                    bg = pillBg,
+                    border = pillBorder,
+                    textColor = textPrimary,
+                    font = modernEraMedium
+                ) {
+                    val candidateName = candidate?.firstName?.ifBlank { "her" } ?: "her"
+                    submitAskAi("Highlight 2 major green flags and any subtle friction points in $candidateName's profile.")
+                }
             }
         }
 
@@ -1323,7 +1886,7 @@ fun HostAppAiSheetContent(
                     decorationBox = { innerTextField ->
                         if (askAiQuery.isEmpty()) {
                             Text(
-                                text = "Ask AI",
+                                text = if (isChatMode) "Ask AI about this chat..." else "Ask AI",
                                 fontFamily = modernEraRegular,
                                 fontSize = 14.5.sp,
                                 color = textSecondary.copy(alpha = 0.7f)
@@ -1385,6 +1948,7 @@ private fun CustomAiResponseCard(
     onRegenerate: () -> Unit,
     onDismiss: () -> Unit,
     onRefine: (String) -> Unit,
+    onInsert: ((String) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val modernEraRegular = remember(context) { HingeFonts.modernEraRegular(context) }
@@ -1564,38 +2128,73 @@ private fun CustomAiResponseCard(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Surface(
-                            shape = RoundedCornerShape(50),
-                            color = if (isCopied) HingeDesignTokens.VerifiedBlue else actionBtnBg,
-                            modifier = Modifier
-                                .height(34.dp)
-                                .clickable(enabled = interaction.reply.isNotBlank()) {
-                                    onCopy(interaction.reply)
-                                    isCopied = true
-                                    coroutineScope.launch {
-                                        delay(2000)
-                                        isCopied = false
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Surface(
+                                shape = RoundedCornerShape(50),
+                                color = if (isCopied) HingeDesignTokens.VerifiedBlue else (if (onInsert != null) pillBg else actionBtnBg),
+                                border = if (onInsert != null && !isCopied) BorderStroke(1.dp, pillBorder) else null,
+                                modifier = Modifier
+                                    .height(34.dp)
+                                    .clickable(enabled = interaction.reply.isNotBlank()) {
+                                        onCopy(interaction.reply)
+                                        isCopied = true
+                                        coroutineScope.launch {
+                                            delay(2000)
+                                            isCopied = false
+                                        }
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 14.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (isCopied) Icons.Default.Check else Icons.Default.ContentCopy,
+                                        contentDescription = null,
+                                        tint = if (onInsert != null && !isCopied) textPrimary else actionBtnText,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Text(
+                                        text = if (isCopied) "Copied!" else "Copy",
+                                        fontFamily = modernEraMedium,
+                                        fontSize = 12.5.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (onInsert != null && !isCopied) textPrimary else actionBtnText
+                                    )
+                                }
+                            }
+
+                            if (onInsert != null) {
+                                Surface(
+                                    shape = RoundedCornerShape(50),
+                                    color = actionBtnBg,
+                                    modifier = Modifier
+                                        .height(34.dp)
+                                        .clickable(enabled = interaction.reply.isNotBlank()) {
+                                            onInsert(interaction.reply)
+                                        }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 14.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Filled.Send,
+                                            contentDescription = null,
+                                            tint = actionBtnText,
+                                            modifier = Modifier.size(13.dp)
+                                        )
+                                        Text(
+                                            text = "Insert",
+                                            fontFamily = modernEraMedium,
+                                            fontSize = 12.5.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = actionBtnText
+                                        )
                                     }
                                 }
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 14.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Icon(
-                                    imageVector = if (isCopied) Icons.Default.Check else Icons.Default.ContentCopy,
-                                    contentDescription = null,
-                                    tint = actionBtnText,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                                Text(
-                                    text = if (isCopied) "Copied!" else "Copy",
-                                    fontFamily = modernEraMedium,
-                                    fontSize = 12.5.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = actionBtnText
-                                )
                             }
                         }
 
@@ -1711,7 +2310,9 @@ private fun NativeHingeCommentBubble(
     actionBtnText: Color,
     onCopy: (String) -> Unit,
     onRegenerate: () -> Unit,
-    onOpenSettings: () -> Unit
+    onOpenSettings: () -> Unit,
+    onInsert: ((String) -> Unit)? = null,
+    isChatMode: Boolean = false,
 ) {
     val context = LocalContext.current
     val modernEraRegular = remember(context) { HingeFonts.modernEraRegular(context) }
@@ -1749,7 +2350,7 @@ private fun NativeHingeCommentBubble(
                         tint = textSecondary
                     )
                     Text(
-                        text = "Wingman opener",
+                        text = if (isChatMode) "Wingman reply" else "Wingman opener",
                         fontFamily = modernEraBold,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
@@ -1769,7 +2370,7 @@ private fun NativeHingeCommentBubble(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.ChevronLeft,
-                                contentDescription = "Previous opener",
+                                contentDescription = if (isChatMode) "Previous reply" else "Previous opener",
                                 modifier = Modifier.size(16.dp),
                                 tint = if (activeIndex > 0) textPrimary else textSecondary.copy(alpha = 0.3f)
                             )
@@ -1790,7 +2391,7 @@ private fun NativeHingeCommentBubble(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.ChevronRight,
-                                contentDescription = "Next opener",
+                                contentDescription = if (isChatMode) "Next reply" else "Next opener",
                                 modifier = Modifier.size(16.dp),
                                 tint = if (activeIndex < replies.size - 1) textPrimary else textSecondary.copy(alpha = 0.3f)
                             )
@@ -1814,7 +2415,7 @@ private fun NativeHingeCommentBubble(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Refresh,
-                                contentDescription = "Regenerate opener",
+                                contentDescription = if (isChatMode) "Regenerate reply" else "Regenerate opener",
                                 modifier = Modifier.size(15.dp),
                                 tint = textSecondary
                             )
@@ -1835,36 +2436,70 @@ private fun NativeHingeCommentBubble(
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    val btnBg = if (isCopied) HingeDesignTokens.SuccessGreen else actionBtnBg
-                    val btnContent = if (isCopied) Color.White else actionBtnText
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        val isCopySuccess = isCopied
+                        val copyBtnBg = if (isCopySuccess) HingeDesignTokens.SuccessGreen else (if (onInsert != null) HingeDesignTokens.LightPillUnselected else actionBtnBg)
+                        val copyBtnText = if (isCopySuccess) Color.White else (if (onInsert != null) textPrimary else actionBtnText)
 
-                    Surface(
-                        shape = RoundedCornerShape(50),
-                        color = btnBg,
-                        modifier = Modifier
-                            .height(34.dp)
-                            .clickable { onCopy(activeReply) }
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            modifier = Modifier.padding(horizontal = 12.dp)
+                        Surface(
+                            shape = RoundedCornerShape(50),
+                            color = copyBtnBg,
+                            modifier = Modifier
+                                .height(34.dp)
+                                .clickable { onCopy(activeReply) }
                         ) {
-                            Icon(
-                                imageVector = if (isCopied) Icons.Default.Check else Icons.Default.ContentCopy,
-                                contentDescription = null,
-                                tint = btnContent,
-                                modifier = Modifier.size(13.dp)
-                            )
-                            Text(
-                                text = if (isCopied) "Copied!" else "Copy",
-                                fontFamily = modernEraMedium,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = btnContent
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.padding(horizontal = 12.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (isCopySuccess) Icons.Default.Check else Icons.Default.ContentCopy,
+                                    contentDescription = null,
+                                    tint = copyBtnText,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Text(
+                                    text = if (isCopySuccess) "Copied!" else "Copy",
+                                    fontFamily = modernEraMedium,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = copyBtnText
+                                )
+                            }
+                        }
+
+                        if (onInsert != null) {
+                            Surface(
+                                shape = RoundedCornerShape(50),
+                                color = actionBtnBg,
+                                modifier = Modifier
+                                    .height(34.dp)
+                                    .clickable { onInsert(activeReply) }
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.padding(horizontal = 14.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.Send,
+                                        contentDescription = null,
+                                        tint = actionBtnText,
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                    Text(
+                                        text = "Insert",
+                                        fontFamily = modernEraMedium,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = actionBtnText
+                                    )
+                                }
+                            }
                         }
                     }
                 }

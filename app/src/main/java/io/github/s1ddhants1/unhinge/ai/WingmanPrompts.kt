@@ -59,4 +59,37 @@ object WingmanPrompts {
             customInstructions = custom,
         )
     }
+
+    fun chatReplySystemPrompt(
+        custom: String = "",
+        prefs: PreferencesManager? = null,
+        context: Context? = null,
+    ): String {
+        val effectiveCustom = custom.ifBlank { prefs?.aiCustomSystemPrompt.orEmpty() }
+        return PromptRepository.formatChatReplySystemPrompt(effectiveCustom)
+    }
+
+    fun chatReplyUserPrompt(
+        matchName: String,
+        conversationHistoryText: String,
+        profileBlock: String = "",
+        avoidReplies: List<String> = emptyList(),
+        template: String? = null,
+        prefs: PreferencesManager? = null,
+        context: Context? = null,
+        directionalStimulus: String = "",
+        replyCount: Int = 4,
+    ): String {
+        val effectiveTemplate = template?.takeIf { it.isNotBlank() }
+            ?: PromptRepository.getEffectiveChatReplyTemplate(prefs, context)
+        return PromptRepository.formatChatReplyUserPrompt(
+            template = effectiveTemplate,
+            matchName = matchName,
+            conversationHistoryText = conversationHistoryText,
+            profileBlock = profileBlock,
+            avoidReplies = avoidReplies,
+            directionalStimulus = directionalStimulus,
+            replyCount = replyCount,
+        )
+    }
 }

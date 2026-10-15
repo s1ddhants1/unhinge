@@ -344,7 +344,7 @@ class MainActivity : ComponentActivity() {
                                         }
                                         AppTab.Profile -> ProfileRawScreen(data = state.completeData)
                                         AppTab.Candidates -> CandidatesScreen(candidates = state.completeData.candidates, prefs = prefs)
-                                        AppTab.Matches -> MatchesScreen(matches = state.completeData.matches)
+                                        AppTab.Matches -> MatchesScreen(matches = state.completeData.matches, prefs = prefs)
                                         AppTab.Explorer -> RawExplorerScreen(
                                             prefFiles = state.completeData.allPrefFiles,
                                             dbTables = state.completeData.databaseTables,
