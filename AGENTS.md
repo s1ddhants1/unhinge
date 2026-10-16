@@ -10,7 +10,7 @@ This document defines the atomic instructions, non-negotiable architectural mand
 - **Dynamic Isolation**: `Module.onPackageReady` MUST check `param.packageName == Consts.TARGET_PACKAGE` and `param.isFirstPackage`, immediately invoking `detach()` on non-target packages (LibXposed API 102+). Never hook system server, framework, or other applications.
 - **Process Separation**:
   - **Hook Layer (`hook/`, `hook/privacy/`, `hook/ui/`)**: Runs inside `co.hinge.app`. Must be thread-safe, allocation-efficient, and strictly isolated using `hookTracked` with `ExceptionMode.PROTECTIVE`.
-  - **In-App Overlay Layer (`hook/ui/`, `hook/ui/sheet/`)**: Injects `HostAppAiFab` and modular `HostAppAiSheetContent` (`SheetHeader`, `CandidatePromptCard`, `MatchChatReplyCard`, `OpenerSteeringSection`, `SheetBottomBar`) into Hinge's active activity with `ViewTreeLifecycleOwner` bridging.
+  - **In-App Overlay Layer (`hook/ui/`, `hook/ui/sheet/`)**: Injects `HostAppAiFab` and native Hinge-styled `InlineAiOpenerCard` (with `HostAppAiSheetContent` coordinator) into Hinge's active activity with `ViewTreeLifecycleOwner` bridging, non-modal layout, prompt switching, and one-tap retry.
   - **In-Process Database Layer (`data/HostCandidateReader.kt`)**: Opens Hinge's internal SQLite database exclusively in `SQLiteDatabase.OPEN_READONLY` mode. Never lock or modify the host database.
   - **Companion App Layer (`ui/`, `data/`, `ai/`, `model/`, `util/`)**: Runs in `io.github.s1ddhants1.unhinge`. Communicates with the module only via LibXposed Remote Preferences (`PreferencesManager`) with fallback `SharedPreferences` for integrated LSPatch/rootless environments.
 - **Platform Matrix**:
@@ -78,7 +78,7 @@ Refer to the dedicated modular documentation files in `docs/` for deep technical
 - **[On-Device Target Decompilation Analysis](docs/HINGE_ANALYSIS.md)**:
   Target application decompilation analysis, component architecture, native splits, manifest entry points, network endpoints, and anti-tamper detections.
 - **[AI Prompt Wingman Architecture](docs/AI_WINGMAN.md)**:
-  Floating Action Button mechanics, touch physics, snap-to-edge docking, ViewTree owner bridging, in-process candidate SQLite extraction, and production AI wingman architecture (`LlmClient`, `LlmClientRegistry`, `OpenAiChatClient`, `AiHttpClient`, `AiWingmanHelper`, `PromptEntry`, modular `hook/ui/sheet/` bottom sheet, and opener follow-up steering flow).
+  Floating Action Button mechanics, touch physics, snap-to-edge docking, ViewTree owner bridging, in-process candidate SQLite extraction, and production AI wingman architecture (`LlmClient`, `LlmClientRegistry`, `OpenAiChatClient`, `AiHttpClient`, `AiWingmanHelper`, `PromptEntry`, native Hinge-styled `InlineAiOpenerCard`, non-modal overlay docking, and one-tap retry).
 - **[Database, Storage & Archival Systems](docs/DATABASE_AND_STORAGE.md)**:
   Companion application SQLite persistence (`candidate_archive.db`, version 3), root-assisted fallback extraction engine (`SuStorageReader`), and serialized candidate data models.
 - **[Telemetry, Privacy & Surveillance Analysis](docs/TELEMETRY_AND_PRIVACY.md)**:

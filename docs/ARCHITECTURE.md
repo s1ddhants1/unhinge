@@ -20,7 +20,7 @@ Unhinge operates across two strictly isolated Android processes:
 |         v                                                       v                       |
 |  [Privacy Suppression Hooks]                             [Host UI Injection]            |
 |  - PrivacyFirebaseHook (Analytics events & properties)   - HostAppAiFab (Draggable FAB) |
-|  - PrivacyCrashlyticsHook (Exception & breadcrumb drop)  - HostAppAiSheetContent (M3)   |
+|  - PrivacyCrashlyticsHook (Exception & breadcrumb drop)  - InlineAiOpenerCard (Inline)  |
 |  - PrivacyPerfHook (Traces & HTTP metrics)               - HostCandidateReader          |
 |  - PrivacyAppsFlyerHook (Attribution & campaigns)          (Direct in-process SQLite    |
 |  - PrivacyIncogniaHook (Fraud & geolocation SDK)            read from internal DB)      |
@@ -169,15 +169,15 @@ The FAB supports intuitive gestures:
 - **Click Detection**: Differentiates between taps and drags using a movement threshold (`moveThreshold = 10 * density`).
 - **Edge Snapping**: On `ACTION_UP` or `ACTION_CANCEL`, computes the nearest horizontal display boundary (left or right) and animates the button into a docked margin position using an exponential decay interpolation (`150ms`).
 
-### 4.3 In-Process Compose Dialog & ViewTree Owners
-When the FAB is clicked, it opens a modal `Dialog` hosting [HostAppAiSheetContent.kt](../app/src/main/java/io/github/s1ddhants1/unhinge/hook/ui/HostAppAiSheetContent.kt) inside a `ComposeView`.
+### 4.3 In-Process Inline Compose Overlay & ViewTree Owners
+When the FAB is clicked, it toggles a non-modal inline card hosting [InlineAiOpenerCard.kt](../app/src/main/java/io/github/s1ddhants1/unhinge/hook/ui/sheet/InlineAiOpenerCard.kt) (with [HostAppAiSheetContent.kt](../app/src/main/java/io/github/s1ddhants1/unhinge/hook/ui/HostAppAiSheetContent.kt) coordinator) inside a `ComposeView` docked right above the bottom controls.
 Because the host activity may not expose Jetpack Compose `ViewTreeOwners` to dynamically injected subtrees, Unhinge bridges them reflectively:
 ```kotlin
 ViewTreeLifecycleOwner.set(decor, activity as LifecycleOwner)
 ViewTreeViewModelStoreOwner.set(decor, activity as ViewModelStoreOwner)
 ViewTreeSavedStateRegistryOwner.set(decor, activity as SavedStateRegistryOwner)
 ```
-This enables full Compose rendering, animations, theme cascading (`UnhingeTheme`), and clipboard integration within the host app process.
+This enables full Compose rendering, animations, theme cascading (`UnhingeTheme`), and clipboard integration within the host app process without modal scrims or background dimming.
 
 ---
 

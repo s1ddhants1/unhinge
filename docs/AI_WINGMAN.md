@@ -301,98 +301,30 @@ The AI pipeline in Unhinge is designed for high-performance dating prompt sugges
      - **Manual Settings Sync**: An interactive "Sync OpenCode Gateway" row in AI Wingman Settings lets users refresh the catalog and version on-demand, with instant toast feedback.
      - **Reactive Self-Healing**: On any HTTP 401, 403, or 404 gateway response encountered during generation or streaming, `ZenRouter.onGatewayResponse` automatically launches an asynchronous force-sync guarded by `Mutex.withLock` to immediately adapt to server-side model deprecations or version rotations.
 
----
+## 6. Native Hinge-Styled Inline Opener UI (`hook/ui/sheet/`)
 
-## 6. Modular In-App Bottom Sheet UI (`hook/ui/sheet/`)
+Instead of rendering an intrusive modal bottom sheet that darkens 70% of the screen and hides candidate profiles, the AI Wingman adopts Hinge's native AI prompt feedback and analysis design language (as seen in Hinge's own profile prompt review):
 
-The Wingman sheet architecture is modularized under `hook/ui/sheet/`, decoupling individual visual elements and interactive flows from the parent coordinator [HostAppAiSheetContent.kt](../app/src/main/java/io/github/s1ddhants1/unhinge/hook/ui/HostAppAiSheetContent.kt):
+1. **Inline Non-Modal Architecture (`InlineAiOpenerCard.kt`)**:
+   - **Zero Dimming & Full Background Interactivity**: The inline card is embedded directly in `TAG_FAB_CONTAINER` attached to the host activity's decor/content view. It renders without window dimming (`dimAmount = 0f`), allowing users to scroll candidate profiles, view photos, and interact with Hinge while viewing opener suggestions.
+   - **Automatic Controls Docking**: Dynamically docks right above the bottom controls (`passRect`, `chatInputRect`, or `bottomNavTop`), taking only ~180-220dp vertical height at the bottom of the screen.
+   - **Toggleable Overlay**: Tapping the Sparkle FAB toggles the inline card on and off. Tapping `✕` on the card collapses it immediately.
 
-1. **Modular Subcomponents**:
-   - **`SheetHeader.kt`**: Encapsulates profile picture avatar, display name, age, "Match Chat" or "Active now" badges, job/location subtitle, real-time likes counter, and close button.
-   - **`SheetEmptyStates.kt`**: Houses structured empty and onboarding states (`SheetLoadingState`, `SheetNoMatchChatState`, `SheetNoCandidateState`, `SheetSetupRequiredState`).
-   - **`CandidatePromptCard.kt`**: Renders candidate prompts with question headers, Tiempos answers, bio fallback cards, and embedded comment bubbles.
-   - **`MatchChatReplyCard.kt`**: Renders match chat archetype suggestions with description and chat insert action.
-   - **`SheetBottomBar.kt`**: Houses horizontal scrollable quick action chips and the bottom Ask AI text field with soft-keyboard elevation (`imePadding`).
-   - **`NativeHingeCommentBubble.kt`**: Drafted comment bubble with stepper navigation (`< 1 of N >`), copy/insert actions, and inline opener steering.
-   - **`OpenerSteeringSection.kt`**: Dedicated follow-up chat and steering UI anchored directly to openers.
-   - **`CustomAiResponseCard.kt`**: Renders general Ask AI interaction cards with refinement pills and markdown parsing.
-   - **`HingeDesignTokens.kt`**: Defines canonical Hinge light and dark mode colors, borders, and fills.
+2. **Native Hinge AI Prompt Feedback Aesthetic**:
+   - **Card Container**: Soft rounded corners (`RoundedCornerShape(20.dp)`), hairline borders (`#EBEBEA` in light mode, `#2B2B2B` in dark mode), and high-contrast surfaces (`#FFFFFF` in light mode, `#1E1E1E` in dark mode).
+   - **Header**: Features a distinctive sparkle icon (✨ in Hinge's signature burgundy/purple tint), "Prompt Review" / "AI Opener" headline in `modernEraBold`, prompt pagination (`< 1/3 >`), and a clean dismiss (✕) button.
+   - **Target Prompt Context**: A compact preview chip displays the prompt question and snippet to show exactly what the opener responds to.
+   - **Opener Body**: Clean, readable suggestion rendered in `modernEraMedium` (14sp) with one-tap copy. Displays a subtle pulsing spinner while generating.
+   - **Streamlined Action Row**:
+     - **Try another (Retry)**: Instant one-tap regeneration with fresh angles.
+     - **Copy**: Copies the opener directly to the clipboard with instant green "Copied!" visual feedback.
+     - **Insert**: If active chat or comment input is present, one tap inserts the generated text directly into Hinge's input field.
 
-2. **Opener Follow-Up Chats & Interactive LLM Steering**:
-   - Each prompt card's comment bubble includes a dedicated **"Steer"** action button alongside Copy.
-   - Expanding the steering section reveals:
-     - **Quick Direction Pills**: High-converting one-tap steering instructions (*Funnier & playful*, *Shorter & punchier*, *Ask an engaging question*, *More casual*, *Witty mock-challenge*, *More flirty*).
-     - **Iterative Chat History**: Displays previous user steering prompts and refined model responses directly below the active opener.
-     - **Directional Input**: Micro text input field permitting custom instructions (*"Mention I also play guitar"*, *"Tone down the sarcasm"*).
-     - **Streaming Multi-Turn Evolution**: Model streams refinements directly into the entry; completed refinements are registered into `PromptEntry.repliesFlow` as selectable variations in the stepper with one-tap *"Use & Copy"*.
+3. **Multi-Prompt Cycling**:
+   - Candidate profiles typically contain up to 3 prompts. The header provides a compact `< 1/3 >` pill, allowing users to effortlessly switch between Prompt 1, Prompt 2, or Prompt 3 and generate tailored openers for any prompt on the profile.
 
-3. **Authentic Hinge Brand Typography (`HingeFonts.kt`)**:
-   - Exact brand typefaces matching [Hinge Brand Guidelines](https://hinge.co/en-gb/brand-resources):
-     - **Modern Era** (Family Type): Used for the sheet architecture:
-       - Headlines, candidate names, age, avatar initial, and section badges: `modernEraBold` (Bold, 20-21sp).
-       - Question titles: `modernEraBold` (Bold, 15sp, natural casing matching Hinge's `style/HingeQuestion`).
-       - Drafted comment bubble openers and custom AI responses: `modernEraMedium` (Medium, 15-16sp).
-       - Subtitles, captions, helper notices, and interactive "Ask AI" input: `modernEraRegular` (Regular, 13-14sp).
-     - **Tiempos Headline** (Kris Sowersby / Klim Type Foundry):
-       - Candidate prompt answers: `tiemposRegular` rendered at native Regular weight (`FontWeight.Normal`), 26sp, 34sp line height matching Hinge's live profile layout.
-       - Candidate bio fallback text: `tiemposRegular` (24sp, 32sp line height, `FontWeight.Normal`).
-   - **Cross-Process Dynamic Font Resolver**: Injected Compose overlays run within the host `Activity` context (`co.hinge.app.ui.AppActivity`). `HingeFonts.kt` dynamically resolves host runtime font resources via `context.resources.getIdentifier(fontName, "font", context.packageName)`, falling back to the companion app package context and finally graceful fallback typefaces with `ConcurrentHashMap` caching.
-
-4. **Horizontal Card Carousel Architecture (Hinge Paywall / Standouts Style)**:
-   - Modeled directly on Hinge's decompiled Jetpack Compose purchase UI:
-     - Uses `HorizontalPager` with `contentPadding = PaddingValues(horizontal = 28.dp)` and `pageSpacing = 14.dp`, allowing adjacent cards to peek from the edges.
-     - Card containers styled with `RoundedCornerShape(22.dp)`, subtle borders, and authentic card background fills (`#FFFFFF` in light mode, `#1E1E1E` in dark mode).
-     - Each card features an independent `Modifier.verticalScroll(rememberScrollState())` to handle lengthy prompts and multiline LLM suggestions smoothly without truncating.
-   - **Hinge-Style Indicator Dots**:
-     - Positioned directly below the card carousel.
-     - All pages render as authentic 6dp circular dots matching native Hinge bottom sheets (`DotsPagerIndicator` / `DotsTabLayout`).
-     - The active page is highlighted with Hinge primary tint (`#161616` / `#FFFFFF`) without expanding into a pill, while inactive dots render in muted subtle gray (`#D6D6D4` / `#383838`).
-
-3. **Authentic Prompt Cards & Multi-Opener Draft Bubbles**:
-   - Individual candidate prompts styled as large rounded cards with question title and Tiempos answer.
-   - Tailored conversation openers embedded directly within each card as a drafted comment bubble (`#F4F4F2` in light mode, `#262626` in dark mode).
-   - **Multi-Opener History & Stepper Navigation**:
-     - Tapping the Refresh/Regenerate button triggers fresh generation with `forceRefresh = true` bypassing session caching.
-     - Feeds `avoidReplies` into LLM prompts at elevated creativity temperature (0.85) to guarantee distinct, fresh alternatives on every regeneration.
-     - Each prompt accumulates generated openers into `PromptEntry.repliesFlow`, displaying an interactive stepper (`< 2 of 3 >`) with previous/next navigation arrows.
-     - Single-tap "Copy" button automatically copies the currently active opener in the stepper.
-     - Per-entry loading state (`isGeneratingFlow`) displays a spinning indicator on the prompt's refresh button without disrupting other cards or blanking existing text.
-   - **Contextual Card Quick-Action**: Includes an inline `"Ask AI"` action button on each prompt card that automatically pre-populates the input bar with focus on that specific prompt.
-
-4. **Smooth Ask AI Experience & Dynamic Card Sequencing**:
-   - **Elimination of Gaze Jump**: When a user submits an Ask AI query or quick action, the generated analysis is appended cleanly as a new card in `customInteractions` rather than prepending at the top of the screen.
-   - A `LaunchedEffect` smoothly scrolls the pager (`pagerState.animateScrollToPage`) to the newly created interaction card.
-   - **Quick Action Suggestion Chips**: Horizontal scroll row above the input bar offering high-converting one-tap dating analyses:
-     - `Vibe check`
-     - `Playful roast`
-     - `First date pitch`
-     - `Hidden hook`
-     - `Green & red flags`
-   - **Interactive Refinement Pills**: Generated custom AI cards feature quick follow-up refinement action pills (`[Shorter]`, `[Bolder]`, `[Teasing]`, `[Date pitch]`), allowing immediate tone tuning without typing.
-   - Streaming responses render live via `OpenRouterStreamingService.streamChat` / `AiWingmanHelper.streamCustomChat` directly inside the active card.
-
-5. **Interactive "Ask AI" Input Bar**:
-   - Floating rounded capsule with soft-keyboard elevation (`imePadding` + `SOFT_INPUT_ADJUST_RESIZE`).
-   - Clean placeholder `"Ask AI about this profile..."`.
-   - Injects rich candidate profile context (demographics, verified status, prompt Q&As, bio) and the user's Model Parameters settings (temperature, top-P, max tokens) into custom queries.
-   - Renders interactive response cards supporting instant 1-tap clipboard copying, regeneration, follow-up refinement, and dismissal.
-
-6. **Interactive Swipe-to-Dismiss Architecture**:
-   - Native bottom sheet physics matching Android's `BottomSheetBehavior`:
-     - Real-time touch tracking via `Animatable(0f)` offset and `Modifier.draggable` attached to the drag handle, candidate identity header, and empty state containers.
-     - Release physics: drags beyond threshold (>25% sheet height) or downward flings (>1000px/s) smoothly animate the sheet off-screen before invoking `onDismiss()`; sub-threshold drags spring back up to `0dp`.
-     - Close "X" button triggers the identical downward exit animation prior to dismissal.
-     - Window-level integration: `dialog.setCanceledOnTouchOutside(true)` and `android.R.style.Animation_InputMethod` for native slide-up entrance and outside-touch dismissal.
-
-7. **Clean Header & Visual Discipline**:
-   - Candidate identity header displays candidate first name and age in Modern Era Bold, with photo thumbnail and subtitle (work, location) without selfie verification badges for an uncluttered layout.
-   - Opener action button cleanly labeled "Copy" with temporary confirmation state.
-   - Zero emojis across all UI copy, chips, pills, badges, toasts, and comments.
-   - Zero haptic feedback vibrations for clean, distraction-free interactions.
-
-8. **System Bar & Window Isolation**:
-   - `UnhingeTheme` strictly restricts mutating `isAppearanceLightStatusBars` and `isAppearanceLightNavigationBars` to the companion app process (`view.context.packageName == "io.github.s1ddhants1.unhinge"` with `setSystemBars = true`).
-   - `HostAppAiFab.showAiSheet` passes `setSystemBars = false` and snapshots the host activity's status bar appearance on display, restoring it on dismiss to guarantee Hinge's status bar icons never turn white on a white background.
+4. **Backward-Compatible Coordinator (`HostAppAiSheetContent.kt`)**:
+   - Serves as a lightweight delegate to `InlineAiOpenerCard`. When opened from `CandidatesScreen` or `MatchesScreen` in the companion app, it renders the exact same compact, elegant card.
 
 ---
 

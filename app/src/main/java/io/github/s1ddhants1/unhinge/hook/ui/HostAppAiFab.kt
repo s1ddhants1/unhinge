@@ -39,6 +39,7 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import io.github.s1ddhants1.unhinge.Consts
 import io.github.s1ddhants1.unhinge.data.HostCandidateReader
+import io.github.s1ddhants1.unhinge.hook.ui.sheet.InlineAiOpenerCard
 import io.github.s1ddhants1.unhinge.ui.theme.Theme
 import io.github.s1ddhants1.unhinge.util.PreferencesManager
 import io.github.s1ddhants1.unhinge.util.attempt
@@ -53,10 +54,12 @@ object HostAppAiFab {
     internal const val TAG_NAV_FORWARD = "unhinge_nav_forward"
     internal const val TAG_NAV_COUNTER = "unhinge_nav_counter"
     internal const val TAG_AVAILABLE_LIKES = "unhinge_available_likes"
+    internal const val TAG_INLINE_OPENER_CARD = "unhinge_inline_opener_card"
 
     private val layoutListeners = WeakHashMap<View, ViewTreeObserver.OnGlobalLayoutListener>()
     private val preDrawListeners = WeakHashMap<View, ViewTreeObserver.OnPreDrawListener>()
     private val likesObservers = WeakHashMap<Activity, (HostLikesReader.LikesState) -> Unit>()
+    private val overlayLifecycleOwners = WeakHashMap<View, ComposeDialogLifecycleOwner>()
     internal var currentActivityRef: WeakReference<Activity>? = null
     private var currentPrefsRef: WeakReference<PreferencesManager>? = null
 
@@ -117,6 +120,10 @@ object HostAppAiFab {
                 }
 
                 findAttachedContainer(activity)?.let { container ->
+                    val inlineCard = container.findViewWithTag<View>(TAG_INLINE_OPENER_CARD)
+                    if (inlineCard != null) {
+                        overlayLifecycleOwners.remove(inlineCard)?.handleDestroy()
+                    }
                     val listener = layoutListeners.remove(container)
                     if (listener != null) {
                         container.viewTreeObserver.removeOnGlobalLayoutListener(listener)
@@ -236,11 +243,30 @@ object HostAppAiFab {
             setOnClickListener {
                 val isChat = findPassButtonBounds(activity.window?.decorView) == null &&
                         findChatInputBounds(activity.window?.decorView) != null
-                Log.i(Consts.TAG, "HostAppAiFab clicked! Launching showAiSheet(isChatMode=$isChat)...")
-                showAiSheet(activity, prefs, isChatMode = isChat)
+                Log.i(Consts.TAG, "HostAppAiFab clicked! Toggling inline opener (isChatMode=$isChat)...")
+                toggleInlineOpenerCard(activity, prefs, isChatMode = isChat)
             }
         }
         container.addView(fab)
+
+        val inlineLifecycleOwner = ComposeDialogLifecycleOwner()
+        inlineLifecycleOwner.handleStart()
+        val inlineCard = ComposeView(activity).apply {
+            tag = TAG_INLINE_OPENER_CARD
+            visibility = View.GONE
+            layoutParams = FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = Gravity.TOP or Gravity.START
+            }
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnLifecycleDestroyed(inlineLifecycleOwner))
+            setViewTreeLifecycleOwner(inlineLifecycleOwner)
+            setViewTreeViewModelStoreOwner(inlineLifecycleOwner)
+            setViewTreeSavedStateRegistryOwner(inlineLifecycleOwner)
+        }
+        overlayLifecycleOwners[inlineCard] = inlineLifecycleOwner
+        container.addView(inlineCard)
 
         val pillHeight = (26 * density).toInt()
         val likesPill = LinearLayout(activity).apply {
@@ -545,6 +571,32 @@ object HostAppAiFab {
             navCapsule.x = (containerWidth - navW) / 2f
             navCapsule.y = targetY + (fabSize - navHeight) / 2f
         }
+
+        val inlineCard = container.findViewWithTag<View>(TAG_INLINE_OPENER_CARD)
+        if (inlineCard != null && inlineCard.visibility == View.VISIBLE) {
+            val horizontalMargin = (12 * density).toInt()
+            val cardWidth = (containerWidth - (horizontalMargin * 2)).coerceAtLeast((200 * density).toInt())
+            inlineCard.measure(
+                View.MeasureSpec.makeMeasureSpec(cardWidth, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+            )
+            val cardHeight = inlineCard.measuredHeight
+
+            val bottomAnchor = when {
+                pRect != null && pRect.top > 0 -> pRect.top - containerScreenY - (10 * density).toInt()
+                cRect != null && cRect.top > 0 -> cRect.top - containerScreenY - (10 * density).toInt()
+                else -> {
+                    val bottomNavTop = findBottomNavTop(container.rootView, screenHeight)
+                        ?: (screenHeight - (76 * density).toInt())
+                    bottomNavTop - containerScreenY - (10 * density).toInt()
+                }
+            }
+
+            inlineCard.layoutParams.width = cardWidth
+            inlineCard.layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
+            inlineCard.x = horizontalMargin.toFloat()
+            inlineCard.y = (bottomAnchor - cardHeight).coerceAtLeast((40 * density).toInt()).toFloat()
+        }
     }
 
     internal fun findPassButtonBounds(rootView: View?): Rect? {
@@ -744,6 +796,35 @@ object HostAppAiFab {
         act.runOnUiThread {
             val container = findAttachedContainer(act) ?: return@runOnUiThread
             updateNavCounter(container)
+            val inlineCard = container.findViewWithTag<ComposeView>(TAG_INLINE_OPENER_CARD)
+            val prefs = currentPrefsRef?.get()
+            if (inlineCard != null && inlineCard.visibility == View.VISIBLE && prefs != null) {
+                val screenClues = extractScreenClues(act)
+                inlineCard.setContent {
+                    Theme(
+                        themeMode = prefs.themeMode,
+                        pureBlack = prefs.pureBlack,
+                        themeColor = androidx.compose.ui.graphics.Color(prefs.themeColor),
+                        setSystemBars = false,
+                    ) {
+                        InlineAiOpenerCard(
+                            prefs = prefs,
+                            screenClues = screenClues,
+                            isChatMode = false,
+                            hostActivity = act,
+                            onDismiss = {
+                                act.runOnUiThread {
+                                    inlineCard.visibility = View.GONE
+                                }
+                            },
+                            onInsert = { text ->
+                                insertReplyIntoChatInput(act, text)
+                            },
+                        )
+                    }
+                }
+                updateControlsPosition(container, act)
+            }
         }
     }
 
@@ -959,85 +1040,45 @@ object HostAppAiFab {
         }
     }
 
-    private fun showAiSheet(activity: Activity, prefs: PreferencesManager, isChatMode: Boolean = false) {
-        if (activity.isFinishing || activity.isDestroyed) return
-        try {
-            prefs.ensureBackupPrefs(activity)
-            val screenClues = extractScreenClues(activity)
-            val activityWindow = activity.window
-            val insetsController = if (activityWindow != null) {
-                WindowCompat.getInsetsController(activityWindow, activityWindow.decorView)
-            } else null
-            val wasLightStatusBar = insetsController?.isAppearanceLightStatusBars
-            val wasLightNavBar = insetsController?.isAppearanceLightNavigationBars
-
-            val dialog = Dialog(activity, android.R.style.Theme_Translucent_NoTitleBar)
-            val window = dialog.window
-            window?.setGravity(Gravity.BOTTOM)
-            window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
-            window?.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-            window?.setDimAmount(0.5f)
-            window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-            window?.setWindowAnimations(android.R.style.Animation_InputMethod)
-            dialog.setCanceledOnTouchOutside(true)
-
-            val lifecycleOwner = ComposeDialogLifecycleOwner()
-
-            val composeView = ComposeView(activity).apply {
-                setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnLifecycleDestroyed(lifecycleOwner))
-                setContent {
+    fun toggleInlineOpenerCard(activity: Activity, prefs: PreferencesManager, isChatMode: Boolean = false) {
+        activity.runOnUiThread {
+            val container = findAttachedContainer(activity) ?: return@runOnUiThread
+            val inlineCard = container.findViewWithTag<ComposeView>(TAG_INLINE_OPENER_CARD) ?: return@runOnUiThread
+            if (inlineCard.visibility == View.VISIBLE) {
+                inlineCard.visibility = View.GONE
+            } else {
+                val screenClues = extractScreenClues(activity)
+                inlineCard.setContent {
                     Theme(
                         themeMode = prefs.themeMode,
                         pureBlack = prefs.pureBlack,
                         themeColor = androidx.compose.ui.graphics.Color(prefs.themeColor),
-                        setSystemBars = false
+                        setSystemBars = false,
                     ) {
-                        HostAppAiSheetContent(
-                            candidateList = null,
-                            screenClues = screenClues,
+                        InlineAiOpenerCard(
                             prefs = prefs,
-                            onDismiss = { dialog.dismiss() },
-                            showDragHandle = true,
+                            screenClues = screenClues,
                             isChatMode = isChatMode,
                             hostActivity = activity,
+                            onDismiss = {
+                                activity.runOnUiThread {
+                                    inlineCard.visibility = View.GONE
+                                }
+                            },
+                            onInsert = { text ->
+                                insertReplyIntoChatInput(activity, text)
+                            },
                         )
                     }
                 }
+                inlineCard.visibility = View.VISIBLE
+                updateControlsPosition(container, activity)
             }
-
-            composeView.setViewTreeLifecycleOwner(lifecycleOwner)
-            composeView.setViewTreeViewModelStoreOwner(lifecycleOwner)
-            composeView.setViewTreeSavedStateRegistryOwner(lifecycleOwner)
-
-            val decor = window?.decorView
-            if (decor != null) {
-                decor.setViewTreeLifecycleOwner(lifecycleOwner)
-                decor.setViewTreeViewModelStoreOwner(lifecycleOwner)
-                decor.setViewTreeSavedStateRegistryOwner(lifecycleOwner)
-            }
-
-            dialog.setContentView(composeView)
-
-            dialog.setOnShowListener {
-                lifecycleOwner.handleStart()
-            }
-            dialog.setOnDismissListener {
-                lifecycleOwner.handleDestroy()
-                if (insetsController != null) {
-                    if (wasLightStatusBar != null) {
-                        insetsController.isAppearanceLightStatusBars = wasLightStatusBar
-                    }
-                    if (wasLightNavBar != null) {
-                        insetsController.isAppearanceLightNavigationBars = wasLightNavBar
-                    }
-                }
-            }
-
-            dialog.show()
-        } catch (t: Throwable) {
-            Log.e(Consts.TAG, "Failed to display HostAppAiSheet: ${t.message}", t)
         }
+    }
+
+    fun showAiSheet(activity: Activity, prefs: PreferencesManager, isChatMode: Boolean = false) {
+        toggleInlineOpenerCard(activity, prefs, isChatMode)
     }
 }
 

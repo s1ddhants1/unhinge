@@ -14,7 +14,7 @@ class PromptRepositoryTest {
         assertTrue(template.isNotBlank())
         assertTrue(template.contains("{prompts}"))
         assertTrue(template.contains("{lineCount}"))
-        assertTrue(template.contains("THE 5 EMPIRICALLY PROVEN HUMAN OPENER ARCHETYPES"))
+        assertTrue(template.contains("5 Human Opener Archetypes", ignoreCase = true))
         assertTrue(template.contains("Mock Skeptic", ignoreCase = true))
         assertTrue(template.contains("Niche Item Callback", ignoreCase = true))
         assertTrue(template.contains("Relatable Micro-Debate", ignoreCase = true))
@@ -40,8 +40,8 @@ class PromptRepositoryTest {
         assertTrue(template.isNotBlank())
         assertTrue(template.contains("{profile}"))
         assertTrue(template.contains("{custom_instructions}"))
-        assertTrue(template.contains("EXHAUSTIVE DATING WINGMAN INSTRUCTIONS"))
-        assertTrue(template.contains("The 5 Human Archetypes"))
+        assertTrue(template.contains("dating wingman AI assistant for Hinge", ignoreCase = true))
+        assertTrue(template.contains("5 Human Opener Archetypes", ignoreCase = true))
     }
 
     @Test

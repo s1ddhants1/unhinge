@@ -184,12 +184,14 @@ particular:
 - the prompt template contains many overlapping negative constraints;
 - there is no formal prompt-quality telemetry or regression set.
 
-The guide also warns against over-constraint. Unhinge's opener template has a
-large catalogue of banned words, sentence structures, slang, questions, and
-openings in [`opener_template.md`](../app/src/main/assets/prompts/opener_template.md).
-This may reduce familiar AI clichés, but it can also make replies stiff or
-prevent legitimate language. A smaller set of high-value exclusions plus
-strong positive examples should be tested against the current template.
+The guide also warns against over-constraint. Unhinge's opener template originally
+featured an encyclopedic catalogue of banned words, sentence structures, slang,
+and negative constraints spanning over 156 lines (14.6 KB). This has been
+refactored into a minimal, surgically precise template (~38 lines, 2.4 KB) that
+focuses on high-leverage principles: strict topical isolation, energy and length
+calibration, 5 core human opener archetypes, consolidated negative guardrails,
+and compact few-shot demonstrations. Client-side auditing via `PromptSanitizer`
+handles post-processing without burning model context tokens.
 
 ## Security and Privacy Findings
 

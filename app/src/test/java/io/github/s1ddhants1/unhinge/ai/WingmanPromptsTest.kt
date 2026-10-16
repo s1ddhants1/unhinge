@@ -51,11 +51,10 @@ class WingmanPromptsTest {
         assertTrue(user.contains("bold claim", ignoreCase = true))
         assertTrue(user.contains("challenge accepted", ignoreCase = true))
         assertTrue(user.contains("plot twist", ignoreCase = true))
-        assertTrue(user.contains("EXHAUSTIVE HUMAN TEXTING RULES", ignoreCase = true))
-        assertTrue(user.contains("FEW-SHOT CALIBRATION EXAMPLES", ignoreCase = true))
-        assertTrue(user.contains("STRICT TOPICAL ISOLATION", ignoreCase = true))
-        assertTrue(user.contains("FORBIDDEN SYNTHETIC SLANG", ignoreCase = true))
-        assertTrue(user.contains("FORBIDDEN PATTERN", ignoreCase = true))
+        assertTrue(user.contains("Few-Shot Calibration", ignoreCase = true))
+        assertTrue(user.contains("Strict Topical Isolation", ignoreCase = true))
+        assertTrue(user.contains("forbidden synthetic slang", ignoreCase = true))
+        assertTrue(user.contains("Forbidden Patterns", ignoreCase = true))
         assertTrue(user.contains("heavy lifting", ignoreCase = true))
         assertTrue(user.contains("bet you", ignoreCase = true))
         assertTrue(user.contains("full time job", ignoreCase = true))
@@ -109,8 +108,7 @@ class WingmanPromptsTest {
         val user = WingmanPrompts.openerUserPrompt("Q: A")
         assertTrue(user.contains("<candidate_context>"))
         assertTrue(user.contains("</candidate_context>"))
-        assertTrue(user.contains("=== CONTEXT ENGINEERING & DATA ISOLATION DIRECTIVE ==="))
-        assertTrue(user.contains("=== REASONING MODEL (LRM) TEST-TIME COMPUTE & BREVITY DIRECTIVE ==="))
+        assertTrue(user.contains("Strict Topical Isolation", ignoreCase = true))
     }
 
     @Test
