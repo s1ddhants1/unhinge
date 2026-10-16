@@ -675,7 +675,7 @@ object HostAppAiFab {
         val inlineCard = container.findViewWithTag<View>(TAG_INLINE_OPENER_CARD)
         if (inlineCard != null && inlineCard.visibility == View.VISIBLE) {
             if (commentInfo != null) {
-                // In prompt card mode: Render directly into the prompt card in the red marked area!
+                // In comment mode: Render directly on the add comment textbox!
                 val commentRect = commentInfo.commentInputRect
                 val targetWidth = commentRect.width().coerceAtLeast((200 * density).toInt())
                 inlineCard.layoutParams.width = targetWidth
@@ -684,11 +684,9 @@ object HostAppAiFab {
                     View.MeasureSpec.makeMeasureSpec(targetWidth, View.MeasureSpec.EXACTLY),
                     View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
                 )
-                val cardHeight = inlineCard.measuredHeight
-                val gap = (6 * density).toInt()
 
                 val cardX = (commentRect.left - containerScreenX).toFloat()
-                val cardY = (commentRect.top - containerScreenY - cardHeight - gap).toFloat()
+                val cardY = (commentRect.top - containerScreenY).toFloat()
                 val minY = getStatusBarHeight(activity) + (8 * density)
 
                 inlineCard.x = cardX

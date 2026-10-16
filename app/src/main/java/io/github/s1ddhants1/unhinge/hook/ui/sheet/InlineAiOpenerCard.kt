@@ -249,14 +249,18 @@ fun InlineAiOpenerCard(
         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         cm.setPrimaryClip(ClipData.newPlainText("Unhinge Opener", text))
         isCopied = true
-        Toast.makeText(context, "Copied opener to clipboard", Toast.LENGTH_SHORT).show()
+        onInsert?.invoke(text)
+        Toast.makeText(context, if (isCommentMode) "Inserted into comment" else "Copied opener to clipboard", Toast.LENGTH_SHORT).show()
         coroutineScope.launch {
-            delay(2000)
+            delay(800)
             isCopied = false
+            if (isCommentMode) {
+                onDismiss()
+            }
         }
     }
 
-    val cardShape = if (isPromptCardMode) RoundedCornerShape(14.dp) else RoundedCornerShape(20.dp)
+    val cardShape = if (isPromptCardMode) RoundedCornerShape(12.dp) else RoundedCornerShape(20.dp)
     val cardElevation = if (isPromptCardMode) 0.dp else 10.dp
     val cardModifier = if (isPromptCardMode) {
         modifier
@@ -277,10 +281,10 @@ fun InlineAiOpenerCard(
         modifier = cardModifier,
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            // Header: Sparkle + title on left | Small retry button on top right
+            // Header: Sparkle + title on left | Retry and Dismiss buttons on top right
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -315,7 +319,7 @@ fun InlineAiOpenerCard(
                                 tint = HingeDesignTokens.SuccessGreen,
                             )
                             Text(
-                                text = "Copied!",
+                                text = if (isCommentMode) "Inserted!" else "Copied!",
                                 fontFamily = modernEraMedium,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold,
@@ -356,23 +360,21 @@ fun InlineAiOpenerCard(
                         }
                     }
 
-                    // Close ✕ button only in manual overlay mode
-                    if (!isPromptCardMode) {
-                        Box(
-                            modifier = Modifier
-                                .size(26.dp)
-                                .clip(CircleShape)
-                                .background(if (isDark) Color(0xFF2C2C2E) else Color(0xFFEFEFF1))
-                                .clickable { onDismiss() },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Dismiss",
-                                tint = textSecondary,
-                                modifier = Modifier.size(14.dp),
-                            )
-                        }
+                    // Dismiss ✕ button
+                    Box(
+                        modifier = Modifier
+                            .size(26.dp)
+                            .clip(CircleShape)
+                            .background(if (isDark) Color(0xFF2C2C2E) else Color(0xFFEFEFF1))
+                            .clickable { onDismiss() },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Dismiss",
+                            tint = textSecondary,
+                            modifier = Modifier.size(13.dp),
+                        )
                     }
                 }
             }
