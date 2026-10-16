@@ -78,6 +78,7 @@ object HostAppAiFab {
     private var currentCommentCardInfo: CommentCardInfo? = null
     private var lastCommentTargetKey: String? = null
     private var isInlineOpenerManuallyToggled: Boolean = false
+    private var isCommentCardDismissed: Boolean = false
 
     fun attach(activity: Activity, prefs: PreferencesManager) {
         currentActivityRef = WeakReference(activity)
@@ -531,9 +532,14 @@ object HostAppAiFab {
 
         if (commentInfo != null) {
             val targetKey = commentInfo.targetPrompt?.text ?: commentInfo.promptText ?: "comment_active"
-            if (lastCommentTargetKey != targetKey || inlineCard?.visibility != View.VISIBLE) {
+            val isNewTarget = lastCommentTargetKey != targetKey
+            if (isNewTarget) {
                 lastCommentTargetKey = targetKey
-                if (inlineCard != null) {
+                isCommentCardDismissed = false
+            }
+
+            if (!isCommentCardDismissed) {
+                if (inlineCard != null && (isNewTarget || inlineCard.visibility != View.VISIBLE)) {
                     val owner = overlayLifecycleOwners[inlineCard] ?: ComposeDialogLifecycleOwner().also {
                         overlayLifecycleOwners[inlineCard] = it
                     }
@@ -564,7 +570,7 @@ object HostAppAiFab {
                                     activity.runOnUiThread {
                                         inlineCard.visibility = View.GONE
                                         isInlineOpenerManuallyToggled = false
-                                        lastCommentTargetKey = null
+                                        isCommentCardDismissed = true
                                     }
                                 },
                                 onInsert = { text ->
@@ -575,12 +581,15 @@ object HostAppAiFab {
                     }
                     inlineCard.visibility = View.VISIBLE
                 }
+            } else if (inlineCard != null && inlineCard.visibility == View.VISIBLE) {
+                inlineCard.visibility = View.GONE
             }
         } else if (!isInlineOpenerManuallyToggled) {
             if (inlineCard != null && inlineCard.visibility == View.VISIBLE) {
                 inlineCard.visibility = View.GONE
             }
             lastCommentTargetKey = null
+            isCommentCardDismissed = false
         }
 
         val shouldShowContainer = shouldShowFab || showNav || showLikes || (commentInfo != null) || (inlineCard?.visibility == View.VISIBLE)
@@ -1406,9 +1415,11 @@ object HostAppAiFab {
             if (inlineCard.visibility == View.VISIBLE) {
                 inlineCard.visibility = View.GONE
                 isInlineOpenerManuallyToggled = false
+                isCommentCardDismissed = true
                 lastCommentTargetKey = null
             } else {
                 isInlineOpenerManuallyToggled = true
+                isCommentCardDismissed = false
                 val owner = overlayLifecycleOwners[inlineCard] ?: ComposeDialogLifecycleOwner().also {
                     overlayLifecycleOwners[inlineCard] = it
                 }
@@ -1444,6 +1455,7 @@ object HostAppAiFab {
                                 activity.runOnUiThread {
                                     inlineCard.visibility = View.GONE
                                     isInlineOpenerManuallyToggled = false
+                                    isCommentCardDismissed = true
                                     lastCommentTargetKey = null
                                 }
                             },

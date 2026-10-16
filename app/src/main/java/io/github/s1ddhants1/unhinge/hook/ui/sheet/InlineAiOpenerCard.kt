@@ -29,7 +29,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -329,51 +328,29 @@ fun InlineAiOpenerCard(
                     }
                 }
 
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                // Small retry button on top right corner of the card
+                Box(
+                    modifier = Modifier
+                        .size(26.dp)
+                        .clip(CircleShape)
+                        .background(if (isDark) Color(0xFF2C2C2E) else Color(0xFFEFEFF1))
+                        .clickable(enabled = isAiReady && !isEntryGenerating) {
+                            triggerGeneration(forceRefresh = true)
+                        },
+                    contentAlignment = Alignment.Center,
                 ) {
-                    // Small retry button on top right corner of the card
-                    Box(
-                        modifier = Modifier
-                            .size(26.dp)
-                            .clip(CircleShape)
-                            .background(if (isDark) Color(0xFF2C2C2E) else Color(0xFFEFEFF1))
-                            .clickable(enabled = isAiReady && !isEntryGenerating) {
-                                triggerGeneration(forceRefresh = true)
-                            },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        if (isEntryGenerating) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(12.dp),
-                                strokeWidth = 1.8.dp,
-                                color = sparkleColor,
-                            )
-                        } else {
-                            Icon(
-                                imageVector = Icons.Default.Refresh,
-                                contentDescription = "Retry",
-                                tint = textSecondary,
-                                modifier = Modifier.size(14.dp),
-                            )
-                        }
-                    }
-
-                    // Dismiss ✕ button
-                    Box(
-                        modifier = Modifier
-                            .size(26.dp)
-                            .clip(CircleShape)
-                            .background(if (isDark) Color(0xFF2C2C2E) else Color(0xFFEFEFF1))
-                            .clickable { onDismiss() },
-                        contentAlignment = Alignment.Center,
-                    ) {
+                    if (isEntryGenerating) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(12.dp),
+                            strokeWidth = 1.8.dp,
+                            color = sparkleColor,
+                        )
+                    } else {
                         Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Dismiss",
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Retry",
                             tint = textSecondary,
-                            modifier = Modifier.size(13.dp),
+                            modifier = Modifier.size(14.dp),
                         )
                     }
                 }
