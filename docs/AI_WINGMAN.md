@@ -436,6 +436,25 @@ Unlike generic chatbots that produce robotic praise or interrogation lists, Unhi
 - **Transcript Dialog AI Sheet**: Opening the chat transcript dialog provides an **"AI Wingman"** header action and a **"Suggest replies"** prompt in empty conversation states.
 - **Shared Compose Sheet**: Invokes `HostAppAiSheetContent(isChatMode = true, initialChatContext = chatContext)`, ensuring unified styling, archetype selection, and regeneration workflows across both the host app overlay and the companion app.
 
+---
+
+## 9. Native In-Prompt-Card AI Opener (`InlineAiOpenerCard.kt`)
+
+Rather than relying on floating bottom sheets or intrusive modal dialogs, Unhinge embeds AI openers directly into Hinge's active prompt cards in the whitespace above the "Add a comment" input box.
+
+### 9.1 Minimal, Surgical & Pill-Free Design
+- **Zero Pill Clutter**: All bulky pills (such as "Try another", "Insert", "Copy", and pagination selectors) are omitted.
+- **Small Top-Right Corner Retry Button**: A compact 26dp circular button in the top right corner houses the retry trigger (`Icons.Default.Refresh`), rotating into a mini progress spinner (`CircularProgressIndicator`) during generation.
+- **Direct Tap-to-Copy Opener Body**: Tapping the opener text immediately copies it to the system clipboard (`ClipData.newPlainText`), displays a confirmation toast, and temporarily renders an inline green "Copied!" indicator.
+
+### 9.2 Precision In-Card Docking & 120Hz Scroll Tracking
+- **Target Node Bounds Matching**:
+  - `width`: Set to `commentRect.width()`, perfectly matching Hinge's "Add a comment" field and prompt card bounds.
+  - `x`: `(commentRect.left - containerScreenX).toFloat()`.
+  - `y`: `commentRect.top - containerScreenY - cardHeight - gap`, docking directly inside the white prompt card above the comment box.
+- **120Hz PreDraw Refresh**: In `preDrawListener`, screen coordinates of the active virtual comment node are queried on each frame via `node.getBoundsInScreen(info.commentInputRect)`, keeping the card glued to the scrolling prompt card without jitter.
+- **Automatic Lifecycle**: The card appears automatically whenever a user taps "Like" on any prompt card or photo, and dismisses immediately (`View.GONE`) when comment mode is exited.
+
 
 
 

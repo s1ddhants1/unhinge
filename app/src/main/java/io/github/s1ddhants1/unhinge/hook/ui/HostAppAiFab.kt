@@ -32,14 +32,19 @@ import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.setViewTreeLifecycleOwner
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.os.Bundle
 import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import io.github.s1ddhants1.unhinge.Consts
+import io.github.s1ddhants1.unhinge.ai.PromptEntry
 import io.github.s1ddhants1.unhinge.data.HostCandidateReader
 import io.github.s1ddhants1.unhinge.hook.ui.sheet.InlineAiOpenerCard
+import io.github.s1ddhants1.unhinge.model.CachedCandidateProfile
 import io.github.s1ddhants1.unhinge.ui.theme.Theme
 import io.github.s1ddhants1.unhinge.util.PreferencesManager
 import io.github.s1ddhants1.unhinge.util.attempt
@@ -56,12 +61,23 @@ object HostAppAiFab {
     internal const val TAG_AVAILABLE_LIKES = "unhinge_available_likes"
     internal const val TAG_INLINE_OPENER_CARD = "unhinge_inline_opener_card"
 
+    data class CommentCardInfo(
+        val commentInputRect: Rect,
+        val virtualId: Int,
+        val provider: AccessibilityNodeProvider?,
+        val targetPrompt: PromptEntry?,
+        val promptText: String?,
+    )
+
     private val layoutListeners = WeakHashMap<View, ViewTreeObserver.OnGlobalLayoutListener>()
     private val preDrawListeners = WeakHashMap<View, ViewTreeObserver.OnPreDrawListener>()
     private val likesObservers = WeakHashMap<Activity, (HostLikesReader.LikesState) -> Unit>()
     private val overlayLifecycleOwners = WeakHashMap<View, ComposeDialogLifecycleOwner>()
     internal var currentActivityRef: WeakReference<Activity>? = null
     private var currentPrefsRef: WeakReference<PreferencesManager>? = null
+    private var currentCommentCardInfo: CommentCardInfo? = null
+    private var lastCommentTargetKey: String? = null
+    private var isInlineOpenerManuallyToggled: Boolean = false
 
     fun attach(activity: Activity, prefs: PreferencesManager) {
         currentActivityRef = WeakReference(activity)
@@ -102,6 +118,9 @@ object HostAppAiFab {
             currentActivityRef = null
             currentPrefsRef = null
         }
+        currentCommentCardInfo = null
+        lastCommentTargetKey = null
+        isInlineOpenerManuallyToggled = false
         FeedNavigator.reset(activity)
         likesObservers.remove(activity)?.let { HostLikesReader.unregisterObserver(it) }
 
@@ -147,7 +166,8 @@ object HostAppAiFab {
                     activity.window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
                     val passRect = findPassButtonBounds(decor)
                     val chatInputRect = if (passRect == null) findChatInputBounds(decor) else null
-                    val hasTarget = passRect != null || chatInputRect != null
+                    val commentInfo = findCommentCardInfo(decor)
+                    val hasTarget = passRect != null || chatInputRect != null || commentInfo != null
                     val attached = findAttachedContainer(activity)
                     val contentFrame = (activity.findViewById(android.R.id.content) as? ViewGroup)
                         ?: (decor as? ViewGroup)
@@ -162,7 +182,7 @@ object HostAppAiFab {
                             bindLayoutListener(newContainer, activity, prefs)
                             newContainer
                         }
-                        updateControlsState(container, activity, prefs, passRect, chatInputRect)
+                        updateControlsState(container, activity, prefs, passRect, chatInputRect, commentInfo)
                     } else {
                         attached?.visibility = View.GONE
                     }
@@ -174,6 +194,22 @@ object HostAppAiFab {
 
         val layoutListener = ViewTreeObserver.OnGlobalLayoutListener { updateCheck() }
         val preDrawListener = ViewTreeObserver.OnPreDrawListener {
+            val container = findAttachedContainer(activity)
+            if (container != null && container.visibility == View.VISIBLE) {
+                val inlineCard = container.findViewWithTag<View>(TAG_INLINE_OPENER_CARD)
+                if (inlineCard != null && inlineCard.visibility == View.VISIBLE) {
+                    val info = currentCommentCardInfo
+                    if (info != null && info.provider != null && info.virtualId != -1) {
+                        try {
+                            val node = info.provider.createAccessibilityNodeInfo(info.virtualId)
+                            if (node != null) {
+                                node.getBoundsInScreen(info.commentInputRect)
+                            }
+                        } catch (_: Throwable) {}
+                    }
+                    updateControlsPosition(container, activity)
+                }
+            }
             updateCheck()
             true
         }
@@ -251,6 +287,10 @@ object HostAppAiFab {
 
         val inlineLifecycleOwner = ComposeDialogLifecycleOwner()
         inlineLifecycleOwner.handleStart()
+        container.setViewTreeLifecycleOwner(inlineLifecycleOwner)
+        container.setViewTreeViewModelStoreOwner(inlineLifecycleOwner)
+        container.setViewTreeSavedStateRegistryOwner(inlineLifecycleOwner)
+
         val inlineCard = ComposeView(activity).apply {
             tag = TAG_INLINE_OPENER_CARD
             visibility = View.GONE
@@ -442,14 +482,16 @@ object HostAppAiFab {
         prefs: PreferencesManager,
         passRect: Rect? = null,
         chatInputRect: Rect? = null,
+        detectedCommentInfo: CommentCardInfo? = null,
     ) {
         if (activity.isFinishing || activity.isDestroyed) return
 
         val pRect = passRect ?: findPassButtonBounds(container.rootView)
         val cRect = if (pRect == null) (chatInputRect ?: findChatInputBounds(container.rootView)) else null
 
-        val isFeedMode = pRect != null
-        val isChatMode = !isFeedMode && cRect != null
+        val screenClues = extractScreenClues(activity)
+        val isFeedMode = pRect != null || screenClues.activeContext == HostCandidateReader.ScreenContext.DISCOVER || screenClues.activeContext == HostCandidateReader.ScreenContext.STANDOUTS
+        val isChatMode = !isFeedMode && (cRect != null || screenClues.activeContext == HostCandidateReader.ScreenContext.MATCH_CHAT)
 
         if (!isFeedMode && FeedNavigator.isNavigated) {
             FeedNavigator.reset(activity)
@@ -460,10 +502,12 @@ object HostAppAiFab {
         val totalCandidates = FeedNavigator.totalCandidates
         Log.i(Consts.TAG, "updateControlsState: passRect=$pRect, chatInputRect=$cRect, isFeed=$isFeedMode, isChat=$isChatMode, total=$totalCandidates")
 
-        val screenClues = extractScreenClues(activity)
         val activeCandidate = if (isFeedMode) HostCandidateReader.readTargetCandidateSync(activity, screenClues) else null
         val isStandoutCandidate = screenClues.activeContext == HostCandidateReader.ScreenContext.STANDOUTS ||
                 activeCandidate?.isStandout == true
+
+        val commentInfo = detectedCommentInfo ?: findCommentCardInfo(container.rootView, activeCandidate)
+        currentCommentCardInfo = commentInfo
 
         val shouldShowFab = (isFeedMode || isChatMode) && prefs.showHostAppFab
         val showNav = isFeedMode && !isStandoutCandidate && prefs.enableFeedNavigation && (totalCandidates > 1 || FeedNavigator.isNavigated)
@@ -472,6 +516,7 @@ object HostAppAiFab {
         val fab = container.findViewWithTag<View>(TAG_FAB_BUTTON)
         val navCapsule = container.findViewWithTag<View>(TAG_NAV_CONTAINER)
         val likesPill = container.findViewWithTag<View>(TAG_AVAILABLE_LIKES)
+        val inlineCard = container.findViewWithTag<ComposeView>(TAG_INLINE_OPENER_CARD)
 
         fab?.visibility = if (shouldShowFab) View.VISIBLE else View.GONE
         navCapsule?.visibility = if (showNav) View.VISIBLE else View.GONE
@@ -484,10 +529,64 @@ object HostAppAiFab {
             updateLikesPill(container, HostLikesReader.getLikesInfo(activity))
         }
 
-        val shouldShowContainer = shouldShowFab || showNav || showLikes
+        if (commentInfo != null) {
+            val targetKey = commentInfo.targetPrompt?.text ?: commentInfo.promptText ?: "comment_active"
+            if (lastCommentTargetKey != targetKey || inlineCard?.visibility != View.VISIBLE) {
+                lastCommentTargetKey = targetKey
+                if (inlineCard != null) {
+                    val owner = overlayLifecycleOwners[inlineCard] ?: ComposeDialogLifecycleOwner().also {
+                        overlayLifecycleOwners[inlineCard] = it
+                    }
+                    owner.handleStart()
+                    container.setViewTreeLifecycleOwner(owner)
+                    container.setViewTreeViewModelStoreOwner(owner)
+                    container.setViewTreeSavedStateRegistryOwner(owner)
+                    inlineCard.setViewTreeLifecycleOwner(owner)
+                    inlineCard.setViewTreeViewModelStoreOwner(owner)
+                    inlineCard.setViewTreeSavedStateRegistryOwner(owner)
+
+                    inlineCard.setContent {
+                        Theme(
+                            themeMode = prefs.themeMode,
+                            pureBlack = prefs.pureBlack,
+                            themeColor = androidx.compose.ui.graphics.Color(prefs.themeColor),
+                            setSystemBars = false,
+                        ) {
+                            InlineAiOpenerCard(
+                                prefs = prefs,
+                                targetPrompt = commentInfo.targetPrompt,
+                                isCommentMode = true,
+                                candidate = activeCandidate,
+                                screenClues = screenClues,
+                                isChatMode = false,
+                                hostActivity = activity,
+                                onDismiss = {
+                                    activity.runOnUiThread {
+                                        inlineCard.visibility = View.GONE
+                                        isInlineOpenerManuallyToggled = false
+                                        lastCommentTargetKey = null
+                                    }
+                                },
+                                onInsert = { text ->
+                                    insertTextIntoComment(activity, commentInfo, text)
+                                },
+                            )
+                        }
+                    }
+                    inlineCard.visibility = View.VISIBLE
+                }
+            }
+        } else if (!isInlineOpenerManuallyToggled) {
+            if (inlineCard != null && inlineCard.visibility == View.VISIBLE) {
+                inlineCard.visibility = View.GONE
+            }
+            lastCommentTargetKey = null
+        }
+
+        val shouldShowContainer = shouldShowFab || showNav || showLikes || (commentInfo != null) || (inlineCard?.visibility == View.VISIBLE)
         container.visibility = if (shouldShowContainer) View.VISIBLE else View.GONE
 
-        Log.i(Consts.TAG, "updateControlsState: pRect=$pRect, cRect=$cRect, fab=$shouldShowFab, nav=$showNav, likes=$showLikes, standout=$isStandoutCandidate, containerVis=${if (shouldShowContainer) "VISIBLE" else "GONE"}")
+        Log.i(Consts.TAG, "updateControlsState: pRect=$pRect, cRect=$cRect, fab=$shouldShowFab, nav=$showNav, likes=$showLikes, standout=$isStandoutCandidate, commentInfo=${commentInfo != null}, containerVis=${if (shouldShowContainer) "VISIBLE" else "GONE"}")
 
         if (shouldShowContainer) {
             updateControlsPosition(container, activity, pRect, cRect)
@@ -572,30 +671,52 @@ object HostAppAiFab {
             navCapsule.y = targetY + (fabSize - navHeight) / 2f
         }
 
+        val commentInfo = currentCommentCardInfo ?: findCommentCardInfo(container.rootView)
         val inlineCard = container.findViewWithTag<View>(TAG_INLINE_OPENER_CARD)
         if (inlineCard != null && inlineCard.visibility == View.VISIBLE) {
-            val horizontalMargin = (12 * density).toInt()
-            val cardWidth = (containerWidth - (horizontalMargin * 2)).coerceAtLeast((200 * density).toInt())
-            inlineCard.measure(
-                View.MeasureSpec.makeMeasureSpec(cardWidth, View.MeasureSpec.EXACTLY),
-                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
-            )
-            val cardHeight = inlineCard.measuredHeight
+            if (commentInfo != null) {
+                // In prompt card mode: Render directly into the prompt card in the red marked area!
+                val commentRect = commentInfo.commentInputRect
+                val targetWidth = commentRect.width().coerceAtLeast((200 * density).toInt())
+                inlineCard.layoutParams.width = targetWidth
+                inlineCard.layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
+                inlineCard.measure(
+                    View.MeasureSpec.makeMeasureSpec(targetWidth, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+                )
+                val cardHeight = inlineCard.measuredHeight
+                val gap = (6 * density).toInt()
 
-            val bottomAnchor = when {
-                pRect != null && pRect.top > 0 -> pRect.top - containerScreenY - (10 * density).toInt()
-                cRect != null && cRect.top > 0 -> cRect.top - containerScreenY - (10 * density).toInt()
-                else -> {
-                    val bottomNavTop = findBottomNavTop(container.rootView, screenHeight)
-                        ?: (screenHeight - (76 * density).toInt())
-                    bottomNavTop - containerScreenY - (10 * density).toInt()
+                val cardX = (commentRect.left - containerScreenX).toFloat()
+                val cardY = (commentRect.top - containerScreenY - cardHeight - gap).toFloat()
+                val minY = getStatusBarHeight(activity) + (8 * density)
+
+                inlineCard.x = cardX
+                inlineCard.y = maxOf(cardY, minY)
+            } else {
+                val horizontalMargin = (12 * density).toInt()
+                val cardWidth = (containerWidth - (horizontalMargin * 2)).coerceAtLeast((200 * density).toInt())
+                inlineCard.measure(
+                    View.MeasureSpec.makeMeasureSpec(cardWidth, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+                )
+                val cardHeight = inlineCard.measuredHeight
+
+                val bottomAnchor = when {
+                    pRect != null && pRect.top > 0 -> pRect.top - containerScreenY - (10 * density).toInt()
+                    cRect != null && cRect.top > 0 -> cRect.top - containerScreenY - (10 * density).toInt()
+                    else -> {
+                        val bottomNavTop = findBottomNavTop(container.rootView, screenHeight)
+                            ?: (screenHeight - (76 * density).toInt())
+                        bottomNavTop - containerScreenY - (10 * density).toInt()
+                    }
                 }
-            }
 
-            inlineCard.layoutParams.width = cardWidth
-            inlineCard.layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
-            inlineCard.x = horizontalMargin.toFloat()
-            inlineCard.y = (bottomAnchor - cardHeight).coerceAtLeast((40 * density).toInt()).toFloat()
+                inlineCard.layoutParams.width = cardWidth
+                inlineCard.layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
+                inlineCard.x = horizontalMargin.toFloat()
+                inlineCard.y = (bottomAnchor - cardHeight).coerceAtLeast((40 * density).toInt()).toFloat()
+            }
         }
     }
 
@@ -757,6 +878,222 @@ object HostAppAiFab {
         return true
     }
 
+    fun findCommentCardInfo(rootView: View?, activeCandidate: CachedCandidateProfile? = null): CommentCardInfo? {
+        if (rootView == null) return null
+        val provider = rootView.accessibilityNodeProvider
+        if (provider != null) {
+            val info = searchForCommentCardInProvider(provider, rootView, activeCandidate)
+            if (info != null) return info
+        }
+        if (rootView is ViewGroup) {
+            for (i in 0 until rootView.childCount) {
+                val info = findCommentCardInfo(rootView.getChildAt(i), activeCandidate)
+                if (info != null) return info
+            }
+        }
+        return null
+    }
+
+    private fun searchForCommentCardInProvider(
+        provider: AccessibilityNodeProvider,
+        hostView: View,
+        activeCandidate: CachedCandidateProfile?
+    ): CommentCardInfo? {
+        val density = hostView.resources.displayMetrics.density
+        var commentVirtualId = -1
+        val commentRect = Rect()
+        var hasSendLikeButton = false
+
+        data class ScannedNode(val virtualId: Int, val text: String, val desc: String, val rect: Rect, val isEditable: Boolean)
+        val scanned = mutableListOf<ScannedNode>()
+
+        fun traverse(virtualId: Int, visited: MutableSet<Int>, depth: Int) {
+            if (depth > 40 || !visited.add(virtualId)) return
+            val node = try {
+                provider.createAccessibilityNodeInfo(virtualId)
+            } catch (_: Throwable) { null } ?: return
+
+            val desc = node.contentDescription?.toString()?.trim().orEmpty()
+            val text = node.text?.toString()?.trim().orEmpty()
+            val viewId = node.viewIdResourceName?.orEmpty().orEmpty()
+            val rect = Rect()
+            node.getBoundsInScreen(rect)
+
+            val isEditable = node.isEditable
+            scanned.add(ScannedNode(virtualId, text, desc, rect, isEditable))
+
+            val isSendLike = desc.equals("Send Like", ignoreCase = true) ||
+                    desc.equals("Send like", ignoreCase = true) ||
+                    text.equals("Send Like", ignoreCase = true) ||
+                    text.equals("Send like", ignoreCase = true) ||
+                    desc.contains("Send a Rose", ignoreCase = true) ||
+                    text.contains("Send a Rose", ignoreCase = true)
+            if (isSendLike) {
+                hasSendLikeButton = true
+            }
+
+            val isCommentInput = (isEditable && !desc.contains("message", ignoreCase = true) && !text.contains("message", ignoreCase = true)) ||
+                    desc.equals("Edit comment", ignoreCase = true) ||
+                    desc.contains("Add a comment", ignoreCase = true) ||
+                    text.equals("Add a comment", ignoreCase = true) ||
+                    text.equals("Edit comment", ignoreCase = true) ||
+                    viewId.contains("discover_add_a_comment", ignoreCase = true)
+
+            if (isCommentInput && rect.width() > (150 * density) && rect.height() > 0 && commentVirtualId == -1) {
+                commentVirtualId = virtualId
+                commentRect.set(rect)
+            }
+
+            val count = node.childCount
+            for (i in 0 until count) {
+                val childId = getChildVirtualId(node, i) ?: continue
+                traverse(childId, visited, depth + 1)
+            }
+        }
+
+        traverse(AccessibilityNodeProvider.HOST_VIEW_ID, mutableSetOf(), 0)
+
+        if (commentVirtualId == -1 && hasSendLikeButton) {
+            val sendLikeNode = scanned.find {
+                it.desc.contains("Send Like", ignoreCase = true) || it.text.contains("Send Like", ignoreCase = true) ||
+                it.desc.contains("Send a Rose", ignoreCase = true) || it.text.contains("Send a Rose", ignoreCase = true)
+            }
+            if (sendLikeNode != null) {
+                val above = scanned.filter {
+                    it.rect.bottom <= sendLikeNode.rect.top + (10 * density) &&
+                    it.rect.bottom >= sendLikeNode.rect.top - (100 * density) &&
+                    it.rect.width() > (150 * density)
+                }.maxByOrNull { it.rect.bottom }
+                if (above != null) {
+                    commentVirtualId = above.virtualId
+                    commentRect.set(above.rect)
+                }
+            }
+        }
+
+        if (commentVirtualId == -1 || commentRect.isEmpty) {
+            return null
+        }
+
+        var targetPrompt: PromptEntry? = null
+        var foundPromptText: String? = null
+
+        val promptRegex = Regex("""Prompt:\s*(.+?)\.\s*Answer:\s*(.+)""", RegexOption.DOT_MATCHES_ALL)
+        val promptNode = scanned.filter {
+            (it.text.startsWith("Prompt:", ignoreCase = true) || it.text.contains("Answer:", ignoreCase = true)) &&
+            it.rect.bottom <= commentRect.top + (30 * density) &&
+            it.rect.bottom >= commentRect.top - (600 * density)
+        }.maxByOrNull { it.rect.bottom }
+
+        if (promptNode != null) {
+            foundPromptText = promptNode.text
+            val match = promptRegex.find(promptNode.text)
+            if (match != null) {
+                val q = match.groupValues[1].trim()
+                val a = match.groupValues[2].trim()
+                val matchedFromCandidate = activeCandidate?.prompts?.find { cp ->
+                    a.contains(cp.answer, ignoreCase = true) || cp.answer.contains(a, ignoreCase = true) ||
+                    q.contains(cp.question, ignoreCase = true)
+                }
+                targetPrompt = if (matchedFromCandidate != null) {
+                    PromptEntry(text = "${matchedFromCandidate.question}: ${matchedFromCandidate.answer}")
+                } else {
+                    PromptEntry(text = "$q: $a")
+                }
+            } else {
+                targetPrompt = PromptEntry(text = promptNode.text)
+            }
+        }
+
+        if (targetPrompt == null && activeCandidate != null && activeCandidate.prompts.isNotEmpty()) {
+            val candidatePrompts = activeCandidate.prompts
+            for (cp in candidatePrompts) {
+                val matchedNode = scanned.find {
+                    it.rect.bottom <= commentRect.top + (30 * density) &&
+                    it.rect.bottom >= commentRect.top - (600 * density) &&
+                    (it.text.contains(cp.answer, ignoreCase = true) || cp.answer.contains(it.text, ignoreCase = true))
+                }
+                if (matchedNode != null) {
+                    targetPrompt = PromptEntry(text = "${cp.question}: ${cp.answer}")
+                    foundPromptText = targetPrompt.text
+                    break
+                }
+            }
+        }
+
+        return CommentCardInfo(
+            commentInputRect = commentRect,
+            virtualId = commentVirtualId,
+            provider = provider,
+            targetPrompt = targetPrompt,
+            promptText = foundPromptText
+        )
+    }
+
+    fun insertTextIntoComment(activity: Activity, info: CommentCardInfo, text: String): Boolean {
+        val cm = activity.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+        cm?.setPrimaryClip(ClipData.newPlainText("Unhinge Opener", text))
+
+        var injected = false
+        if (info.provider != null && info.virtualId != -1) {
+            try {
+                val args = Bundle().apply {
+                    putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+                }
+                val res = info.provider.performAction(info.virtualId, AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+                if (res) {
+                    injected = true
+                    Log.i(Consts.TAG, "insertTextIntoComment: ACTION_SET_TEXT succeeded on virtualId=${info.virtualId}")
+                }
+            } catch (e: Throwable) {
+                Log.w(Consts.TAG, "insertTextIntoComment performAction failed: ${e.message}")
+            }
+        }
+
+        if (!injected) {
+            val decor = activity.window?.decorView
+            if (decor != null) {
+                val editTexts = mutableListOf<android.widget.EditText>()
+                findEditTexts(decor, editTexts)
+                val target = editTexts.firstOrNull { it.isFocused } ?: editTexts.firstOrNull()
+                if (target != null) {
+                    activity.runOnUiThread {
+                        target.setText(text)
+                        target.setSelection(text.length)
+                        target.requestFocus()
+                    }
+                    injected = true
+                }
+            }
+        }
+
+        activity.runOnUiThread {
+            Toast.makeText(
+                activity,
+                if (injected) "Inserted opener into comment!" else "Copied opener to clipboard!",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+        return injected
+    }
+
+    private fun findEditTexts(view: View, result: MutableList<android.widget.EditText>) {
+        if (view is android.widget.EditText) {
+            result.add(view)
+        }
+        if (view is ViewGroup) {
+            for (i in 0 until view.childCount) {
+                findEditTexts(view.getChildAt(i), result)
+            }
+        }
+    }
+
+    private fun copyOpenerFallback(activity: Activity, text: String) {
+        val cm = activity.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+        cm?.setPrimaryClip(ClipData.newPlainText("Unhinge Opener", text))
+        Toast.makeText(activity, "Copied opener to clipboard!", Toast.LENGTH_SHORT).show()
+    }
+
     private fun findMessageEditText(view: View): android.widget.EditText? {
         if (view is android.widget.EditText) return view
         if (view is ViewGroup) {
@@ -799,7 +1136,22 @@ object HostAppAiFab {
             val inlineCard = container.findViewWithTag<ComposeView>(TAG_INLINE_OPENER_CARD)
             val prefs = currentPrefsRef?.get()
             if (inlineCard != null && inlineCard.visibility == View.VISIBLE && prefs != null) {
+                val owner = overlayLifecycleOwners[inlineCard] ?: ComposeDialogLifecycleOwner().also {
+                    overlayLifecycleOwners[inlineCard] = it
+                }
+                owner.handleStart()
+                container.setViewTreeLifecycleOwner(owner)
+                container.setViewTreeViewModelStoreOwner(owner)
+                container.setViewTreeSavedStateRegistryOwner(owner)
+                inlineCard.setViewTreeLifecycleOwner(owner)
+                inlineCard.setViewTreeViewModelStoreOwner(owner)
+                inlineCard.setViewTreeSavedStateRegistryOwner(owner)
+
                 val screenClues = extractScreenClues(act)
+                val activeCandidate = HostCandidateReader.readTargetCandidateSync(act, screenClues)
+                val commentInfo = currentCommentCardInfo ?: findCommentCardInfo(container.rootView, activeCandidate)
+                currentCommentCardInfo = commentInfo
+
                 inlineCard.setContent {
                     Theme(
                         themeMode = prefs.themeMode,
@@ -809,16 +1161,25 @@ object HostAppAiFab {
                     ) {
                         InlineAiOpenerCard(
                             prefs = prefs,
+                            targetPrompt = commentInfo?.targetPrompt,
+                            isCommentMode = commentInfo != null,
+                            candidate = activeCandidate,
                             screenClues = screenClues,
                             isChatMode = false,
                             hostActivity = act,
                             onDismiss = {
                                 act.runOnUiThread {
                                     inlineCard.visibility = View.GONE
+                                    isInlineOpenerManuallyToggled = false
+                                    lastCommentTargetKey = null
                                 }
                             },
                             onInsert = { text ->
-                                insertReplyIntoChatInput(act, text)
+                                if (commentInfo != null) {
+                                    insertTextIntoComment(act, commentInfo, text)
+                                } else {
+                                    insertReplyIntoChatInput(act, text)
+                                }
                             },
                         )
                     }
@@ -1046,8 +1407,26 @@ object HostAppAiFab {
             val inlineCard = container.findViewWithTag<ComposeView>(TAG_INLINE_OPENER_CARD) ?: return@runOnUiThread
             if (inlineCard.visibility == View.VISIBLE) {
                 inlineCard.visibility = View.GONE
+                isInlineOpenerManuallyToggled = false
+                lastCommentTargetKey = null
             } else {
+                isInlineOpenerManuallyToggled = true
+                val owner = overlayLifecycleOwners[inlineCard] ?: ComposeDialogLifecycleOwner().also {
+                    overlayLifecycleOwners[inlineCard] = it
+                }
+                owner.handleStart()
+                container.setViewTreeLifecycleOwner(owner)
+                container.setViewTreeViewModelStoreOwner(owner)
+                container.setViewTreeSavedStateRegistryOwner(owner)
+                inlineCard.setViewTreeLifecycleOwner(owner)
+                inlineCard.setViewTreeViewModelStoreOwner(owner)
+                inlineCard.setViewTreeSavedStateRegistryOwner(owner)
+
                 val screenClues = extractScreenClues(activity)
+                val activeCandidate = if (!isChatMode) HostCandidateReader.readTargetCandidateSync(activity, screenClues) else null
+                val commentInfo = findCommentCardInfo(container.rootView, activeCandidate)
+                currentCommentCardInfo = commentInfo
+
                 inlineCard.setContent {
                     Theme(
                         themeMode = prefs.themeMode,
@@ -1057,16 +1436,27 @@ object HostAppAiFab {
                     ) {
                         InlineAiOpenerCard(
                             prefs = prefs,
+                            targetPrompt = commentInfo?.targetPrompt,
+                            isCommentMode = commentInfo != null,
+                            candidate = activeCandidate,
                             screenClues = screenClues,
                             isChatMode = isChatMode,
                             hostActivity = activity,
                             onDismiss = {
                                 activity.runOnUiThread {
                                     inlineCard.visibility = View.GONE
+                                    isInlineOpenerManuallyToggled = false
+                                    lastCommentTargetKey = null
                                 }
                             },
                             onInsert = { text ->
-                                insertReplyIntoChatInput(activity, text)
+                                if (commentInfo != null) {
+                                    insertTextIntoComment(activity, commentInfo, text)
+                                } else if (isChatMode) {
+                                    insertReplyIntoChatInput(activity, text)
+                                } else {
+                                    copyOpenerFallback(activity, text)
+                                }
                             },
                         )
                     }

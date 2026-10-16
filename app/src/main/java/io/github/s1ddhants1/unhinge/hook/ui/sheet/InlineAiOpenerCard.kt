@@ -27,13 +27,9 @@ import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.ChevronLeft
-import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -87,6 +83,8 @@ fun InlineAiOpenerCard(
     hostActivity: Activity? = null,
     initialChatContext: HostCandidateReader.MatchChatContext? = null,
     onInsert: ((String) -> Unit)? = null,
+    targetPrompt: PromptEntry? = null,
+    isCommentMode: Boolean = false,
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -97,18 +95,26 @@ fun InlineAiOpenerCard(
         ThemeMode.SYSTEM -> isSystemInDarkTheme()
     }
 
-    val cardBg = if (isDark) {
+    val isPromptCardMode = targetPrompt != null || isCommentMode
+
+    val cardBg = if (isPromptCardMode) {
+        if (isDark) Color(0xFF222224) else Color(0xFFF7F7F8)
+    } else if (isDark) {
         if (prefs.pureBlack) Color.Black else HingeDesignTokens.DarkCard
     } else HingeDesignTokens.LightCard
 
-    val cardBorder = if (isDark) HingeDesignTokens.DarkBorder else HingeDesignTokens.LightBorder
-    val commentBg = if (isDark) HingeDesignTokens.DarkComment else HingeDesignTokens.LightComment
+    val cardBorder = if (isPromptCardMode) {
+        if (isDark) Color(0xFF333336) else Color(0xFFE5E7EB)
+    } else if (isDark) HingeDesignTokens.DarkBorder else HingeDesignTokens.LightBorder
+
+    val commentBg = if (isPromptCardMode) {
+        if (isDark) Color(0xFF1A1A1C) else Color(0xFFFFFFFF)
+    } else if (isDark) HingeDesignTokens.DarkComment else HingeDesignTokens.LightComment
+
     val textPrimary = if (isDark) HingeDesignTokens.DarkTextPrimary else HingeDesignTokens.LightTextPrimary
     val textSecondary = if (isDark) HingeDesignTokens.DarkTextSecondary else HingeDesignTokens.LightTextSecondary
     val actionBtnBg = if (isDark) HingeDesignTokens.DarkPillSelected else HingeDesignTokens.LightPillSelected
     val actionBtnText = if (isDark) Color(0xFF161616) else Color(0xFFFFFFFF)
-    val pillBg = if (isDark) HingeDesignTokens.DarkPillUnselected else HingeDesignTokens.LightPillUnselected
-    val pillBorder = if (isDark) HingeDesignTokens.DarkPillBorder else HingeDesignTokens.LightPillBorder
     val sparkleColor = if (isDark) Color(0xFFB388FF) else Color(0xFF711328)
 
     val modernEraMedium = remember(context) { HingeFonts.modernEraMedium(context) }
@@ -151,8 +157,10 @@ fun InlineAiOpenerCard(
         )
     }
 
-    val promptEntries = remember(activeCandidate?.userId, activeCandidate?.prompts, isChatMode, chatContext?.match?.subjectId) {
-        if (isChatMode) {
+    val promptEntries = remember(targetPrompt, activeCandidate?.userId, activeCandidate?.prompts, isChatMode, chatContext?.match?.subjectId) {
+        if (targetPrompt != null) {
+            listOf(targetPrompt)
+        } else if (isChatMode) {
             chatArchetypes.map { PromptEntry(text = it) }
         } else {
             val prompts = activeCandidate?.prompts.orEmpty()
@@ -174,7 +182,7 @@ fun InlineAiOpenerCard(
         }
     }
 
-    var selectedIndex by remember(activeCandidate?.userId, isChatMode) { mutableIntStateOf(0) }
+    var selectedIndex by remember(targetPrompt, activeCandidate?.userId, isChatMode) { mutableIntStateOf(0) }
     val safeIndex = selectedIndex.coerceIn(0, (promptEntries.size - 1).coerceAtLeast(0))
     val activeEntry = promptEntries.getOrNull(safeIndex)
 
@@ -248,24 +256,31 @@ fun InlineAiOpenerCard(
         }
     }
 
-    // Active prompt label & answer snippet for context
-    val activePromptItem = if (!isChatMode) activeCandidate?.prompts?.getOrNull(safeIndex) else null
-
-    Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = cardBg,
-        border = BorderStroke(1.dp, cardBorder),
-        shadowElevation = 10.dp,
-        modifier = modifier
+    val cardShape = if (isPromptCardMode) RoundedCornerShape(14.dp) else RoundedCornerShape(20.dp)
+    val cardElevation = if (isPromptCardMode) 0.dp else 10.dp
+    val cardModifier = if (isPromptCardMode) {
+        modifier
             .fillMaxWidth()
             .wrapContentHeight()
-            .shadow(12.dp, RoundedCornerShape(20.dp)),
+    } else {
+        modifier
+            .fillMaxWidth()
+            .wrapContentHeight()
+            .shadow(12.dp, RoundedCornerShape(20.dp))
+    }
+
+    Surface(
+        shape = cardShape,
+        color = cardBg,
+        border = BorderStroke(1.dp, cardBorder),
+        shadowElevation = cardElevation,
+        modifier = cardModifier,
     ) {
         Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            // Header: Sparkle + "AI Opener Review" + prompt pagination + close (✕)
+            // Header: Sparkle + title on left | Small retry button on top right
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -273,132 +288,111 @@ fun InlineAiOpenerCard(
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(7.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Icon(
                         imageVector = Icons.Default.AutoAwesome,
                         contentDescription = null,
-                        modifier = Modifier.size(16.dp),
+                        modifier = Modifier.size(15.dp),
                         tint = sparkleColor,
                     )
                     Text(
-                        text = if (isChatMode) "Wingman Reply" else "Prompt Review",
+                        text = if (isChatMode) "Wingman Reply" else "AI Opener",
                         fontFamily = modernEraBold,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         color = textPrimary,
                     )
-
-                    // Multiple prompts selector pill
-                    if (promptEntries.size > 1) {
-                        Surface(
-                            shape = RoundedCornerShape(50),
-                            color = pillBg,
-                            border = BorderStroke(0.5.dp, pillBorder),
-                            modifier = Modifier.height(22.dp),
+                    if (isCopied) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(3.dp),
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 4.dp),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.ChevronLeft,
-                                    contentDescription = "Previous Prompt",
-                                    tint = if (safeIndex > 0) textPrimary else textSecondary.copy(alpha = 0.4f),
-                                    modifier = Modifier
-                                        .size(16.dp)
-                                        .clickable(enabled = safeIndex > 0) {
-                                            selectedIndex = safeIndex - 1
-                                        },
-                                )
-                                Text(
-                                    text = "${safeIndex + 1}/${promptEntries.size}",
-                                    fontFamily = modernEraBold,
-                                    fontSize = 10.sp,
-                                    color = textSecondary,
-                                    modifier = Modifier.padding(horizontal = 2.dp),
-                                )
-                                Icon(
-                                    imageVector = Icons.Default.ChevronRight,
-                                    contentDescription = "Next Prompt",
-                                    tint = if (safeIndex < promptEntries.size - 1) textPrimary else textSecondary.copy(alpha = 0.4f),
-                                    modifier = Modifier
-                                        .size(16.dp)
-                                        .clickable(enabled = safeIndex < promptEntries.size - 1) {
-                                            selectedIndex = safeIndex + 1
-                                        },
-                                )
-                            }
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = null,
+                                modifier = Modifier.size(12.dp),
+                                tint = HingeDesignTokens.SuccessGreen,
+                            )
+                            Text(
+                                text = "Copied!",
+                                fontFamily = modernEraMedium,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = HingeDesignTokens.SuccessGreen,
+                            )
                         }
                     }
                 }
 
-                // Close ✕ button
-                Box(
-                    modifier = Modifier
-                        .size(26.dp)
-                        .clip(CircleShape)
-                        .clickable { onDismiss() },
-                    contentAlignment = Alignment.Center,
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Dismiss",
-                        tint = textSecondary,
-                        modifier = Modifier.size(16.dp),
-                    )
-                }
-            }
-
-            // Target context chip
-            if (activePromptItem != null) {
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = commentBg.copy(alpha = 0.6f),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(
-                        text = "${activePromptItem.question}: \"${activePromptItem.answer.take(65)}\"",
-                        fontFamily = modernEraMedium,
-                        fontSize = 11.sp,
-                        color = textSecondary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
-                    )
-                }
-            } else if (isChatMode && chatMessages.isNotEmpty()) {
-                val lastMsg = chatMessages.lastOrNull()
-                if (lastMsg != null) {
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = commentBg.copy(alpha = 0.6f),
-                        modifier = Modifier.fillMaxWidth(),
+                    // Small retry button on top right corner of the card
+                    Box(
+                        modifier = Modifier
+                            .size(26.dp)
+                            .clip(CircleShape)
+                            .background(if (isDark) Color(0xFF2C2C2E) else Color(0xFFEFEFF1))
+                            .clickable(enabled = isAiReady && !isEntryGenerating) {
+                                triggerGeneration(forceRefresh = true)
+                            },
+                        contentAlignment = Alignment.Center,
                     ) {
-                        val senderName = if (!lastMsg.sentBySubject) "You" else matchDisplayName
-                        Text(
-                            text = "$senderName: \"${lastMsg.body.take(65)}\"",
-                            fontFamily = modernEraMedium,
-                            fontSize = 11.sp,
-                            color = textSecondary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
-                        )
+                        if (isEntryGenerating) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(12.dp),
+                                strokeWidth = 1.8.dp,
+                                color = sparkleColor,
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Retry",
+                                tint = textSecondary,
+                                modifier = Modifier.size(14.dp),
+                            )
+                        }
+                    }
+
+                    // Close ✕ button only in manual overlay mode
+                    if (!isPromptCardMode) {
+                        Box(
+                            modifier = Modifier
+                                .size(26.dp)
+                                .clip(CircleShape)
+                                .background(if (isDark) Color(0xFF2C2C2E) else Color(0xFFEFEFF1))
+                                .clickable { onDismiss() },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Dismiss",
+                                tint = textSecondary,
+                                modifier = Modifier.size(14.dp),
+                            )
+                        }
                     }
                 }
             }
 
-            // Opener body
+            // Opener body (tapping the opener copies it)
             Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = commentBg,
-                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(10.dp),
+                color = if (isCopied) (if (isDark) Color(0xFF1E2E24) else Color(0xFFF0FDF4)) else commentBg,
+                border = if (isCopied) BorderStroke(1.dp, HingeDesignTokens.SuccessGreen.copy(alpha = 0.5f)) else null,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable(enabled = !activeReply.isNullOrBlank()) {
+                        activeReply?.let(::copyOpener)
+                    },
             ) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(12.dp),
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
                 ) {
                     when {
                         !isAiReady -> {
@@ -436,18 +430,18 @@ fun InlineAiOpenerCard(
                         isEntryGenerating && activeReply.isNullOrBlank() -> {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                modifier = Modifier.padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.padding(vertical = 2.dp),
                             ) {
                                 CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
+                                    modifier = Modifier.size(14.dp),
                                     strokeWidth = 2.dp,
                                     color = sparkleColor,
                                 )
                                 Text(
                                     text = "Crafting opener...",
                                     fontFamily = modernEraMedium,
-                                    fontSize = 13.sp,
+                                    fontSize = 12.5.sp,
                                     color = textSecondary,
                                 )
                             }
@@ -457,12 +451,10 @@ fun InlineAiOpenerCard(
                             Text(
                                 text = activeReply.orEmpty(),
                                 fontFamily = modernEraMedium,
-                                fontSize = 14.sp,
-                                lineHeight = 20.sp,
+                                fontSize = 13.5.sp,
+                                lineHeight = 18.5.sp,
                                 color = textPrimary,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { copyOpener(activeReply.orEmpty()) },
+                                modifier = Modifier.fillMaxWidth(),
                             )
                         }
 
@@ -479,125 +471,8 @@ fun InlineAiOpenerCard(
                             Text(
                                 text = "Tap Retry to generate an opener",
                                 fontFamily = modernEraMedium,
-                                fontSize = 13.sp,
+                                fontSize = 12.5.sp,
                                 color = textSecondary,
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Bottom Actions: Retry (Try another) and Copy
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                // Retry / Try Another
-                Surface(
-                    shape = RoundedCornerShape(50),
-                    color = pillBg,
-                    border = BorderStroke(1.dp, pillBorder),
-                    modifier = Modifier
-                        .height(34.dp)
-                        .clickable(enabled = isAiReady && !isEntryGenerating) {
-                            triggerGeneration(forceRefresh = true)
-                        },
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier.padding(horizontal = 14.dp),
-                    ) {
-                        if (isEntryGenerating) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(13.dp),
-                                strokeWidth = 2.dp,
-                                color = textSecondary,
-                            )
-                        } else {
-                            Icon(
-                                imageVector = Icons.Default.Refresh,
-                                contentDescription = "Retry",
-                                tint = textSecondary,
-                                modifier = Modifier.size(14.dp),
-                            )
-                        }
-                        Text(
-                            text = "Try another",
-                            fontFamily = modernEraMedium,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = textPrimary,
-                        )
-                    }
-                }
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    // Optional Insert Button (for chat / comment input)
-                    if (onInsert != null && !activeReply.isNullOrBlank()) {
-                        Surface(
-                            shape = RoundedCornerShape(50),
-                            color = pillBg,
-                            border = BorderStroke(1.dp, pillBorder),
-                            modifier = Modifier
-                                .height(34.dp)
-                                .clickable {
-                                    activeReply?.let(onInsert)
-                                },
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                modifier = Modifier.padding(horizontal = 12.dp),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.Send,
-                                    contentDescription = "Insert",
-                                    tint = textPrimary,
-                                    modifier = Modifier.size(12.dp),
-                                )
-                                Text(
-                                    text = "Insert",
-                                    fontFamily = modernEraMedium,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = textPrimary,
-                                )
-                            }
-                        }
-                    }
-
-                    // Copy Button
-                    val copyBg = if (isCopied) HingeDesignTokens.SuccessGreen else actionBtnBg
-                    val copyTextColor = if (isCopied) Color.White else actionBtnText
-
-                    Surface(
-                        shape = RoundedCornerShape(50),
-                        color = copyBg,
-                        modifier = Modifier
-                            .height(34.dp)
-                            .clickable(enabled = !activeReply.isNullOrBlank()) {
-                                activeReply?.let(::copyOpener)
-                            },
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                        ) {
-                            Icon(
-                                imageVector = if (isCopied) Icons.Default.Check else Icons.Default.ContentCopy,
-                                contentDescription = if (isCopied) "Copied" else "Copy",
-                                tint = copyTextColor,
-                                modifier = Modifier.size(13.dp),
-                            )
-                            Text(
-                                text = if (isCopied) "Copied!" else "Copy",
-                                fontFamily = modernEraMedium,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = copyTextColor,
                             )
                         }
                     }
