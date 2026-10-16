@@ -29,15 +29,6 @@ const val OpenRouterDefaultBaseUrl = "https://openrouter.ai/api/v1/chat/completi
 private val wingmanJson = Json { ignoreUnknownKeys = true }
 
 object OpenRouterService {
-    private val client =
-        OkHttpClient
-            .Builder()
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(90, TimeUnit.SECONDS)
-            .writeTimeout(30, TimeUnit.SECONDS)
-            .build()
-    private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
-
     suspend fun generate(
         text: String,
         apiKey: String,
@@ -55,89 +46,25 @@ object OpenRouterService {
         directionalStimulus: String = "",
         promptCount: Int? = null,
     ): Result<List<String>> =
-        withContext(Dispatchers.IO) {
-            if (text.isBlank()) return@withContext Result.failure(Exception("Input text is empty"))
-
-            val expectedCount = promptCount ?: text.lines().size
-            val safeModel = sanitizeModelId(model)
-            var useStructured = structured
-            repeat(maxRetries) { attempt ->
-                try {
-                    val body =
-                        buildGenerationRequest(
-                            text = text,
-                            model = safeModel,
-                            customSystemPrompt = customSystemPrompt,
-                            profileBlock = profileBlock,
-                            baseUrl = baseUrl.ifBlank { OpenRouterDefaultBaseUrl },
-                            avoidReplies = avoidReplies,
-                            temperature = temperature,
-                            topP = topP,
-                            structured = useStructured,
-                            reasoningEffort = reasoningEffort,
-                            promptTemplate = promptTemplate,
-                            directionalStimulus = directionalStimulus,
-                            promptCount = expectedCount,
-                        )
-                    val targetUrl = ZenRouter.normalizeBaseUrl(baseUrl.ifBlank { OpenRouterDefaultBaseUrl })
-                    val request =
-                        Request
-                            .Builder()
-                            .url(targetUrl)
-                            .apply {
-                                if (ZenRouter.isZenUrl(targetUrl)) {
-                                    ZenRouter.injectZenHeaders(this, apiKey, safeModel)
-                                } else {
-                                    if (apiKey.isNotBlank()) {
-                                        addHeader("Authorization", "Bearer ${apiKey.trim()}")
-                                    }
-                                    addHeader("HTTP-Referer", "https://github.com/s1ddhants1/unhinge")
-                                    addHeader("X-Title", "Unhinge")
-                                }
-                            }.addHeader("Content-Type", "application/json")
-                            .post(body.toString().toRequestBody(jsonMediaType))
-                            .build()
-
-                    client.newCall(request).execute().use { response ->
-                        val responseBody = response.body.string()
-                        if (!response.isSuccessful) {
-                            val structuredRejection = isStructuredOutputError(responseBody, response.code)
-                            if (useStructured && structuredRejection) {
-                                useStructured = false
-                            }
-                            val error = friendlyGenerationError(responseBody, response.code, response.message, baseUrl = targetUrl, model = safeModel)
-
-                            val retryable = isTransientHttpCode(response.code) ||
-                                (structuredRejection && attempt < maxRetries - 1)
-                            if (retryable) throw Exception(error)
-                            return@withContext Result.failure(Exception(error))
-                        }
-
-                        val content =
-                            wingmanJson
-                                .parseToJsonElement(responseBody)
-                                .jsonObject["choices"]
-                                ?.jsonArray
-                                ?.getOrNull(0)
-                                ?.jsonObject
-                                ?.get("message")
-                                ?.jsonObject
-                                ?.get("content")
-                                ?.jsonPrimitive
-                                ?.contentOrNull
-                                .orEmpty()
-                        return@withContext parseGeneratedContent(content, expectedCount)
-                    }
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (error: Exception) {
-                    if (attempt == maxRetries - 1) return@withContext Result.failure(error)
-                    delay(1000L * (1 shl attempt))
-                }
-            }
-
-            Result.failure(Exception("Max retries exceeded"))
-        }
+        OpenAiChatClient.generate(
+            WingmanLlmRequest(
+                text = text,
+                apiKey = apiKey,
+                baseUrl = baseUrl,
+                model = model,
+                maxRetries = maxRetries,
+                customSystemPrompt = customSystemPrompt,
+                profileBlock = profileBlock,
+                avoidReplies = avoidReplies,
+                temperature = temperature,
+                topP = topP,
+                structured = structured,
+                reasoningEffort = reasoningEffort,
+                promptTemplate = promptTemplate,
+                directionalStimulus = directionalStimulus,
+                promptCount = promptCount,
+            )
+        )
 }
 
 internal fun buildGenerationRequest(

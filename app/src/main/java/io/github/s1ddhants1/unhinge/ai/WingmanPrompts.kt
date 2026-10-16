@@ -92,4 +92,30 @@ object WingmanPrompts {
             replyCount = replyCount,
         )
     }
+
+    fun steerOpenerPrompt(
+        profileBlock: String = "",
+        promptText: String,
+        currentOpener: String,
+        steerInstruction: String,
+    ): String = buildString {
+        if (profileBlock.isNotBlank()) {
+            append("Profile details:\n")
+            append(profileBlock)
+            append("\n\n")
+        }
+        append("Hinge Prompt:\n")
+        append(promptText)
+        append("\n\n")
+        if (currentOpener.isNotBlank()) {
+            append("Current Drafted Opener:\n\"")
+            append(currentOpener)
+            append("\"\n\n")
+        }
+        append("User Steering Direction:\n")
+        append(steerInstruction)
+        append("\n\n")
+        append("Task: Rewrite and refine the opener to incorporate the steering direction while keeping it natural, witty, and engaging for Hinge. Return ONLY the new opener text directly, with no quotes, commentary, or pleasantries.")
+    }
 }
+

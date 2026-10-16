@@ -135,6 +135,7 @@ class Module : XposedModule() {
             prefs.ensureBackupPrefs(ctx)
         }
         modulePrefs = prefs
+        io.github.s1ddhants1.unhinge.ai.ZenRouter.initFromPreferences(prefs)
         return prefs
     }
 

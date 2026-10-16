@@ -2,12 +2,21 @@ package io.github.s1ddhants1.unhinge.ai
 
 import kotlinx.coroutines.flow.MutableStateFlow
 
+data class OpenerChatMessage(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val isUser: Boolean,
+    val text: String,
+    val timestamp: Long = System.currentTimeMillis()
+)
+
 data class PromptEntry(
     val text: String,
     val suggestedReplyFlow: MutableStateFlow<String?> = MutableStateFlow(null),
     val repliesFlow: MutableStateFlow<List<String>> = MutableStateFlow(emptyList()),
     val activeReplyIndexFlow: MutableStateFlow<Int> = MutableStateFlow(0),
-    val isGeneratingFlow: MutableStateFlow<Boolean> = MutableStateFlow(false)
+    val isGeneratingFlow: MutableStateFlow<Boolean> = MutableStateFlow(false),
+    val followUpMessagesFlow: MutableStateFlow<List<OpenerChatMessage>> = MutableStateFlow(emptyList()),
+    val isSteeringFlow: MutableStateFlow<Boolean> = MutableStateFlow(false)
 ) {
 
     fun addReply(reply: String, selectNew: Boolean = true) {
@@ -45,4 +54,28 @@ data class PromptEntry(
         activeReplyIndexFlow.value = nextIdx
         suggestedReplyFlow.value = current[nextIdx]
     }
+
+    fun addFollowUpUserMessage(text: String): OpenerChatMessage {
+        val msg = OpenerChatMessage(isUser = true, text = text)
+        followUpMessagesFlow.value = followUpMessagesFlow.value + msg
+        return msg
+    }
+
+    fun addFollowUpAssistantMessage(text: String): OpenerChatMessage {
+        val msg = OpenerChatMessage(isUser = false, text = text)
+        followUpMessagesFlow.value = followUpMessagesFlow.value + msg
+        return msg
+    }
+
+    fun updateLastAssistantMessage(text: String) {
+        val list = followUpMessagesFlow.value.toMutableList()
+        val lastIdx = list.indexOfLast { !it.isUser }
+        if (lastIdx >= 0) {
+            list[lastIdx] = list[lastIdx].copy(text = text)
+            followUpMessagesFlow.value = list
+        } else {
+            addFollowUpAssistantMessage(text)
+        }
+    }
 }
+

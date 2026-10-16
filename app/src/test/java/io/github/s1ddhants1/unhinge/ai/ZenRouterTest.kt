@@ -562,4 +562,67 @@ class ZenRouterTest {
         assertEquals("Line 1", parsed[0])
         assertEquals("Line 2", parsed[1])
     }
+
+    @Test
+    fun dynamicUserAgentUpdation() {
+        val originalVersion = ZenRouter.currentVersion
+        try {
+            ZenRouter.currentVersion = "2.0.31"
+            assertEquals("opencode/latest/2.0.31/cli", ZenRouter.getUserAgent())
+            assertEquals("opencode/latest/2.0.31/cli", ZenRouter.OPENCODE_USER_AGENT)
+        } finally {
+            ZenRouter.currentVersion = originalVersion
+        }
+    }
+
+    @Test
+    fun updateModelRosterAndProtocolRouting() {
+        val testModels = listOf(
+            "custom-free-model-free",
+            "claude-test-v1",
+            "gemini-test-v2",
+            "gpt-test-v3",
+            "big-pickle",
+            "standard-paid"
+        )
+        ZenRouter.updateModelRoster(testModels)
+
+        assertTrue(ZenRouter.isFreeModel("custom-free-model-free"))
+        assertTrue(ZenRouter.isFreeModel("big-pickle"))
+        assertFalse(ZenRouter.isFreeModel("standard-paid"))
+
+        assertTrue(ZenRouter.isMessagesModel("claude-test-v1"))
+        assertTrue(ZenRouter.isGeminiModel("gemini-test-v2"))
+        assertTrue(ZenRouter.isResponsesModel("gpt-test-v3"))
+
+        val (protoFree, _, _) = ZenRouter.resolve("custom-free-model-free")
+        assertEquals(LlmProtocol.OpenAiChatCompletions, protoFree)
+
+        val (protoMsg, _, _) = ZenRouter.resolve("claude-test-v1")
+        assertEquals(LlmProtocol.AnthropicMessages, protoMsg)
+
+        val (protoGem, _, _) = ZenRouter.resolve("gemini-test-v2")
+        assertEquals(LlmProtocol.GoogleGemini, protoGem)
+
+        val (protoResp, _, _) = ZenRouter.resolve("gpt-test-v3")
+        assertEquals(LlmProtocol.OpenAiResponses, protoResp)
+    }
+
+    @Test
+    fun allAvailableModelsPrioritizesFree() {
+        ZenRouter.updateModelRoster(listOf("paid-alpha", "free-beta-free", "paid-gamma", "big-pickle"))
+        val available = ZenRouter.allAvailableModels
+        assertTrue(available.contains("free-beta-free"))
+        assertTrue(available.contains("big-pickle"))
+        assertTrue(available.contains("paid-alpha"))
+        assertTrue(available.contains("paid-gamma"))
+        val freeBetaIdx = available.indexOf("free-beta-free")
+        val pickleIdx = available.indexOf("big-pickle")
+        val paidAlphaIdx = available.indexOf("paid-alpha")
+        val paidGammaIdx = available.indexOf("paid-gamma")
+        assertTrue(freeBetaIdx < paidAlphaIdx)
+        assertTrue(freeBetaIdx < paidGammaIdx)
+        assertTrue(pickleIdx < paidAlphaIdx)
+        assertTrue(pickleIdx < paidGammaIdx)
+    }
 }

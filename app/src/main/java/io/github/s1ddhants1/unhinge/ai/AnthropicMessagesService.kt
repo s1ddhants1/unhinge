@@ -22,17 +22,60 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
 
-private val anthropicJson = Json { ignoreUnknownKeys = true }
+private val anthropicJson = AiHttpClient.json
 
-object AnthropicMessagesService {
-    private val client =
-        OkHttpClient
-            .Builder()
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(120, TimeUnit.SECONDS)
-            .writeTimeout(30, TimeUnit.SECONDS)
-            .build()
-    private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
+object AnthropicMessagesService : LlmClient {
+    private val client = AiHttpClient.client
+    private val jsonMediaType = AiHttpClient.jsonMediaType
+
+    override suspend fun generate(request: WingmanLlmRequest): Result<List<String>> =
+        generate(
+            text = request.text,
+            apiKey = request.apiKey,
+            baseUrl = request.baseUrl,
+            model = request.model,
+            maxRetries = request.maxRetries,
+            customSystemPrompt = request.customSystemPrompt,
+            profileBlock = request.profileBlock,
+            avoidReplies = request.avoidReplies,
+            temperature = request.temperature,
+            topP = request.topP,
+            reasoningEffort = request.reasoningEffort,
+            promptTemplate = request.promptTemplate,
+            directionalStimulus = request.directionalStimulus,
+            promptCount = request.effectivePromptCount,
+        )
+
+    override fun streamGeneration(request: WingmanLlmRequest): Flow<OpenRouterStreamingService.StreamChunk> =
+        streamGeneration(
+            text = request.text,
+            apiKey = request.apiKey,
+            baseUrl = request.baseUrl,
+            model = request.model,
+            customSystemPrompt = request.customSystemPrompt,
+            profileBlock = request.profileBlock,
+            avoidReplies = request.avoidReplies,
+            temperature = request.temperature,
+            topP = request.topP,
+            maxRetries = request.maxRetries,
+            reasoningEffort = request.reasoningEffort,
+            promptTemplate = request.promptTemplate,
+            directionalStimulus = request.directionalStimulus,
+            promptCount = request.effectivePromptCount,
+        )
+
+    override fun streamChat(request: ChatLlmRequest): Flow<OpenRouterStreamingService.ChatStreamChunk> =
+        streamChat(
+            userPrompt = request.userPrompt,
+            systemPrompt = request.systemPrompt,
+            apiKey = request.apiKey,
+            baseUrl = request.baseUrl,
+            model = request.model,
+            temperature = request.temperature,
+            topP = request.topP,
+            maxRetries = request.maxRetries,
+            reasoningEffort = request.reasoningEffort,
+        )
 
     suspend fun generate(
         text: String,
@@ -73,10 +116,12 @@ object AnthropicMessagesService {
                             stream = false,
                             reasoningEffort = reasoningEffort,
                         )
-                    val request = buildPost(baseUrl.ifBlank { ZenMessagesBaseUrl }, apiKey, body.toString(), safeModel)
+                    val targetUrl = baseUrl.ifBlank { ZenMessagesBaseUrl }
+                    val request = buildPost(targetUrl, apiKey, body.toString(), safeModel)
                     client.newCall(request).execute().use { response ->
                         val responseBody = response.body.string()
                         if (!response.isSuccessful) {
+                            ZenRouter.onGatewayResponse(response.code, targetUrl)
                             val error = friendlyGenerationError(responseBody, response.code, response.message, baseUrl = baseUrl, model = safeModel)
                             if (isTransientHttpCode(response.code) && attempt < maxRetries - 1) throw Exception(error)
                             return@withContext Result.failure(Exception(error))
@@ -137,10 +182,12 @@ object AnthropicMessagesService {
                             stream = true,
                             reasoningEffort = reasoningEffort,
                         )
-                    val request = buildPost(baseUrl.ifBlank { ZenMessagesBaseUrl }, apiKey, body.toString(), safeModel)
+                    val targetUrl = baseUrl.ifBlank { ZenMessagesBaseUrl }
+                    val request = buildPost(targetUrl, apiKey, body.toString(), safeModel)
                     var httpFailed = false
                     client.newCall(request).execute().use { response ->
                         if (!response.isSuccessful) {
+                            ZenRouter.onGatewayResponse(response.code, targetUrl)
                             val rawBody = response.body.string()
                             lastError = friendlyGenerationError(rawBody, response.code, response.message, baseUrl = baseUrl, model = safeModel)
                             if (isTransientHttpCode(response.code) && attempt < maxRetries - 1) {
@@ -217,10 +264,12 @@ object AnthropicMessagesService {
                             stream = true,
                             reasoningEffort = reasoningEffort,
                         )
-                    val request = buildPost(baseUrl.ifBlank { ZenMessagesBaseUrl }, apiKey, body.toString(), sanitizeModelId(model).ifBlank { Consts.ZEN_DEFAULT_MODEL })
+                    val targetUrl = baseUrl.ifBlank { ZenMessagesBaseUrl }
+                    val request = buildPost(targetUrl, apiKey, body.toString(), sanitizeModelId(model).ifBlank { Consts.ZEN_DEFAULT_MODEL })
                     var httpFailed = false
                     client.newCall(request).execute().use { response ->
                         if (!response.isSuccessful) {
+                            ZenRouter.onGatewayResponse(response.code, targetUrl)
                             val rawBody = response.body.string()
                             lastError = friendlyGenerationError(rawBody, response.code, response.message, baseUrl = baseUrl, model = sanitizeModelId(model))
                             if (isTransientHttpCode(response.code) && attempt < maxRetries - 1) {

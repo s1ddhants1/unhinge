@@ -5,8 +5,10 @@ import io.github.s1ddhants1.unhinge.Consts
 import io.github.s1ddhants1.unhinge.R
 import io.github.s1ddhants1.unhinge.model.ChatMessageRecord
 import io.github.s1ddhants1.unhinge.util.PreferencesManager
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -16,8 +18,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import java.util.concurrent.ConcurrentHashMap
 
+/**
+ * High-level coordinator orchestrating dating prompt and match chat reply generation.
+ * Manages request lifecycles, streaming state transitions, in-memory caching, and fallback policies.
+ */
 object AiWingmanHelper {
     private val _status = MutableStateFlow<WingmanStatus>(WingmanStatus.Idle)
     val status: StateFlow<WingmanStatus> = _status.asStateFlow()
@@ -31,10 +36,8 @@ object AiWingmanHelper {
     private val _clearSuggestionsTrigger = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val clearSuggestionsTrigger: SharedFlow<Unit> = _clearSuggestionsTrigger.asSharedFlow()
 
-    private var generationJob: kotlinx.coroutines.Job? = null
+    private var generationJob: Job? = null
     private var isCompositionActive = true
-
-    private val replyCache = ConcurrentHashMap<String, List<String>>()
 
     fun setCompositionActive(active: Boolean) {
         isCompositionActive = active
@@ -56,136 +59,16 @@ object AiWingmanHelper {
         }
     }
 
-    private fun getCacheKey(
-        text: String,
-        profileBlock: String,
-        systemPrompt: String,
-        temperature: Float,
-        topP: Float,
-        directionalStimulus: String = "",
-    ): String {
-        return "${text.hashCode()}_${profileBlock.hashCode()}_${systemPrompt.hashCode()}_${temperature}_${topP}_${directionalStimulus.hashCode()}"
-    }
-
-    private fun tryParsePartialReplies(content: String, expectedLines: Int): List<String> {
-        val trimmed = content.trim()
-        if (trimmed.startsWith("{") || trimmed.startsWith("[") || trimmed.contains("\"lines\"")) {
-            val results = mutableListOf<String>()
-            var inArray = false
-            var inString = false
-            var escape = false
-            val cur = StringBuilder()
-            for (c in trimmed) {
-                if (!inArray) {
-                    if (c == '[') inArray = true
-                    continue
-                }
-                if (c == ']' && !inString) {
-                    inArray = false
-                    break
-                }
-                if (!inString) {
-                    if (c == '"') {
-                        inString = true
-                        cur.clear()
-                    }
-                } else {
-                    if (escape) {
-                        cur.append(c)
-                        escape = false
-                    } else if (c == '\\') {
-                        escape = true
-                    } else if (c == '"') {
-                        inString = false
-                        results.add(cur.toString())
-                        cur.clear()
-                    } else {
-                        cur.append(c)
-                    }
-                }
-            }
-            if (inString && cur.isNotEmpty()) {
-                results.add(cur.toString())
-            }
-            if (results.isNotEmpty()) {
-                return results
-            }
-        }
-        return content.lines()
-            .map { it.trim() }
-            .filter { it.isNotBlank() }
-            .map { line ->
-                line.replace(Regex("^\\d+\\.\\s*"), "")
-                    .replace(Regex("^Line\\s+\\d+:\\s*", RegexOption.IGNORE_CASE), "")
-                    .replace(Regex("^-\\s*"), "")
-            }
-    }
-
-    fun isApiKeyRequired(provider: String, model: String): Boolean {
-        if (provider.equals("Zen", ignoreCase = true)) {
-            return !ZenRouter.isFreeModel(model)
-        }
-        return true
-    }
+    fun isApiKeyRequired(provider: String, model: String): Boolean =
+        LlmProtocolRouter.isApiKeyRequired(provider, model)
 
     fun resolveEffectiveEndpoint(
         provider: String,
         apiKey: String,
         baseUrl: String,
         model: String,
-    ): Triple<LlmProtocol, String, String> {
-        if (provider.equals("Zen", ignoreCase = true)) {
-            val trimmed = baseUrl.trim()
-
-            val isCustomProxy =
-                trimmed.isNotBlank() &&
-                    !ZenRouter.isZenUrl(trimmed) &&
-                    !trimmed.contains("openrouter.ai", ignoreCase = true)
-            if (isCustomProxy) {
-                val protocol = when {
-                    trimmed.endsWith("/responses") -> LlmProtocol.OpenAiResponses
-                    trimmed.endsWith("/messages") -> LlmProtocol.AnthropicMessages
-                    trimmed.contains("/models/") -> LlmProtocol.GoogleGemini
-                    else -> LlmProtocol.OpenAiChatCompletions
-                }
-                val resolvedModel = sanitizeModelId(model).ifBlank { io.github.s1ddhants1.unhinge.Consts.ZEN_DEFAULT_MODEL }
-                return Triple(protocol, trimmed, resolvedModel)
-            }
-            return ZenRouter.resolve(model)
-        }
-        val protocol = LlmProtocol.infer(provider, apiKey)
-        val effectiveProvider = if (protocol == LlmProtocol.GoogleOpenAi) "Gemini" else provider
-
-        val effectiveBaseUrl = when {
-            effectiveProvider.equals("Gemini", ignoreCase = true) && (baseUrl.isBlank() || baseUrl.contains("openrouter.ai")) ->
-                LlmProtocol.GoogleOpenAi.defaultEndpoint()
-            effectiveProvider.equals("OpenAI", ignoreCase = true) && (baseUrl.isBlank() || baseUrl.contains("openrouter.ai")) ->
-                "https://api.openai.com/v1/chat/completions"
-            effectiveProvider.equals("Claude", ignoreCase = true) && (baseUrl.isBlank() || baseUrl.contains("openrouter.ai")) ->
-                "https://api.anthropic.com/v1/messages"
-            effectiveProvider.equals("Perplexity", ignoreCase = true) && (baseUrl.isBlank() || baseUrl.contains("openrouter.ai")) ->
-                "https://api.perplexity.ai/chat/completions"
-            effectiveProvider.equals("XAi", ignoreCase = true) && (baseUrl.isBlank() || baseUrl.contains("openrouter.ai")) ->
-                "https://api.x.ai/v1/chat/completions"
-            effectiveProvider.equals("Mistral", ignoreCase = true) && (baseUrl.isBlank() || baseUrl.contains("openrouter.ai")) ->
-                "https://api.mistral.ai/v1/chat/completions"
-            effectiveProvider.equals("Inception", ignoreCase = true) && (baseUrl.isBlank() || baseUrl.contains("openrouter.ai")) ->
-                "https://api.inceptionlabs.ai/v1/chat/completions"
-            else -> baseUrl.ifBlank { OpenRouterDefaultBaseUrl }
-        }
-
-        val sanitizedModel = sanitizeModelId(model)
-        val effectiveModel = if (effectiveProvider.equals("Gemini", ignoreCase = true) && (sanitizedModel.isBlank() || sanitizedModel.contains("gemini-2.5-flash-lite"))) {
-            "gemini-flash-lite-latest"
-        } else if (sanitizedModel.isBlank() || sanitizedModel == io.github.s1ddhants1.unhinge.Consts.LEGACY_OPENROUTER_DEFAULT_MODEL) {
-
-            io.github.s1ddhants1.unhinge.Consts.OPENROUTER_DEFAULT_MODEL
-        } else {
-            sanitizedModel
-        }
-
-        return Triple(protocol, effectiveBaseUrl, effectiveModel)
-    }
+    ): Triple<LlmProtocol, String, String> =
+        LlmProtocolRouter.resolveEffectiveEndpoint(provider, apiKey, baseUrl, model)
 
     fun streamCustomChat(
         userPrompt: String,
@@ -194,38 +77,99 @@ object AiWingmanHelper {
         baseUrl: String,
         model: String,
         provider: String,
-        temperature: Float = io.github.s1ddhants1.unhinge.Consts.DEFAULT_AI_TEMPERATURE,
-        topP: Float = io.github.s1ddhants1.unhinge.Consts.DEFAULT_AI_TOP_P,
-        reasoningEffort: String = io.github.s1ddhants1.unhinge.Consts.DEFAULT_AI_REASONING_EFFORT,
+        temperature: Float = Consts.DEFAULT_AI_TEMPERATURE,
+        topP: Float = Consts.DEFAULT_AI_TOP_P,
+        reasoningEffort: String = Consts.DEFAULT_AI_REASONING_EFFORT,
     ): Flow<OpenRouterStreamingService.ChatStreamChunk> {
-        val (protocol, effectiveBaseUrl, effectiveModel) = resolveEffectiveEndpoint(provider, apiKey, baseUrl, model)
-        return when (protocol) {
-            LlmProtocol.OpenAiResponses ->
-                OpenAiResponsesService.streamChat(
-                    systemPrompt, userPrompt, apiKey, effectiveBaseUrl, effectiveModel, temperature, topP,
-                    reasoningEffort = reasoningEffort,
-                )
-            LlmProtocol.AnthropicMessages ->
-                AnthropicMessagesService.streamChat(
-                    systemPrompt, userPrompt, apiKey, effectiveBaseUrl, effectiveModel, temperature, topP,
-                    reasoningEffort = reasoningEffort,
-                )
-            LlmProtocol.GoogleGemini ->
-                GoogleGeminiService.streamChat(
-                    systemPrompt, userPrompt, apiKey, effectiveBaseUrl, effectiveModel, temperature, topP,
-                    reasoningEffort = reasoningEffort,
-                )
-            else ->
-                OpenRouterStreamingService.streamChat(
-                    systemPrompt = systemPrompt,
+        val (protocol, effectiveBaseUrl, effectiveModel) =
+            resolveEffectiveEndpoint(provider, apiKey, baseUrl, model)
+        val client = LlmClientRegistry.getClient(protocol)
+        return client.streamChat(
+            ChatLlmRequest(
+                userPrompt = userPrompt,
+                systemPrompt = systemPrompt,
+                apiKey = apiKey,
+                baseUrl = effectiveBaseUrl,
+                model = effectiveModel,
+                temperature = temperature,
+                topP = topP,
+                reasoningEffort = reasoningEffort,
+            ),
+        )
+    }
+
+    fun steerOpener(
+        entry: PromptEntry,
+        currentOpener: String,
+        steerInstruction: String,
+        profileBlock: String = "",
+        apiKey: String,
+        baseUrl: String,
+        model: String,
+        scope: CoroutineScope,
+        context: Context,
+        prefs: PreferencesManager? = null,
+        provider: String = "OpenRouter",
+        temperature: Float = Consts.DEFAULT_AI_TEMPERATURE,
+        topP: Float = Consts.DEFAULT_AI_TOP_P,
+        reasoningEffort: String = prefs?.aiReasoningEffort ?: Consts.DEFAULT_AI_REASONING_EFFORT,
+        onComplete: ((String) -> Unit)? = null,
+    ) {
+        val userPrompt = WingmanPrompts.steerOpenerPrompt(
+            profileBlock = profileBlock,
+            promptText = entry.text,
+            currentOpener = currentOpener,
+            steerInstruction = steerInstruction,
+        )
+        val systemPrompt = WingmanPrompts.openerSystemPrompt(
+            lineCount = 1,
+            custom = prefs?.aiCustomSystemPrompt.orEmpty(),
+            prefs = prefs,
+            context = context,
+        )
+
+        entry.isSteeringFlow.value = true
+        entry.addFollowUpUserMessage(steerInstruction)
+        entry.addFollowUpAssistantMessage("")
+
+        scope.launch(Dispatchers.IO) {
+            val contentAccumulator = StringBuilder()
+            try {
+                streamCustomChat(
                     userPrompt = userPrompt,
+                    systemPrompt = systemPrompt,
                     apiKey = apiKey,
-                    baseUrl = effectiveBaseUrl,
-                    model = effectiveModel,
+                    baseUrl = baseUrl,
+                    model = model,
+                    provider = provider,
                     temperature = temperature,
                     topP = topP,
                     reasoningEffort = reasoningEffort,
-                )
+                ).collect { chunk ->
+                    when (chunk) {
+                        is OpenRouterStreamingService.ChatStreamChunk.Content -> {
+                            contentAccumulator.append(chunk.text)
+                            entry.updateLastAssistantMessage(contentAccumulator.toString())
+                        }
+                        is OpenRouterStreamingService.ChatStreamChunk.Complete -> {
+                            val finalReply = (chunk.fullText.ifBlank { contentAccumulator.toString() })
+                                .trim()
+                                .removeSurrounding("\"")
+                            entry.updateLastAssistantMessage(finalReply)
+                            entry.addReply(finalReply, selectNew = true)
+                            entry.isSteeringFlow.value = false
+                            onComplete?.invoke(finalReply)
+                        }
+                        is OpenRouterStreamingService.ChatStreamChunk.Error -> {
+                            entry.updateLastAssistantMessage("Error: ${chunk.message}")
+                            entry.isSteeringFlow.value = false
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                entry.updateLastAssistantMessage("Error: ${e.message ?: "Failed to steer opener"}")
+                entry.isSteeringFlow.value = false
+            }
         }
     }
 
@@ -235,6 +179,7 @@ object AiWingmanHelper {
         } catch (_: Throwable) {
             fallback
         }
+
 
     fun generateReplies(
         prompts: List<PromptEntry>,
@@ -296,20 +241,18 @@ object AiWingmanHelper {
                 }
 
                 val fullText = nonEmptyEntries.joinToString("\n") { it.second.text }
+                val cacheKey = AiWingmanCache.createKey(fullText, profileBlock, systemPrompt, temperature, topP, directionalStimulus)
 
-                val cacheKey = getCacheKey(fullText, profileBlock, systemPrompt, temperature, topP, directionalStimulus)
                 if (!forceRefresh) {
-                    val cachedReplies = replyCache[cacheKey]
+                    val cachedReplies = AiWingmanCache.get(cacheKey)
                     if (cachedReplies != null && cachedReplies.size >= nonEmptyEntries.size) {
                         nonEmptyEntries.forEachIndexed { idx, (_, entry) ->
                             if (idx < cachedReplies.size) {
-                                val reply = cachedReplies[idx]
-                                entry.addReply(reply, selectNew = true)
+                                entry.addReply(cachedReplies[idx], selectNew = true)
                             }
                         }
                         _hasActiveSuggestions.value = true
                         _status.value = WingmanStatus.Success
-
                         delay(3000)
                         if (_status.value is WingmanStatus.Success && isCompositionActive) {
                             _status.value = WingmanStatus.Idle
@@ -317,12 +260,29 @@ object AiWingmanHelper {
                         return@launch
                     }
                 } else {
-                    replyCache.remove(cacheKey)
+                    AiWingmanCache.remove(cacheKey)
                 }
 
                 val avoidReplies = if (prompts.size == 1) prompts[0].repliesFlow.value else emptyList()
                 val promptTemplate = prefs?.aiOpenerPromptTemplate?.takeIf { it.isNotBlank() }
 
+                val llmRequest = WingmanLlmRequest(
+                    text = fullText,
+                    apiKey = apiKey,
+                    baseUrl = effectiveBaseUrl,
+                    model = effectiveModel,
+                    customSystemPrompt = systemPrompt,
+                    profileBlock = profileBlock,
+                    avoidReplies = avoidReplies,
+                    temperature = temperature,
+                    topP = topP,
+                    reasoningEffort = reasoningEffort,
+                    promptTemplate = promptTemplate,
+                    directionalStimulus = directionalStimulus,
+                    promptCount = nonEmptyEntries.size,
+                )
+
+                val client = LlmClientRegistry.getClient(protocol)
                 val result = if (useStreaming && provider != "Custom") {
                     Timber.d("Using streaming for wingman generation with provider: $provider")
                     var generatedLines: List<String>? = null
@@ -330,27 +290,11 @@ object AiWingmanHelper {
                     var errorMessage = ""
                     val contentAccumulator = StringBuilder()
 
-                    streamingGeneration(
-                        protocol = protocol,
-                        text = fullText,
-                        apiKey = apiKey,
-                        baseUrl = effectiveBaseUrl,
-                        model = effectiveModel,
-                        systemPrompt = systemPrompt,
-                        profileBlock = profileBlock,
-                        avoidReplies = avoidReplies,
-                        temperature = temperature,
-                        topP = topP,
-                        reasoningEffort = reasoningEffort,
-                        promptTemplate = promptTemplate,
-                        directionalStimulus = directionalStimulus,
-                        promptCount = nonEmptyEntries.size,
-                    ).collect { chunk ->
+                    client.streamGeneration(llmRequest).collect { chunk ->
                         when (chunk) {
                             is OpenRouterStreamingService.StreamChunk.Content -> {
                                 contentAccumulator.append(chunk.text)
-                                val partialContent = contentAccumulator.toString()
-                                val partialResult = tryParsePartialReplies(partialContent, nonEmptyEntries.size)
+                                val partialResult = tryParsePartialReplies(contentAccumulator.toString(), nonEmptyEntries.size)
                                 if (partialResult.isNotEmpty()) {
                                     partialResult.forEachIndexed { idx, reply ->
                                         if (idx < nonEmptyEntries.size && reply.isNotBlank()) {
@@ -361,12 +305,10 @@ object AiWingmanHelper {
                                     _status.value = WingmanStatus.Generating
                                 }
                             }
-
                             is OpenRouterStreamingService.StreamChunk.Complete -> {
                                 Timber.d("Streaming complete with ${chunk.generatedLines.size} lines")
                                 generatedLines = chunk.generatedLines
                             }
-
                             is OpenRouterStreamingService.StreamChunk.Error -> {
                                 Timber.e("Streaming error: ${chunk.message}")
                                 hasError = true
@@ -376,54 +318,17 @@ object AiWingmanHelper {
                     }
 
                     if (hasError) {
-                        val isFreeTierRestriction = (errorMessage.contains("FreeTierError", ignoreCase = true) ||
-                            errorMessage.contains("within OpenCode", ignoreCase = true) ||
-                            errorMessage.contains("free-tier restriction", ignoreCase = true)) &&
-                            effectiveModel != Consts.ZEN_DEFAULT_MODEL
+                        val isFreeTierRestriction = isFreeTierError(errorMessage) && effectiveModel != Consts.ZEN_DEFAULT_MODEL
                         if (isFreeTierRestriction) {
-                            Timber.d("Selected model restricted on free tier, falling back to space-bunny-free")
-                            runCatching {
-                                prefs?.let { p ->
-                                    p.openRouterModel = Consts.ZEN_DEFAULT_MODEL
-                                    p.saveToFallbackStorageAsync(context)
-                                }
-                                val sp = context.getSharedPreferences(Consts.PREFS_SETTINGS, Context.MODE_PRIVATE)
-                                sp.edit().putString(Consts.PREF_OPENROUTER_MODEL, Consts.ZEN_DEFAULT_MODEL).apply()
-                            }
-                            nonStreamingGeneration(
-                                protocol = LlmProtocol.OpenAiChatCompletions,
-                                text = fullText,
-                                apiKey = apiKey,
+                            fallbackToSpaceBunny(context, prefs)
+                            val fallbackReq = llmRequest.copy(
                                 baseUrl = Consts.ZEN_DEFAULT_BASE_URL,
                                 model = Consts.ZEN_DEFAULT_MODEL,
-                                systemPrompt = systemPrompt,
-                                profileBlock = profileBlock,
-                                avoidReplies = avoidReplies,
-                                temperature = temperature,
-                                topP = topP,
-                                reasoningEffort = reasoningEffort,
-                                promptTemplate = promptTemplate,
-                                directionalStimulus = directionalStimulus,
-                                promptCount = nonEmptyEntries.size,
                             )
+                            OpenAiChatClient.generate(fallbackReq)
                         } else if (isFallbackWorthy(errorMessage)) {
                             Timber.d("Streaming failed transiently, falling back to non-streaming")
-                            nonStreamingGeneration(
-                                protocol = protocol,
-                                text = fullText,
-                                apiKey = apiKey,
-                                baseUrl = effectiveBaseUrl,
-                                model = effectiveModel,
-                                systemPrompt = systemPrompt,
-                                profileBlock = profileBlock,
-                                avoidReplies = avoidReplies,
-                                temperature = temperature,
-                                topP = topP,
-                                reasoningEffort = reasoningEffort,
-                                promptTemplate = promptTemplate,
-                                directionalStimulus = directionalStimulus,
-                                promptCount = nonEmptyEntries.size,
-                            )
+                            client.generate(llmRequest)
                         } else {
                             Result.failure(Exception(errorMessage))
                         }
@@ -434,54 +339,16 @@ object AiWingmanHelper {
                     }
                 } else {
                     Timber.d("Using non-streaming for wingman generation")
-                    val initialResult = nonStreamingGeneration(
-                        protocol = protocol,
-                        text = fullText,
-                        apiKey = apiKey,
-                        baseUrl = effectiveBaseUrl,
-                        model = effectiveModel,
-                        systemPrompt = systemPrompt,
-                        profileBlock = profileBlock,
-                        avoidReplies = avoidReplies,
-                        temperature = temperature,
-                        topP = topP,
-                        reasoningEffort = reasoningEffort,
-                        promptTemplate = promptTemplate,
-                        directionalStimulus = directionalStimulus,
-                        promptCount = nonEmptyEntries.size,
-                    )
+                    val initialResult = client.generate(llmRequest)
                     if (initialResult.isFailure) {
                         val errMsg = initialResult.exceptionOrNull()?.message.orEmpty()
-                        val isFreeTierRestriction = (errMsg.contains("FreeTierError", ignoreCase = true) ||
-                            errMsg.contains("within OpenCode", ignoreCase = true) ||
-                            errMsg.contains("free-tier restriction", ignoreCase = true)) &&
-                            effectiveModel != Consts.ZEN_DEFAULT_MODEL
-                        if (isFreeTierRestriction) {
-                            Timber.d("Non-streaming model restricted on free tier, falling back to space-bunny-free")
-                            runCatching {
-                                prefs?.let { p ->
-                                    p.openRouterModel = Consts.ZEN_DEFAULT_MODEL
-                                    p.saveToFallbackStorageAsync(context)
-                                }
-                                val sp = context.getSharedPreferences(Consts.PREFS_SETTINGS, Context.MODE_PRIVATE)
-                                sp.edit().putString(Consts.PREF_OPENROUTER_MODEL, Consts.ZEN_DEFAULT_MODEL).apply()
-                            }
-                            nonStreamingGeneration(
-                                protocol = LlmProtocol.OpenAiChatCompletions,
-                                text = fullText,
-                                apiKey = apiKey,
+                        if (isFreeTierError(errMsg) && effectiveModel != Consts.ZEN_DEFAULT_MODEL) {
+                            fallbackToSpaceBunny(context, prefs)
+                            val fallbackReq = llmRequest.copy(
                                 baseUrl = Consts.ZEN_DEFAULT_BASE_URL,
                                 model = Consts.ZEN_DEFAULT_MODEL,
-                                systemPrompt = systemPrompt,
-                                profileBlock = profileBlock,
-                                avoidReplies = avoidReplies,
-                                temperature = temperature,
-                                topP = topP,
-                                reasoningEffort = reasoningEffort,
-                                promptTemplate = promptTemplate,
-                                directionalStimulus = directionalStimulus,
-                                promptCount = nonEmptyEntries.size,
                             )
+                            OpenAiChatClient.generate(fallbackReq)
                         } else {
                             initialResult
                         }
@@ -492,12 +359,9 @@ object AiWingmanHelper {
 
                 result.onSuccess { replies ->
                     if (!isCompositionActive) return@onSuccess
-
                     if (!forceRefresh) {
-                        val cacheKey = getCacheKey(fullText, profileBlock, systemPrompt, temperature, topP, directionalStimulus)
-                        replyCache[cacheKey] = replies
+                        AiWingmanCache.put(cacheKey, replies)
                     }
-
                     val expectedCount = nonEmptyEntries.size
                     when {
                         replies.size >= expectedCount -> {
@@ -507,7 +371,6 @@ object AiWingmanHelper {
                             _hasActiveSuggestions.value = true
                             _status.value = WingmanStatus.Success
                         }
-
                         replies.isNotEmpty() -> {
                             replies.forEachIndexed { idx, reply ->
                                 if (idx < nonEmptyEntries.size) {
@@ -519,7 +382,6 @@ object AiWingmanHelper {
                             _status.value = WingmanStatus.Success
                         }
                     }
-
                     delay(3000)
                     if (_status.value is WingmanStatus.Success && isCompositionActive) {
                         _status.value = WingmanStatus.Idle
@@ -530,7 +392,7 @@ object AiWingmanHelper {
                     _status.value = WingmanStatus.Error(errorMessage)
                 }
             } catch (e: Exception) {
-                if (e !is kotlinx.coroutines.CancellationException && isCompositionActive) {
+                if (e !is CancellationException && isCompositionActive) {
                     val errorMessage = e.message ?: safeErrorString(context, R.string.ai_error_generation_failed, "Generation failed")
                     _status.value = WingmanStatus.Error(errorMessage)
                 }
@@ -599,10 +461,10 @@ object AiWingmanHelper {
                     resolveEffectiveEndpoint(provider, apiKey, baseUrl, model)
 
                 val historyText = formatConversationHistory(matchName, conversationHistory)
-                val cacheKey = getCacheKey("chat_${matchName}_${historyText.hashCode()}", profileBlock, directionalStimulus, temperature, topP)
+                val cacheKey = AiWingmanCache.createKey("chat_${matchName}_${historyText.hashCode()}", profileBlock, directionalStimulus, temperature, topP)
 
                 if (!forceRefresh) {
-                    val cachedReplies = replyCache[cacheKey]
+                    val cachedReplies = AiWingmanCache.get(cacheKey)
                     if (cachedReplies != null && cachedReplies.size >= prompts.size) {
                         prompts.forEachIndexed { idx, entry ->
                             if (idx < cachedReplies.size) {
@@ -611,7 +473,6 @@ object AiWingmanHelper {
                         }
                         _hasActiveSuggestions.value = true
                         _status.value = WingmanStatus.Success
-
                         delay(3000)
                         if (_status.value is WingmanStatus.Success && isCompositionActive) {
                             _status.value = WingmanStatus.Idle
@@ -619,14 +480,14 @@ object AiWingmanHelper {
                         return@launch
                     }
                 } else {
-                    replyCache.remove(cacheKey)
+                    AiWingmanCache.remove(cacheKey)
                 }
 
                 val avoidReplies = prompts.flatMap { it.repliesFlow.value }
                 val systemPrompt = WingmanPrompts.chatReplySystemPrompt(
                     custom = prefs?.aiCustomSystemPrompt.orEmpty(),
                     prefs = prefs,
-                    context = context
+                    context = context,
                 )
                 val userPrompt = WingmanPrompts.chatReplyUserPrompt(
                     matchName = matchName,
@@ -636,7 +497,7 @@ object AiWingmanHelper {
                     prefs = prefs,
                     context = context,
                     directionalStimulus = directionalStimulus,
-                    replyCount = prompts.size
+                    replyCount = prompts.size,
                 )
 
                 val contentAccumulator = StringBuilder()
@@ -668,7 +529,7 @@ object AiWingmanHelper {
                             }
                         }
                         is OpenRouterStreamingService.ChatStreamChunk.Complete -> {
-                            // Handled after flow collects
+                            // Handled after collection
                         }
                         is OpenRouterStreamingService.ChatStreamChunk.Error -> {
                             hasError = true
@@ -686,10 +547,9 @@ object AiWingmanHelper {
                             prompts[idx].addReply(reply, selectNew = true)
                         }
                     }
-                    replyCache[cacheKey] = parsedReplies
+                    AiWingmanCache.put(cacheKey, parsedReplies)
                     _hasActiveSuggestions.value = true
                     _status.value = WingmanStatus.Success
-
                     delay(3000)
                     if (_status.value is WingmanStatus.Success && isCompositionActive) {
                         _status.value = WingmanStatus.Idle
@@ -701,7 +561,7 @@ object AiWingmanHelper {
                     _status.value = WingmanStatus.Error("Failed to parse reply suggestions")
                 }
             } catch (e: Exception) {
-                if (e !is kotlinx.coroutines.CancellationException && isCompositionActive) {
+                if (e !is CancellationException && isCompositionActive) {
                     val msg = e.message ?: safeErrorString(context, R.string.ai_error_generation_failed, "Generation failed")
                     _status.value = WingmanStatus.Error(msg)
                 }
@@ -711,171 +571,22 @@ object AiWingmanHelper {
         }
     }
 
-    private fun streamingGeneration(
-        protocol: LlmProtocol,
-        text: String,
-        apiKey: String,
-        baseUrl: String,
-        model: String,
-        systemPrompt: String,
-        profileBlock: String,
-        avoidReplies: List<String>,
-        temperature: Float,
-        topP: Float,
-        reasoningEffort: String = Consts.DEFAULT_AI_REASONING_EFFORT,
-        promptTemplate: String? = null,
-        directionalStimulus: String = "",
-        promptCount: Int = text.lines().size,
-    ): Flow<OpenRouterStreamingService.StreamChunk> =
-        when (protocol) {
-            LlmProtocol.OpenAiResponses ->
-                OpenAiResponsesService.streamGeneration(
-                    text = text,
-                    apiKey = apiKey,
-                    baseUrl = baseUrl,
-                    model = model,
-                    customSystemPrompt = systemPrompt,
-                    profileBlock = profileBlock,
-                    avoidReplies = avoidReplies,
-                    temperature = temperature,
-                    topP = topP,
-                    reasoningEffort = reasoningEffort,
-                    promptTemplate = promptTemplate,
-                    directionalStimulus = directionalStimulus,
-                    promptCount = promptCount,
-                )
-            LlmProtocol.AnthropicMessages ->
-                AnthropicMessagesService.streamGeneration(
-                    text = text,
-                    apiKey = apiKey,
-                    baseUrl = baseUrl,
-                    model = model,
-                    customSystemPrompt = systemPrompt,
-                    profileBlock = profileBlock,
-                    avoidReplies = avoidReplies,
-                    temperature = temperature,
-                    topP = topP,
-                    reasoningEffort = reasoningEffort,
-                    promptTemplate = promptTemplate,
-                    directionalStimulus = directionalStimulus,
-                    promptCount = promptCount,
-                )
-            LlmProtocol.GoogleGemini ->
-                GoogleGeminiService.streamGeneration(
-                    text = text,
-                    apiKey = apiKey,
-                    baseUrl = baseUrl,
-                    model = model,
-                    customSystemPrompt = systemPrompt,
-                    profileBlock = profileBlock,
-                    avoidReplies = avoidReplies,
-                    temperature = temperature,
-                    topP = topP,
-                    reasoningEffort = reasoningEffort,
-                    promptTemplate = promptTemplate,
-                    directionalStimulus = directionalStimulus,
-                    promptCount = promptCount,
-                )
-            else ->
-                OpenRouterStreamingService.streamGeneration(
-                    text = text,
-                    apiKey = apiKey,
-                    baseUrl = baseUrl,
-                    model = model,
-                    customSystemPrompt = systemPrompt,
-                    profileBlock = profileBlock,
-                    avoidReplies = avoidReplies,
-                    temperature = temperature,
-                    topP = topP,
-                    reasoningEffort = reasoningEffort,
-                    promptTemplate = promptTemplate,
-                    directionalStimulus = directionalStimulus,
-                    promptCount = promptCount,
-                )
-        }
+    private fun isFreeTierError(msg: String): Boolean =
+        msg.contains("FreeTierError", ignoreCase = true) ||
+            msg.contains("within OpenCode", ignoreCase = true) ||
+            msg.contains("free-tier restriction", ignoreCase = true)
 
-    private suspend fun nonStreamingGeneration(
-        protocol: LlmProtocol,
-        text: String,
-        apiKey: String,
-        baseUrl: String,
-        model: String,
-        systemPrompt: String,
-        profileBlock: String,
-        avoidReplies: List<String>,
-        temperature: Float,
-        topP: Float,
-        reasoningEffort: String = Consts.DEFAULT_AI_REASONING_EFFORT,
-        promptTemplate: String? = null,
-        directionalStimulus: String = "",
-        promptCount: Int = text.lines().size,
-    ): Result<List<String>> =
-        when (protocol) {
-            LlmProtocol.OpenAiResponses ->
-                OpenAiResponsesService.generate(
-                    text = text,
-                    apiKey = apiKey,
-                    baseUrl = baseUrl,
-                    model = model,
-                    customSystemPrompt = systemPrompt,
-                    profileBlock = profileBlock,
-                    avoidReplies = avoidReplies,
-                    temperature = temperature,
-                    topP = topP,
-                    reasoningEffort = reasoningEffort,
-                    promptTemplate = promptTemplate,
-                    directionalStimulus = directionalStimulus,
-                    promptCount = promptCount,
-                )
-            LlmProtocol.AnthropicMessages ->
-                AnthropicMessagesService.generate(
-                    text = text,
-                    apiKey = apiKey,
-                    baseUrl = baseUrl,
-                    model = model,
-                    customSystemPrompt = systemPrompt,
-                    profileBlock = profileBlock,
-                    avoidReplies = avoidReplies,
-                    temperature = temperature,
-                    topP = topP,
-                    reasoningEffort = reasoningEffort,
-                    promptTemplate = promptTemplate,
-                    directionalStimulus = directionalStimulus,
-                    promptCount = promptCount,
-                )
-            LlmProtocol.GoogleGemini ->
-                GoogleGeminiService.generate(
-                    text = text,
-                    apiKey = apiKey,
-                    baseUrl = baseUrl,
-                    model = model,
-                    customSystemPrompt = systemPrompt,
-                    profileBlock = profileBlock,
-                    avoidReplies = avoidReplies,
-                    temperature = temperature,
-                    topP = topP,
-                    reasoningEffort = reasoningEffort,
-                    promptTemplate = promptTemplate,
-                    directionalStimulus = directionalStimulus,
-                    promptCount = promptCount,
-                )
-            else ->
-                OpenRouterService.generate(
-                    text = text,
-                    apiKey = apiKey,
-                    baseUrl = baseUrl,
-                    model = model,
-                    customSystemPrompt = systemPrompt,
-                    profileBlock = profileBlock,
-                    avoidReplies = avoidReplies,
-                    temperature = temperature,
-                    topP = topP,
-                    reasoningEffort = reasoningEffort,
-                    promptTemplate = promptTemplate,
-                    directionalStimulus = directionalStimulus,
-                    promptCount = promptCount,
-                )
+    private fun fallbackToSpaceBunny(context: Context, prefs: PreferencesManager?) {
+        Timber.d("Model restricted on free tier, falling back to space-bunny-free")
+        runCatching {
+            prefs?.let { p ->
+                p.openRouterModel = Consts.ZEN_DEFAULT_MODEL
+                p.saveToFallbackStorageAsync(context)
+            }
+            val sp = context.getSharedPreferences(Consts.PREFS_SETTINGS, Context.MODE_PRIVATE)
+            sp.edit().putString(Consts.PREF_OPENROUTER_MODEL, Consts.ZEN_DEFAULT_MODEL).apply()
         }
+    }
 
     private fun isFallbackWorthy(message: String): Boolean {
         val lower = message.lowercase()
@@ -890,6 +601,60 @@ object AiWingmanHelper {
             lower.contains("freetiererror") ||
             lower.contains("free-tier restriction") ||
             lower.contains("within opencode")
+    }
+
+    private fun tryParsePartialReplies(content: String, expectedLines: Int): List<String> {
+        val trimmed = content.trim()
+        if (trimmed.startsWith("{") || trimmed.startsWith("[") || trimmed.contains("\"lines\"")) {
+            val results = mutableListOf<String>()
+            var inArray = false
+            var inString = false
+            var escape = false
+            val cur = StringBuilder()
+            for (c in trimmed) {
+                if (!inArray) {
+                    if (c == '[') inArray = true
+                    continue
+                }
+                if (c == ']' && !inString) {
+                    inArray = false
+                    break
+                }
+                if (!inString) {
+                    if (c == '"') {
+                        inString = true
+                        cur.clear()
+                    }
+                } else {
+                    if (escape) {
+                        cur.append(c)
+                        escape = false
+                    } else if (c == '\\') {
+                        escape = true
+                    } else if (c == '"') {
+                        inString = false
+                        results.add(cur.toString())
+                        cur.clear()
+                    } else {
+                        cur.append(c)
+                    }
+                }
+            }
+            if (inString && cur.isNotEmpty()) {
+                results.add(cur.toString())
+            }
+            if (results.isNotEmpty()) {
+                return results
+            }
+        }
+        return content.lines()
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .map { line ->
+                line.replace(Regex("^\\d+\\.\\s*"), "")
+                    .replace(Regex("^Line\\s+\\d+:\\s*", RegexOption.IGNORE_CASE), "")
+                    .replace(Regex("^-\\s*"), "")
+            }
     }
 
     sealed class WingmanStatus {

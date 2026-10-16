@@ -8,11 +8,16 @@ import coil3.SingletonImageLoader
 import io.github.libxposed.service.XposedService
 import io.github.libxposed.service.XposedServiceHelper
 import io.github.s1ddhants1.unhinge.Consts
+import io.github.s1ddhants1.unhinge.ai.ZenRouter
 import io.github.s1ddhants1.unhinge.util.LSPatchHelper
+import io.github.s1ddhants1.unhinge.util.PreferencesManager
 import io.github.s1ddhants1.unhinge.util.UnhingeImageLoader
 import io.github.s1ddhants1.unhinge.util.attempt
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
 class App : Application(), SingletonImageLoader.Factory, XposedServiceHelper.OnServiceListener {
 
@@ -43,6 +48,14 @@ class App : Application(), SingletonImageLoader.Factory, XposedServiceHelper.OnS
             Log.i(TAG, "service listener registered, bound=$isBound")
         }
         LSPatchHelper.requestServicePush(this)
+
+        attempt("initialize and sync OpenCode catalog", silent = true) {
+            val prefs = PreferencesManager(getSharedPreferences(Consts.PREFS_SETTINGS, MODE_PRIVATE))
+            ZenRouter.initFromPreferences(prefs)
+            CoroutineScope(Dispatchers.IO).launch {
+                ZenRouter.syncCatalogAndVersion(prefs)
+            }
+        }
     }
 
     override fun onServiceBind(service: XposedService) {

@@ -53,6 +53,11 @@
     <string name="ai_current_model_fallback">current</string>
     <string name="zen_model_free_format"><xliff:g id="model" example="space-bunny-free">%1$s</xliff:g> (Free)</string>
     <string name="zen_model_paid_format"><xliff:g id="model" example="claude-sonnet-5">%1$s</xliff:g> (Requires Zen key)</string>
+    <string name="zen_sync_title">Sync OpenCode Gateway</string>
+    <string name="zen_sync_desc_format">OpenCode v<xliff:g id="version" example="2.0.30">%1$s</xliff:g> • <xliff:g id="freeCount" example="41">%2$d</xliff:g> free (<xliff:g id="totalCount" example="86">%3$d</xliff:g> total)</string>
+    <string name="zen_sync_success_format">Updated OpenCode v<xliff:g id="version" example="2.0.30">%1$s</xliff:g> (<xliff:g id="freeCount" example="41">%2$d</xliff:g> free, <xliff:g id="totalCount" example="86">%3$d</xliff:g> total)</string>
+    <string name="zen_sync_in_progress">Updating OpenCode catalog &amp; agent version…</string>
+    <string name="zen_sync_failure">Failed to sync OpenCode: <xliff:g id="error" example="Network error">%1$s</xliff:g></string>
     <string name="nav_tab_title_candidates">Candidate Feed</string>
     <string name="nav_tab_title_matches">Matches &amp; Chats</string>
     <string name="nav_tab_title_home">Home</string>

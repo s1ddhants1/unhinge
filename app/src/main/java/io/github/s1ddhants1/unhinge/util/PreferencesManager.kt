@@ -281,6 +281,10 @@ class PreferencesManager(
     var aiReasoningEffort by stringPreference(Consts.PREF_AI_REASONING_EFFORT, Consts.DEFAULT_AI_REASONING_EFFORT)
     var aiOpenerPromptTemplate by stringPreference(Consts.PREF_AI_OPENER_PROMPT_TEMPLATE, "")
     var aiPromptRemoteUrl by stringPreference(Consts.PREF_AI_PROMPT_REMOTE_URL, Consts.DEFAULT_AI_PROMPT_REMOTE_URL)
+    var zenOpencodeVersion by stringPreference(Consts.PREF_ZEN_OPENCODE_VERSION, Consts.DEFAULT_ZEN_OPENCODE_VERSION)
+    var zenCachedFreeModels by stringPreference(Consts.PREF_ZEN_CACHED_FREE_MODELS, "")
+    var zenCachedAllModels by stringPreference(Consts.PREF_ZEN_CACHED_ALL_MODELS, "")
+    var zenLastSyncTimestamp by longPreference(Consts.PREF_ZEN_LAST_SYNC_TIMESTAMP, 0L)
     var pureBlack by booleanPreference(Consts.PREF_PURE_BLACK, false)
     var themeColor by longPreference(Consts.PREF_THEME_COLOR, Consts.DEFAULT_THEME_COLOR)
     var themeModeString by stringPreference(Consts.PREF_THEME_MODE, ThemeMode.SYSTEM.name)
@@ -346,6 +350,13 @@ class PreferencesManager(
                 if (promptRemoteUrlInStorage.isNotBlank()) {
                     aiPromptRemoteUrl = promptRemoteUrlInStorage
                 }
+                val zenVerInStorage = localPrefs.getString(Consts.PREF_ZEN_OPENCODE_VERSION, "") ?: ""
+                if (zenVerInStorage.isNotBlank()) {
+                    zenOpencodeVersion = zenVerInStorage
+                }
+                zenCachedFreeModels = localPrefs.getString(Consts.PREF_ZEN_CACHED_FREE_MODELS, "") ?: ""
+                zenCachedAllModels = localPrefs.getString(Consts.PREF_ZEN_CACHED_ALL_MODELS, "") ?: ""
+                zenLastSyncTimestamp = localPrefs.getLong(Consts.PREF_ZEN_LAST_SYNC_TIMESTAMP, zenLastSyncTimestamp)
                 pureBlack = localPrefs.getBoolean(Consts.PREF_PURE_BLACK, pureBlack)
                 themeColor = localPrefs.getLong(Consts.PREF_THEME_COLOR, themeColor)
                 themeModeString = localPrefs.getString(Consts.PREF_THEME_MODE, themeModeString) ?: themeModeString
@@ -414,6 +425,10 @@ class PreferencesManager(
                         .putString(Consts.PREF_AI_REASONING_EFFORT, aiReasoningEffort)
                         .putString(Consts.PREF_AI_OPENER_PROMPT_TEMPLATE, aiOpenerPromptTemplate)
                         .putString(Consts.PREF_AI_PROMPT_REMOTE_URL, aiPromptRemoteUrl)
+                        .putString(Consts.PREF_ZEN_OPENCODE_VERSION, zenOpencodeVersion)
+                        .putString(Consts.PREF_ZEN_CACHED_FREE_MODELS, zenCachedFreeModels)
+                        .putString(Consts.PREF_ZEN_CACHED_ALL_MODELS, zenCachedAllModels)
+                        .putLong(Consts.PREF_ZEN_LAST_SYNC_TIMESTAMP, zenLastSyncTimestamp)
                         .putBoolean(Consts.PREF_PURE_BLACK, pureBlack)
                         .putLong(Consts.PREF_THEME_COLOR, themeColor)
                         .putString(Consts.PREF_THEME_MODE, themeModeString)
@@ -452,6 +467,10 @@ class PreferencesManager(
                                 .putString(Consts.PREF_AI_REASONING_EFFORT, aiReasoningEffort)
                                 .putString(Consts.PREF_AI_OPENER_PROMPT_TEMPLATE, aiOpenerPromptTemplate)
                                 .putString(Consts.PREF_AI_PROMPT_REMOTE_URL, aiPromptRemoteUrl)
+                                .putString(Consts.PREF_ZEN_OPENCODE_VERSION, zenOpencodeVersion)
+                                .putString(Consts.PREF_ZEN_CACHED_FREE_MODELS, zenCachedFreeModels)
+                                .putString(Consts.PREF_ZEN_CACHED_ALL_MODELS, zenCachedAllModels)
+                                .putLong(Consts.PREF_ZEN_LAST_SYNC_TIMESTAMP, zenLastSyncTimestamp)
                                 .putBoolean(Consts.PREF_PURE_BLACK, pureBlack)
                                 .putLong(Consts.PREF_THEME_COLOR, themeColor)
                                 .putString(Consts.PREF_THEME_MODE, themeModeString)

@@ -89,5 +89,51 @@ class AiWingmanHelperTest {
         assertEquals("You: Message 6", lines.first())
         assertEquals("You: Message 20", lines.last())
     }
+
+    @Test
+    fun promptEntryTracksFollowUpMessagesAndAddsNewReplies() {
+        val entry = PromptEntry(text = "My simple pleasures: Morning espresso")
+        assertEquals(0, entry.followUpMessagesFlow.value.size)
+
+        entry.addFollowUpUserMessage("Make it more playful and mention biscotti")
+        assertEquals(1, entry.followUpMessagesFlow.value.size)
+        val userMsg = entry.followUpMessagesFlow.value.first()
+        org.junit.Assert.assertTrue(userMsg.isUser)
+        assertEquals("Make it more playful and mention biscotti", userMsg.text)
+
+        entry.addFollowUpAssistantMessage("Only if you dip the biscotti first.")
+        assertEquals(2, entry.followUpMessagesFlow.value.size)
+
+        entry.updateLastAssistantMessage("Only if you dip the biscotti first, otherwise we can't talk.")
+        assertEquals(2, entry.followUpMessagesFlow.value.size)
+        assertEquals(
+            "Only if you dip the biscotti first, otherwise we can't talk.",
+            entry.followUpMessagesFlow.value.last().text
+        )
+
+        entry.addReply("Only if you dip the biscotti first, otherwise we can't talk.", selectNew = true)
+        assertEquals(1, entry.repliesFlow.value.size)
+        assertEquals(0, entry.activeReplyIndexFlow.value)
+        assertEquals(
+            "Only if you dip the biscotti first, otherwise we can't talk.",
+            entry.suggestedReplyFlow.value
+        )
+    }
+
+    @Test
+    fun steerOpenerPromptFormatsCorrectly() {
+        val prompt = WingmanPrompts.steerOpenerPrompt(
+            profileBlock = "Work: Architect\nLocation: Brooklyn",
+            promptText = "A boundary of mine: Don't touch my playlist",
+            currentOpener = "What's the top artist on it?",
+            steerInstruction = "Make it teasing and ask about guilty pleasures",
+        )
+        org.junit.Assert.assertTrue(prompt.contains("Work: Architect"))
+        org.junit.Assert.assertTrue(prompt.contains("A boundary of mine: Don't touch my playlist"))
+        org.junit.Assert.assertTrue(prompt.contains("What's the top artist on it?"))
+        org.junit.Assert.assertTrue(prompt.contains("Make it teasing and ask about guilty pleasures"))
+        org.junit.Assert.assertTrue(prompt.contains("Task: Rewrite and refine the opener"))
+    }
 }
+
 

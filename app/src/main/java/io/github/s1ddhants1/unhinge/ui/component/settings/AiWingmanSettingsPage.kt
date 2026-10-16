@@ -78,6 +78,7 @@ fun AiWingmanSettingsPage(
     var openerPromptTemplate by rememberSaveable { mutableStateOf(prefs.aiOpenerPromptTemplate) }
     var promptRemoteUrl by rememberSaveable { mutableStateOf(prefs.aiPromptRemoteUrl) }
     var isSyncingRemote by remember { mutableStateOf(false) }
+    var isSyncingCatalog by remember { mutableStateOf(false) }
     var showOpenerTemplateDialog by rememberSaveable { mutableStateOf(false) }
     var showRemoteUrlDialog by rememberSaveable { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
@@ -198,7 +199,15 @@ fun AiWingmanSettingsPage(
             "Custom" to listOf(),
         )
 
-    val commonModels = modelsByProvider[aiProvider] ?: listOf()
+    val commonModels = if (aiProvider == "Zen") {
+        ZenRouter.allAvailableModels
+    } else {
+        modelsByProvider[aiProvider] ?: listOf()
+    }
+
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        ZenRouter.initFromPreferences(prefs)
+    }
 
     var showProviderDialog by rememberSaveable { mutableStateOf(false) }
     var showProviderHelpDialog by rememberSaveable { mutableStateOf(false) }
@@ -290,7 +299,11 @@ fun AiWingmanSettingsPage(
                     openRouterBaseUrl = ""
                     prefs.openRouterBaseUrl = ""
                 }
-                val modelsForProvider = modelsByProvider[it] ?: listOf()
+                val modelsForProvider = if (it == "Zen") {
+                    ZenRouter.allAvailableModels
+                } else {
+                    modelsByProvider[it] ?: listOf()
+                }
                 openRouterModel =
                     if (modelsForProvider.isNotEmpty()) {
                         modelsForProvider[0]
@@ -633,6 +646,50 @@ fun AiWingmanSettingsPage(
                 icon = Icons.Outlined.Tune,
                 onClick = { showModelDialog = true }
             )
+            if (aiProvider == "Zen") {
+                SettingsDivider()
+                SettingsActionRow(
+                    title = stringResource(R.string.zen_sync_title),
+                    description = stringResource(
+                        R.string.zen_sync_desc_format,
+                        ZenRouter.currentVersion,
+                        ZenRouter.allFreeModels.size,
+                        ZenRouter.allAvailableModels.size,
+                    ),
+                    icon = Icons.Outlined.Refresh,
+                    onClick = {
+                        if (!isSyncingCatalog) {
+                            isSyncingCatalog = true
+                            Toast.makeText(context, context.getString(R.string.zen_sync_in_progress), Toast.LENGTH_SHORT).show()
+                            coroutineScope.launch {
+                                val result = ZenRouter.syncCatalogAndVersion(prefs, force = true)
+                                isSyncingCatalog = false
+                                if (result.success) {
+                                    Toast.makeText(
+                                        context,
+                                        context.getString(
+                                            R.string.zen_sync_success_format,
+                                            result.version,
+                                            result.freeCount,
+                                            result.totalCount,
+                                        ),
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                } else {
+                                    Toast.makeText(
+                                        context,
+                                        context.getString(
+                                            R.string.zen_sync_failure,
+                                            result.errorMessage ?: "Unknown error"
+                                        ),
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
+                            }
+                        }
+                    }
+                )
+            }
         }
 
         SettingsSectionCard(title = stringResource(R.string.ai_section_model_params)) {

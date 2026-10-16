@@ -141,26 +141,29 @@ The AI pipeline in Unhinge is designed for high-performance dating prompt sugges
 
 ### 5.1 Pipeline Components
 
-1. **[AiWingmanHelper.kt](../app/src/main/java/io/github/s1ddhants1/unhinge/ai/AiWingmanHelper.kt)**:
+1. **[AiHttpClient.kt](../app/src/main/java/io/github/s1ddhants1/unhinge/ai/AiHttpClient.kt)**:
+   - Centralized network provider configuring a shared `OkHttpClient` instance with optimized HTTP connection pooling (5 idle connections, 5-minute keep-alive) and shared Kotlinx `Json` parser (`ignoreUnknownKeys = true`, `isLenient = true`).
+   - Centralizes transient HTTP failure detection (`isTransientHttpCode`, `isTransientFailure`) and retry policies across all LLM clients.
+
+2. **[LlmClient.kt](../app/src/main/java/io/github/s1ddhants1/unhinge/ai/LlmClient.kt) & [LlmClientRegistry.kt](../app/src/main/java/io/github/s1ddhants1/unhinge/ai/LlmClientRegistry.kt)**:
+   - Polymorphic client abstraction declaring `generate(request: WingmanLlmRequest)`, `streamGeneration(request: WingmanLlmRequest)`, and `streamChat(request: ChatLlmRequest)`.
+   - `LlmClientRegistry` maps `LlmProtocol` wire specifications (`OPENAI_CHAT_COMPLETIONS`, `OPENAI_RESPONSES`, `ANTHROPIC_MESSAGES`, `GOOGLE_GEMINI`) to corresponding client implementations without monolithic branching.
+
+3. **[OpenAiChatClient.kt](../app/src/main/java/io/github/s1ddhants1/unhinge/ai/OpenAiChatClient.kt)**:
+   - Unified Chat Completions engine implementing `LlmClient` for OpenRouter, DeepSeek, and standard OpenAI-compatible endpoints.
+   - Combines both Server-Sent Events (SSE) streaming and standard structured JSON line completion in a single cohesive, maintainable client.
+   - [OpenRouterService.kt](../app/src/main/java/io/github/s1ddhants1/unhinge/ai/OpenRouterService.kt) and [OpenRouterStreamingService.kt](../app/src/main/java/io/github/s1ddhants1/unhinge/ai/OpenRouterStreamingService.kt) serve as thin backward-compatible delegates.
+
+4. **[AiWingmanHelper.kt](../app/src/main/java/io/github/s1ddhants1/unhinge/ai/AiWingmanHelper.kt)**:
    - Central coordinator orchestrating requests, tunable generation parameters, caching, and state transitions.
+   - Delegates endpoint resolution to `LlmProtocolRouter.kt` and thread-safe reply caching to `AiWingmanCache.kt`.
    - Exposes `status: StateFlow<WingmanStatus>` (`Idle`, `Generating`, `Success`, `Error`).
-   - Exposes `suggestedReplyFlow: MutableStateFlow<String?>` for progressive UI streaming updates per prompt.
    - Exposes `hasActiveSuggestions: StateFlow<Boolean>` for reactive UI indicators.
-   - Manages concurrent in-memory caching (`replyCache`) preventing redundant network calls.
-   - Accepts caller-supplied `temperature` and `topP` (defaults `0.85` / `0.95`, adjustable via Settings → Model Parameters) instead of fixed tone presets. No artificial token cap is applied; output length is left to the model/service (Anthropic wire API still requires `max_tokens`, sent as thinking budget + headroom or a high default).
+   - Provides `steerOpener()`: Launches real-time streaming follow-up chat refinements on specific drafted openers using candidate profile details, prompt text, and user steering direction.
 
-2. **[OpenRouterStreamingService.kt](../app/src/main/java/io/github/s1ddhants1/unhinge/ai/OpenRouterStreamingService.kt)**:
-   - OkHttp-backed Server-Sent Events (SSE) streaming client with the same lenient structured-output policy as above.
-   - Emits structured `StreamChunk` events (`Content(delta)`, `Complete(fullText)`, `Error(throwable)`).
-   - Retries transient HTTP failures (500/502/503/529) with exponential backoff and retries structured-output rejections once without `response_format`; `streamChat` retries transient failures identically. `AiWingmanHelper` falls back from streaming to non-streaming on empty-provider-pool 5xx before surfacing an error.
-   - Ingests streaming chunks, parses JSON deltas, validates JSON-schema line outputs, and falls back to text parsing if needed.
-
-3. **[OpenRouterService.kt](../app/src/main/java/io/github/s1ddhants1/unhinge/ai/OpenRouterService.kt)**:
-   - Synchronous/standard HTTP client for OpenRouter and OpenAI-compatible API providers.
-   - Generates tailored opening lines matching the selected candidate prompt and bio answers.
-   - Sends `response_format` JSON-schema requests (`lines` array) with caller-supplied temperature, top-P, and system instructions, but omits `provider.require_parameters` (forcing it shrinks OpenRouter's provider pool and surfaces as HTTP 503 "No available model provider"; the parser already handles bare-array / plain-text fallbacks, so availability wins). No `max_tokens` is sent on Chat Completions; output length is unconstrained.
-   - Retries transient 5xx (500/502/503/529) with exponential backoff; structured-output rejections get one lenient retry without `response_format`. Model IDs are sanitized (leading `~` artifacts stripped) and the pre-Oct-2026 stored default migrates to the current default.
-   - Extracts detailed error diagnostics (`apiErrorMessage()` + `friendlyGenerationError()`) mapping 401/402/403/404/429/5xx to provider-aware and model-aware Settings hints (Zen free models never prompt for an API key or reference OpenRouter's `sk-or-`; guides on Zen free tier restrictions, unsupported model fallbacks to `space-bunny-free`, and specific key formats for OpenRouter, Claude, OpenAI, and Gemini).
+5. **[PromptEntry.kt](../app/src/main/java/io/github/s1ddhants1/unhinge/ai/PromptEntry.kt)**:
+   - Clean data carrier encapsulating prompt text, `suggestedReplyFlow`, multi-reply stepper history (`repliesFlow`, `activeReplyIndexFlow`), and follow-up conversation history (`followUpMessagesFlow`, `isSteeringFlow`).
+   - Tracks `OpenerChatMessage` records (`isUser`, `text`, `timestamp`) for iterative opener steering dialogues.
 
 4. **[LlmProtocol.kt](../app/src/main/java/io/github/s1ddhants1/unhinge/ai/LlmProtocol.kt)**:
    - Wire-protocol enum (`openai-chat-completions`, `google-openai`); brand labels only decide endpoint/model defaults.
@@ -203,7 +206,7 @@ The AI pipeline in Unhinge is designed for high-performance dating prompt sugges
      - `mimo-v2.5-free`
      - `nemotron-3-ultra-free`
      - `nemotron-3.5-lightning-free`
-   - Generates reverse-engineered OpenCode timestamp-encoded session IDs (`ses_` + 12 hex chars `~((now * 4096) + p)` + 14 random base62 chars), W3C traceparents, client header (`x-opencode-client: cli`), project identifier (`x-opencode-project: fbfbb8ecca77fbf4f585927700f1baa979cb6a94`), session affinity headers (`x-opencode-session-id`, `X-Session-Id`, `x-session-id`, `x-session-affinity`, `x-opencode-session`), and user-agent (`opencode/latest/2.0.29/cli`).
+   - Generates reverse-engineered OpenCode timestamp-encoded session IDs (`ses_` + 12 hex chars `~((now * 4096) + p)` + 14 random base62 chars), W3C traceparents, client header (`x-opencode-client: cli`), project identifier (`x-opencode-project: fbfbb8ecca77fbf4f585927700f1baa979cb6a94`), session affinity headers (`x-opencode-session-id`, `X-Session-Id`, `x-session-id`, `x-session-affinity`, `x-opencode-session`), and dynamic user-agent (`opencode/latest/<version>/cli`, auto-detected with fallback to `2.0.30`).
    - Emulates the full 12 OpenCode CLI tools (`edit`, `glob`, `grep`, `question`, `read`, `shell`, `skill`, `subagent`, `webfetch`, `websearch`, `write`, `execute`) in `DefaultZenChatTools` (Chat Completions format) and `DefaultZenResponsesTools` (Responses format with top-level `name`/`parameters`) to satisfy OpenCode's gateway agent validation on keyless free-tier requests.
 
 10. **[OpenAiResponsesService.kt](../app/src/main/java/io/github/s1ddhants1/unhinge/ai/OpenAiResponsesService.kt)**:
@@ -280,16 +283,50 @@ The AI pipeline in Unhinge is designed for high-performance dating prompt sugges
 
 4. **Zero-Configuration Out-of-the-Box UX**:
    - `PreferencesManager` defaults to the `Zen` provider on `Consts.ZEN_DEFAULT_BASE_URL` (`https://opencode.ai/inference/v1/chat/completions`) / `Consts.ZEN_DEFAULT_MODEL` (`space-bunny-free`), so a fresh install generates openers and answers Ask AI queries without an account, key, or billing configuration.
-   - `AiWingmanSettingsPage` groups all 9 free models under `(Free - No Key Required)`, and clearly labels paid Zen models with `(Requires Zen key)`.
+   - `AiWingmanSettingsPage` groups all free models under `(Free - No Key Required)`, and clearly labels paid Zen models with `(Requires Zen key)`.
    - `AiWingmanHelper.isApiKeyRequired(provider, model)` is the single gate consumed by both the settings page and the in-app sheet (`HostAppAiSheetContent`); the Zen branch of `resolveEffectiveEndpoint` only honours a base URL as an override when it points at a genuine third-party proxy, so a stale URL from another provider can never hijack Zen routing.
+
+5. **Autonomous Self-Maintaining Architecture (Dynamic Roster & User-Agent Auto-Updation)**:
+   - **Dynamic Version Discovery & User-Agent Injection**:
+     - Automatically queries public distribution channels (`https://registry.npmjs.org/@opencode/cli/latest` with fallback to `https://formulae.brew.sh/api/formula/opencode.json`) to discover the active released CLI version without requiring APK rebuilds.
+     - Dynamically formats and injects `opencode/latest/<version>/cli` into all outgoing Zen requests.
+     - Persists discovered version in `PreferencesManager.zenOpencodeVersion`.
+   - **Live Model Roster Discovery & Dynamic Protocol Resolution**:
+     - Dynamically fetches all live server-supported models directly from `https://opencode.ai/inference/v1/models`.
+     - Auto-classifies free models (`cost == 0`, `-free` in model identifier, `big-pickle`, `grok-code`).
+     - Auto-resolves protocol routing families (`claude-`, `qwen-`, `jev-`, `minimax-` -> Anthropic Messages; `gemini-` -> Google Gemini; `gpt-`, `muse-spark-`, `grok-` -> OpenAI Responses; standard -> OpenAI Chat Completions).
+     - Dynamically updates the Settings UI model picker (`ZenRouter.allAvailableModels`), prioritizing free models at the top, and persisting cached rosters (`zenCachedFreeModels`, `zenCachedAllModels`).
+   - **Multi-Tiered Trigger Engine**:
+     - **Launch-Time Background Sync**: On application startup (`App.onCreate`), runs background synchronization with a 6-hour rate-limiting window.
+     - **Manual Settings Sync**: An interactive "Sync OpenCode Gateway" row in AI Wingman Settings lets users refresh the catalog and version on-demand, with instant toast feedback.
+     - **Reactive Self-Healing**: On any HTTP 401, 403, or 404 gateway response encountered during generation or streaming, `ZenRouter.onGatewayResponse` automatically launches an asynchronous force-sync guarded by `Mutex.withLock` to immediately adapt to server-side model deprecations or version rotations.
 
 ---
 
-## 6. Native Hinge Bottom Sheet UI (`HostAppAiSheetContent.kt`)
+## 6. Modular In-App Bottom Sheet UI (`hook/ui/sheet/`)
 
-[HostAppAiSheetContent.kt](../app/src/main/java/io/github/s1ddhants1/unhinge/hook/ui/HostAppAiSheetContent.kt) delivers a seamless in-app bottom sheet modeled strictly after Hinge's editorial design system and purchase carousel layouts:
+The Wingman sheet architecture is modularized under `hook/ui/sheet/`, decoupling individual visual elements and interactive flows from the parent coordinator [HostAppAiSheetContent.kt](../app/src/main/java/io/github/s1ddhants1/unhinge/hook/ui/HostAppAiSheetContent.kt):
 
-1. **Authentic Hinge Brand Typography (`HingeFonts.kt`)**:
+1. **Modular Subcomponents**:
+   - **`SheetHeader.kt`**: Encapsulates profile picture avatar, display name, age, "Match Chat" or "Active now" badges, job/location subtitle, real-time likes counter, and close button.
+   - **`SheetEmptyStates.kt`**: Houses structured empty and onboarding states (`SheetLoadingState`, `SheetNoMatchChatState`, `SheetNoCandidateState`, `SheetSetupRequiredState`).
+   - **`CandidatePromptCard.kt`**: Renders candidate prompts with question headers, Tiempos answers, bio fallback cards, and embedded comment bubbles.
+   - **`MatchChatReplyCard.kt`**: Renders match chat archetype suggestions with description and chat insert action.
+   - **`SheetBottomBar.kt`**: Houses horizontal scrollable quick action chips and the bottom Ask AI text field with soft-keyboard elevation (`imePadding`).
+   - **`NativeHingeCommentBubble.kt`**: Drafted comment bubble with stepper navigation (`< 1 of N >`), copy/insert actions, and inline opener steering.
+   - **`OpenerSteeringSection.kt`**: Dedicated follow-up chat and steering UI anchored directly to openers.
+   - **`CustomAiResponseCard.kt`**: Renders general Ask AI interaction cards with refinement pills and markdown parsing.
+   - **`HingeDesignTokens.kt`**: Defines canonical Hinge light and dark mode colors, borders, and fills.
+
+2. **Opener Follow-Up Chats & Interactive LLM Steering**:
+   - Each prompt card's comment bubble includes a dedicated **"Steer"** action button alongside Copy.
+   - Expanding the steering section reveals:
+     - **Quick Direction Pills**: High-converting one-tap steering instructions (*Funnier & playful*, *Shorter & punchier*, *Ask an engaging question*, *More casual*, *Witty mock-challenge*, *More flirty*).
+     - **Iterative Chat History**: Displays previous user steering prompts and refined model responses directly below the active opener.
+     - **Directional Input**: Micro text input field permitting custom instructions (*"Mention I also play guitar"*, *"Tone down the sarcasm"*).
+     - **Streaming Multi-Turn Evolution**: Model streams refinements directly into the entry; completed refinements are registered into `PromptEntry.repliesFlow` as selectable variations in the stepper with one-tap *"Use & Copy"*.
+
+3. **Authentic Hinge Brand Typography (`HingeFonts.kt`)**:
    - Exact brand typefaces matching [Hinge Brand Guidelines](https://hinge.co/en-gb/brand-resources):
      - **Modern Era** (Family Type): Used for the sheet architecture:
        - Headlines, candidate names, age, avatar initial, and section badges: `modernEraBold` (Bold, 20-21sp).
@@ -299,10 +336,10 @@ The AI pipeline in Unhinge is designed for high-performance dating prompt sugges
      - **Tiempos Headline** (Kris Sowersby / Klim Type Foundry):
        - Candidate prompt answers: `tiemposRegular` rendered at native Regular weight (`FontWeight.Normal`), 26sp, 34sp line height matching Hinge's live profile layout.
        - Candidate bio fallback text: `tiemposRegular` (24sp, 32sp line height, `FontWeight.Normal`).
-   - **Cross-Process Dynamic Font Resolver**: Injected Compose overlays run within the host `Activity` context (`co.hinge.app.ui.AppActivity`). Referencing compile-time R constants from the module causes `Resources$NotFoundException`. `HingeFonts.kt` dynamically resolves host runtime font resources via `context.resources.getIdentifier(fontName, "font", context.packageName)`, falling back to the companion app package context and finally graceful fallback typefaces with `ConcurrentHashMap` caching.
+   - **Cross-Process Dynamic Font Resolver**: Injected Compose overlays run within the host `Activity` context (`co.hinge.app.ui.AppActivity`). `HingeFonts.kt` dynamically resolves host runtime font resources via `context.resources.getIdentifier(fontName, "font", context.packageName)`, falling back to the companion app package context and finally graceful fallback typefaces with `ConcurrentHashMap` caching.
 
-2. **Horizontal Card Carousel Architecture (Hinge Paywall / Standouts Style)**:
-   - Modeled directly on Hinge's decompiled Jetpack Compose purchase UI (`sv1.java`, `cb2.java`, `tu7.java`, `p86.java`, `b5h.java`):
+4. **Horizontal Card Carousel Architecture (Hinge Paywall / Standouts Style)**:
+   - Modeled directly on Hinge's decompiled Jetpack Compose purchase UI:
      - Uses `HorizontalPager` with `contentPadding = PaddingValues(horizontal = 28.dp)` and `pageSpacing = 14.dp`, allowing adjacent cards to peek from the edges.
      - Card containers styled with `RoundedCornerShape(22.dp)`, subtle borders, and authentic card background fills (`#FFFFFF` in light mode, `#1E1E1E` in dark mode).
      - Each card features an independent `Modifier.verticalScroll(rememberScrollState())` to handle lengthy prompts and multiline LLM suggestions smoothly without truncating.

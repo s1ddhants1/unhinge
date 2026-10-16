@@ -1,6 +1,13 @@
 package io.github.s1ddhants1.unhinge.ai
 
 import io.github.s1ddhants1.unhinge.Consts
+import io.github.s1ddhants1.unhinge.util.PreferencesManager
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -9,11 +16,16 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.security.SecureRandom
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.TimeUnit
 
 const val ZenChatBaseUrl = "https://opencode.ai/inference/v1/chat/completions"
 const val ZenMessagesBaseUrl = "https://opencode.ai/inference/v1/messages"
@@ -22,8 +34,14 @@ const val ZenGeminiBase = "https://opencode.ai/inference/v1/models"
 
 object ZenRouter {
     const val OPENCODE_PROJECT_ID = "fbfbb8ecca77fbf4f585927700f1baa979cb6a94"
-    const val OPENCODE_USER_AGENT = "opencode/latest/2.0.29/cli"
     const val OPENCODE_CLIENT = "cli"
+
+    var currentVersion: String = Consts.DEFAULT_ZEN_OPENCODE_VERSION
+
+    fun getUserAgent(): String = "opencode/latest/$currentVersion/cli"
+
+    val OPENCODE_USER_AGENT: String
+        get() = getUserAgent()
 
     val FreeModels: List<String> =
         listOf(
@@ -71,6 +89,42 @@ object ZenRouter {
             "big-pickle",
         )
 
+    val DefaultPaidModels: List<String> =
+        listOf(
+            "claude-sonnet-5",
+            "claude-haiku-4-5",
+            "claude-opus-5",
+            "gpt-5.6-sol",
+            "gpt-5.5",
+            "gemini-3.8-flash",
+            "gemini-3.7-flash",
+            "deepseek-v4-flash",
+            "deepseek-v4-pro",
+            "glm-5.3-flash",
+            "qwen3.8-flash",
+            "kimi-k2.5",
+            "minimax-m3",
+        )
+
+    val dynamicFreeModels: MutableSet<String> = ConcurrentHashMap.newKeySet()
+    val dynamicAllModels: CopyOnWriteArrayList<String> = CopyOnWriteArrayList()
+    val dynamicResponsesModels: MutableSet<String> = ConcurrentHashMap.newKeySet()
+    val dynamicMessagesModels: MutableSet<String> = ConcurrentHashMap.newKeySet()
+    val dynamicGeminiModels: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
+    val allFreeModels: List<String>
+        get() = (FreeModels + dynamicFreeModels).distinct()
+
+    val allAvailableModels: List<String>
+        get() {
+            if (dynamicAllModels.isEmpty()) {
+                return (FreeModels + DefaultPaidModels).distinct()
+            }
+            val free = dynamicAllModels.filter { isFreeModel(it) }
+            val paid = dynamicAllModels.filter { !isFreeModel(it) }
+            return (free + paid).distinct()
+        }
+
     private val ResponsesModels =
         setOf(
             "gpt-6-astra", "gpt-6-sol", "gpt-6.1-sol", "gpt-6-luna",
@@ -117,8 +171,33 @@ object ZenRouter {
 
     fun isFreeModel(model: String): Boolean {
         val id = normalizeModelId(model).lowercase()
-        return id.isBlank() || id in FreeModels || id.contains("free") || id == "big-pickle" || id == "grok-code"
+        return id.isBlank() ||
+            id in FreeModels ||
+            id in dynamicFreeModels ||
+            id.contains("free") ||
+            id == "big-pickle" ||
+            id == "grok-code"
     }
+
+    fun isResponsesModel(id: String): Boolean =
+        id in ResponsesModels ||
+            id in dynamicResponsesModels ||
+            id.startsWith("gpt-") ||
+            id.startsWith("muse-spark-") ||
+            id.startsWith("grok-")
+
+    fun isMessagesModel(id: String): Boolean =
+        id in MessagesModels ||
+            id in dynamicMessagesModels ||
+            id.startsWith("claude-") ||
+            id.startsWith("qwen-") ||
+            id.startsWith("jev-") ||
+            id.startsWith("minimax-")
+
+    fun isGeminiModel(id: String): Boolean =
+        id in GeminiModels ||
+            id in dynamicGeminiModels ||
+            id.startsWith("gemini-")
 
     fun normalizeBaseUrl(url: String): String {
         if (url.isBlank()) return url
@@ -139,9 +218,9 @@ object ZenRouter {
         val id = normalized.lowercase()
         return when {
             id.isBlank() -> Triple(LlmProtocol.OpenAiChatCompletions, Consts.ZEN_DEFAULT_BASE_URL, Consts.ZEN_DEFAULT_MODEL)
-            ResponsesModels.contains(id) -> Triple(LlmProtocol.OpenAiResponses, ZenResponsesDefaultBaseUrl, normalized)
-            MessagesModels.contains(id) -> Triple(LlmProtocol.AnthropicMessages, ZenMessagesBaseUrl, normalized)
-            GeminiModels.contains(id) -> Triple(LlmProtocol.GoogleGemini, "$ZenGeminiBase/$normalized", normalized)
+            isResponsesModel(id) -> Triple(LlmProtocol.OpenAiResponses, ZenResponsesDefaultBaseUrl, normalized)
+            isMessagesModel(id) -> Triple(LlmProtocol.AnthropicMessages, ZenMessagesBaseUrl, normalized)
+            isGeminiModel(id) -> Triple(LlmProtocol.GoogleGemini, "$ZenGeminiBase/$normalized", normalized)
             else -> Triple(LlmProtocol.OpenAiChatCompletions, ZenChatBaseUrl, normalized)
         }
     }
@@ -197,7 +276,7 @@ object ZenRouter {
         }
         val (traceparent, b3) = generateTraceHeaders()
         builder.header("Authorization", "Bearer $effectiveKey")
-        builder.header("User-Agent", OPENCODE_USER_AGENT)
+        builder.header("User-Agent", getUserAgent())
         builder.header("x-opencode-client", OPENCODE_CLIENT)
         builder.header("x-opencode-project", OPENCODE_PROJECT_ID)
         builder.header("x-opencode-session", sessionId)
@@ -209,31 +288,215 @@ object ZenRouter {
         builder.header("b3", b3)
     }
 
-    private val zenJson = Json { ignoreUnknownKeys = true }
-
-    private const val OPENCODE_TOOLS_JSON =
-        """[{"type":"function","function":{"name":"edit","description":"Edit the contents of a file by finding and replacing exact text. When editing text from Read output, preserve the exact indentation (tabs or spaces) and omit the line-number prefix, such as `1: `. Never include the prefix in oldString or newString. Write line breaks as \\n; the file's existing CRLF or LF line endings are matched and preserved. To change line endings themselves, make oldString and newString differ only in \\r; that edit applies to the exact bytes. If there is no exact match, the edit retries while ignoring typographic quote, dash, and space variants, then trailing whitespace on each line. The edit fails if oldString is not found. By default, oldString must identify a UNIQUE location. Multiple matches FAIL unless replaceAll is true. Add more surrounding context to disambiguate, or set replaceAll to true to replace every occurrence. Use replaceAll when the change should apply to every occurrence, such as renaming a variable.","parameters":{"type":"object","properties":{"path":{"type":"string","description":"File to edit"},"oldString":{"type":"string","description":"Exact text to find and replace"},"newString":{"type":"string","description":"Text to replace oldString with (must differ from oldString)"},"replaceAll":{"type":"boolean","description":"Whether to replace every occurrence of oldString. When false, oldString must match exactly once. Defaults to false."}},"required":["path","oldString","newString"],"additionalProperties":false},"strict":false}},{"type":"function","function":{"name":"glob","description":"Search file paths using a glob pattern (examples: \"**/*.ts\", \"src/**/*.tsx\").","parameters":{"type":"object","properties":{"pattern":{"type":"string","description":"Glob pattern to match files against"},"path":{"type":"string","description":"Directory to search. Defaults to the current working directory."},"hidden":{"type":"boolean","description":"Include hidden files and directories (default: false)."},"limit":{"type":"integer","exclusiveMinimum":0,"description":"Maximum number of matching files to return (default: 100)"}},"required":["pattern"],"additionalProperties":false},"strict":false}},{"type":"function","function":{"name":"grep","description":"Search file contents using ripgrep's regular expression syntax or literal text matching. Use it to locate specific code, symbols, or text patterns, and narrow searches with `path` or `include`. Returns matching file paths, line numbers, and line previews.","parameters":{"type":"object","properties":{"pattern":{"type":"string","minLength":1,"description":"Regular expression or literal text to match in file contents."},"path":{"type":"string","description":"File or directory to search. Defaults to the current working directory."},"include":{"type":"string","description":"Glob pattern to filter files (for example, \"*.js\" or \"*.{ts,tsx}\")"},"literal":{"type":"boolean","description":"Treat `pattern` as exact text instead of a regular expression (default: false)."},"caseSensitive":{"type":"boolean","description":"Use case-sensitive matching (default: true)."},"limit":{"type":"integer","exclusiveMinimum":0,"description":"Maximum number of matching lines to return (default: 100)"}},"required":["pattern"],"additionalProperties":false},"strict":false}},{"type":"function","function":{"name":"question","description":"Use this tool when you need to ask the user questions during execution. This allows you to:\n1. Gather user preferences or requirements\n2. Clarify ambiguous instructions\n3. Get decisions on implementation choices as you work\n4. Offer choices to the user about what direction to take.\n\nUsage notes:\n- A \"Type your own answer\" option is added automatically; don't include a separate option for free form answers\n- Set `multiple: true` to allow selecting more than one option\n- If you recommend a specific option, make that the first option in the list and add \"(Recommended)\" at the end of the label","parameters":{"type":"object","properties":{"questions":{"type":"array","items":{"type":"object","properties":{"question":{"type":"string","description":"Complete question"},"header":{"type":"string","description":"Very short label (max 30 chars)"},"options":{"type":"array","items":{"type":"object","properties":{"label":{"type":"string","description":"Display text (1-5 words, concise)"},"description":{"type":"string","description":"Explanation of choice"}},"required":["label","description"],"additionalProperties":false},"description":"Available choices"},"multiple":{"type":"boolean"}},"required":["question","header","options"],"additionalProperties":false},"minItems":1,"description":"Questions to ask"}},"required":["questions"],"additionalProperties":false},"strict":false}},{"type":"function","function":{"name":"read","description":"Read the contents of a file or directory. Supports text files, images, and PDFs. Images and PDFs are presented directly to the model. Each text line is prefixed by its 1-based line number as <line>: <content>. The prefix is for reference and is not part of the file content. Directory entries are returned one per line. Use offset and limit to read large files or directories in sections. Prefer one larger read over many small slices, and use grep to find specific content in large files.","parameters":{"type":"object","properties":{"path":{"type":"string","description":"File or directory to read"},"offset":{"type":"integer","minimum":0,"description":"The line or directory entry to start reading from (1-based)"},"limit":{"type":"integer","minimum":0,"description":"The maximum number of lines or directory entries to read (defaults to and capped at 2000)"}},"required":["path"],"additionalProperties":false},"strict":false}},{"type":"function","function":{"name":"shell","description":"Execute a shell command and return its output. Commands run on Linux using bash. Quote file paths containing spaces or special characters. Prefer dedicated tools over shell commands when possible. When output is large, the full result is saved to a file and a truncated preview is returned. Rely on automatic truncation unless filtering the output is more useful. Commands accept an optional timeout, background commands have no timeout by default. Background commands return immediately, and you will be notified when they complete.","parameters":{"type":"object","properties":{"command":{"type":"string","description":"Shell command string to execute"},"workdir":{"type":"string","description":"Working directory to execute the command in. Defaults to the current working directory. When possible, avoid changing directories in the command and set the working directory here instead."},"timeout":{"type":"integer","minimum":0,"description":"Timeout in milliseconds. Set to 0 to disable the timeout. Defaults to 120000 for foreground commands. Background commands have no timeout by default."},"background":{"type":"boolean","description":"Run the command in the background and return immediately (useful for dev servers and long-running builds). You do not need to use '&' at the end of the command when using this parameter. You will be notified when it completes. DO NOT poll for completion."}},"required":["command"],"additionalProperties":false},"strict":false}},{"type":"function","function":{"name":"skill","description":"Load a specialized skill's instructions and resources into the current conversation when the task at hand matches its description.\n\nThe skill ID must match an available skill or a skill explicitly referenced by the user.","parameters":{"type":"object","properties":{"id":{"type":"string","description":"The ID of an available skill or a skill explicitly referenced by the user"}},"required":["id"],"additionalProperties":false},"strict":false}},{"type":"function","function":{"name":"subagent","description":"Spawns an agent in a child session to work on the specified task.\nThe output includes a sessionID you can pass back later to continue that specific conversation with the subagent.\nNew child sessions start with fresh context, so include all relevant context and instructions when you don't pass a sessionID.\nForeground (default) runs the subagent to completion and returns its final response.\nBackground mode (background=true) launches it asynchronously and returns immediately; you are notified when it finishes.\nUse background only for independent work that can run while you continue elsewhere.\n\nAvailable subagents:\n- explore: Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. \"src/components/**/*.tsx\"), search code for keywords (eg. \"API endpoints\"), or answer questions about the codebase (eg. \"how do API endpoints work?\"). When calling this agent, specify the desired thoroughness level: \"quick\" for basic searches, \"medium\" for moderate exploration, or \"very thorough\" for comprehensive analysis across multiple locations and naming conventions.\n- general: General-purpose agent for researching complex questions and executing multi-step tasks. Use this agent to execute multiple units of work in parallel.","parameters":{"type":"object","properties":{"agent":{"type":"string","description":"The type of specialized agent to use for this task. If the user asks for a subagent by a name that is not one of the available subagents, they most likely mean a model: pick a suitable agent and pass the name through the model parameter instead."},"description":{"type":"string","description":"A short 3-5 word label for the task, displayed to the user"},"prompt":{"type":"string","description":"The task for the subagent to perform"},"model":{"type":"string","description":"NEVER set this unless the user explicitly asks for a particular model or variant. The value is written as \"providerID/modelID\", or \"providerID/modelID#variant\" to include a variant. Do not guess the ID: look the model up with the models tool, filtering to your own provider first."},"sessionID":{"type":"string","pattern":"^ses","description":"Continue a specific previous subagent conversation by passing its sessionID. Calls without a sessionID start a new conversation."},"background":{"type":"boolean","description":"Run the subagent in the background and return immediately. You will be notified when it completes. DO NOT sleep, poll, or proactively check on its progress."}},"required":["agent","description","prompt"],"additionalProperties":false},"strict":false}},{"type":"function","function":{"name":"webfetch","description":"Fetch content from an HTTP or HTTPS URL and return it as text, markdown, or HTML. Markdown is the default.\n\nUse a more targeted tool when one is available. This tool is read-only. Large text results may be replaced with a preview while the complete output is retained in managed storage.","parameters":{"type":"object","properties":{"url":{"type":"string","description":"The HTTP or HTTPS URL to fetch content from"},"format":{"type":"string","enum":["text","markdown","html"],"description":"The format to return the content in. Defaults to markdown."},"timeout":{"type":"number","exclusiveMinimum":0,"maximum":120,"description":"Optional timeout in seconds (maximum: 120)"}},"required":["url"],"additionalProperties":false},"strict":false}},{"type":"function","function":{"name":"websearch","description":"Search the web using the user's selected search integration. Use this for current information beyond knowledge cutoff.\n\nThe current year is 2026. Use this year when searching for recent information or current events.","parameters":{"type":"object","properties":{"query":{"type":"string","description":"Websearch query"}},"required":["query"],"additionalProperties":false},"strict":false}},{"type":"function","function":{"name":"write","description":"Writes a file to the local filesystem, overwriting if one exists.\n\nMissing parent directories are created automatically.\n\nUse this tool to create new files or overwrite existing files. For partial changes, use the edit tool instead.","parameters":{"type":"object","properties":{"path":{"type":"string","description":"Path to the file to write to"},"content":{"type":"string","description":"Content to write to the file"}},"required":["path","content"],"additionalProperties":false},"strict":false}},{"type":"function","function":{"name":"execute","description":"Run JavaScript in a confined Code Mode runtime to script tool calls and HTTP requests and compose their results.\n`fetch` is available for HTTP requests. Imports, direct filesystem access, and timers are unavailable; all other external access goes through `tools`.\nWithin `{ code }`, the only callable tools are those explicitly listed in the Code Mode catalog instructions or returned by the `search` function. Inside `{ code }`, ignore tools shown outside the Code Mode catalog. They are not available in the Code Mode runtime.\nCall tools through `tools` using only exact paths and signatures from the catalog. Do not infer or normalize tool names; preserve bracket notation such as `tools.<namespace>[\"tool-name\"](input)`.\nPrefer an explicit `return`; if omitted, the final top-level expression becomes the result.\nAwait every call whose completion matters; pending calls are interrupted when execution ends. Run independent calls concurrently with `Promise.allSettled`.","parameters":{"type":"object","properties":{"code":{"type":"string"}},"required":["code"],"additionalProperties":false},"strict":false}}]"""
-
-    val DefaultZenChatTools: JsonArray by lazy {
-        zenJson.parseToJsonElement(OPENCODE_TOOLS_JSON).jsonArray
+    private val httpClient by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(15, TimeUnit.SECONDS)
+            .build()
     }
 
-    val DefaultZenResponsesTools: JsonArray by lazy {
-        buildJsonArray {
-            DefaultZenChatTools.forEach { toolElement ->
-                val toolObj = toolElement as? JsonObject ?: return@forEach
-                val fnObj = toolObj["function"] as? JsonObject ?: return@forEach
-                add(
-                    buildJsonObject {
-                        put("type", "function")
-                        put("name", fnObj["name"]?.jsonPrimitive?.contentOrNull ?: "")
-                        put("description", fnObj["description"]?.jsonPrimitive?.contentOrNull ?: "")
-                        fnObj["parameters"]?.let { put("parameters", it) }
-                        val strictVal = fnObj["strict"]?.jsonPrimitive?.contentOrNull?.toBoolean() ?: false
-                        put("strict", strictVal)
-                    },
-                )
+    private val syncMutex = Mutex()
+    private var cachedPrefs: PreferencesManager? = null
+
+    fun updateModelRoster(models: List<String>) {
+        if (models.isEmpty()) return
+        val unique = models.distinct()
+        dynamicAllModels.clear()
+        dynamicAllModels.addAll(unique)
+
+        dynamicFreeModels.clear()
+        dynamicResponsesModels.clear()
+        dynamicMessagesModels.clear()
+        dynamicGeminiModels.clear()
+
+        for (m in unique) {
+            val id = m.lowercase()
+            if (id.contains("free") || id == "big-pickle" || id == "grok-code") {
+                dynamicFreeModels.add(m)
+            }
+            when {
+                id.startsWith("claude-") || id.startsWith("qwen-") || id.startsWith("jev-") || id.startsWith("minimax-") -> {
+                    dynamicMessagesModels.add(m)
+                }
+                id.startsWith("gemini-") -> {
+                    dynamicGeminiModels.add(m)
+                }
+                id.startsWith("gpt-") || id.startsWith("muse-spark-") || id.startsWith("grok-") -> {
+                    dynamicResponsesModels.add(m)
+                }
             }
         }
     }
+
+    fun initFromPreferences(prefs: PreferencesManager?) {
+        if (prefs == null) return
+        cachedPrefs = prefs
+        val savedVer = prefs.zenOpencodeVersion
+        if (savedVer.isNotBlank()) {
+            currentVersion = savedVer
+        }
+        val cachedAll = prefs.zenCachedAllModels
+        if (cachedAll.isNotBlank()) {
+            val list = cachedAll.split(",").map { it.trim() }.filter { it.isNotBlank() }
+            if (list.isNotEmpty()) {
+                updateModelRoster(list)
+            }
+        }
+        val cachedFree = prefs.zenCachedFreeModels
+        if (cachedFree.isNotBlank()) {
+            val freeList = cachedFree.split(",").map { it.trim() }.filter { it.isNotBlank() }
+            for (f in freeList) {
+                if (!dynamicFreeModels.contains(f)) {
+                    dynamicFreeModels.add(f)
+                }
+            }
+        }
+    }
+
+    fun saveToPreferences(prefs: PreferencesManager? = null) {
+        val target = prefs ?: cachedPrefs ?: return
+        target.zenOpencodeVersion = currentVersion
+        target.zenCachedFreeModels = dynamicFreeModels.joinToString(",")
+        target.zenCachedAllModels = dynamicAllModels.joinToString(",")
+        target.zenLastSyncTimestamp = System.currentTimeMillis()
+    }
+
+    fun onGatewayResponse(responseCode: Int, url: String) {
+        if (isZenUrl(url) && (responseCode == 401 || responseCode == 403 || responseCode == 404)) {
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    syncCatalogAndVersion(force = true)
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
+    suspend fun fetchLatestVersion(client: OkHttpClient = httpClient): String? = withContext(Dispatchers.IO) {
+        try {
+            val req = Request.Builder()
+                .url(Consts.ZEN_NPM_REGISTRY_URL)
+                .header("User-Agent", "Unhinge-Android")
+                .build()
+            client.newCall(req).execute().use { resp ->
+                if (resp.isSuccessful) {
+                    val body = resp.body.string()
+                    val json = zenJson.parseToJsonElement(body).jsonObject
+                    val ver = json["version"]?.jsonPrimitive?.contentOrNull
+                    if (!ver.isNullOrBlank() && ver.matches(Regex("^[0-9]+\\.[0-9]+\\.[0-9]+.*$"))) {
+                        return@withContext ver
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+
+        try {
+            val req = Request.Builder()
+                .url(Consts.ZEN_BREW_FORMULA_URL)
+                .header("User-Agent", "Unhinge-Android")
+                .build()
+            client.newCall(req).execute().use { resp ->
+                if (resp.isSuccessful) {
+                    val body = resp.body.string()
+                    val json = zenJson.parseToJsonElement(body).jsonObject
+                    val ver = json["versions"]?.jsonObject?.get("stable")?.jsonPrimitive?.contentOrNull
+                    if (!ver.isNullOrBlank() && ver.matches(Regex("^[0-9]+\\.[0-9]+\\.[0-9]+.*$"))) {
+                        return@withContext ver
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+
+        null
+    }
+
+    suspend fun fetchLatestModels(client: OkHttpClient = httpClient): List<String> = withContext(Dispatchers.IO) {
+        val models = mutableListOf<String>()
+        try {
+            val req = Request.Builder()
+                .url(Consts.ZEN_MODELS_URL)
+                .header("User-Agent", getUserAgent())
+                .header("Authorization", "Bearer public")
+                .build()
+            client.newCall(req).execute().use { resp ->
+                if (resp.isSuccessful) {
+                    val body = resp.body.string()
+                    val root = zenJson.parseToJsonElement(body).jsonObject
+                    val data = root["data"]?.jsonArray ?: return@use
+                    for (elem in data) {
+                        val id = elem.jsonObject["id"]?.jsonPrimitive?.contentOrNull ?: continue
+                        if (id.isNotBlank() && id != "test") {
+                            models.add(id)
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+        models
+    }
+
+    data class SyncResult(
+        val success: Boolean,
+        val version: String,
+        val freeCount: Int,
+        val totalCount: Int,
+        val errorMessage: String? = null,
+    )
+
+    suspend fun syncCatalogAndVersion(
+        prefs: PreferencesManager? = null,
+        force: Boolean = false,
+        client: OkHttpClient = httpClient,
+    ): SyncResult = syncMutex.withLock {
+        withContext(Dispatchers.IO) {
+            val effectivePrefs = prefs ?: cachedPrefs
+            val now = System.currentTimeMillis()
+            val lastSync = effectivePrefs?.zenLastSyncTimestamp ?: 0L
+            if (!force && now - lastSync < 6 * 3600 * 1000L && dynamicAllModels.isNotEmpty()) {
+                return@withContext SyncResult(
+                    success = true,
+                    version = currentVersion,
+                    freeCount = allFreeModels.size,
+                    totalCount = allAvailableModels.size,
+                )
+            }
+
+            var newVer: String? = null
+            var modelsFetched: List<String> = emptyList()
+
+            try {
+                newVer = fetchLatestVersion(client)
+                if (!newVer.isNullOrBlank()) {
+                    currentVersion = newVer
+                }
+            } catch (_: Exception) {}
+
+            try {
+                modelsFetched = fetchLatestModels(client)
+                if (modelsFetched.isNotEmpty()) {
+                    updateModelRoster(modelsFetched)
+                }
+            } catch (_: Exception) {}
+
+            val success = newVer != null || modelsFetched.isNotEmpty()
+            if (success) {
+                saveToPreferences(effectivePrefs)
+            }
+
+            SyncResult(
+                success = success,
+                version = currentVersion,
+                freeCount = allFreeModels.size,
+                totalCount = allAvailableModels.size,
+                errorMessage = if (!success) "Could not connect to OpenCode update gateway" else null,
+            )
+        }
+    }
+
+    private val zenJson = AiHttpClient.json
+
+    val DefaultZenChatTools: JsonArray
+        get() = ZenToolDefinitions.DefaultZenChatTools
+
+    val DefaultZenResponsesTools: JsonArray
+        get() = ZenToolDefinitions.DefaultZenResponsesTools
 }

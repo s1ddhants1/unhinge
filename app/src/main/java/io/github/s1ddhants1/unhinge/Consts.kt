@@ -55,6 +55,11 @@ object Consts {
     const val PREF_THEME_COLOR = "theme_color"
     const val PREF_THEME_MODE = "theme_mode"
 
+    const val PREF_ZEN_OPENCODE_VERSION = "zen_opencode_version"
+    const val PREF_ZEN_CACHED_FREE_MODELS = "zen_cached_free_models"
+    const val PREF_ZEN_CACHED_ALL_MODELS = "zen_cached_all_models"
+    const val PREF_ZEN_LAST_SYNC_TIMESTAMP = "zen_last_sync_timestamp"
+
     const val DEFAULT_AI_PROMPT_REMOTE_URL = "https://raw.githubusercontent.com/s1ddhants1/unhinge/main/prompts/opener_template.md"
 
     const val OPENROUTER_DEFAULT_BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
@@ -63,6 +68,11 @@ object Consts {
     const val LEGACY_OPENROUTER_DEFAULT_MODEL = "google/gemini-2.5-flash-lite"
     const val ZEN_DEFAULT_BASE_URL = "https://opencode.ai/inference/v1/chat/completions"
     const val ZEN_DEFAULT_MODEL = "space-bunny-free"
+    const val DEFAULT_ZEN_OPENCODE_VERSION = "2.0.30"
+    const val ZEN_NPM_REGISTRY_URL = "https://registry.npmjs.org/@opencode/cli/latest"
+    const val ZEN_BREW_FORMULA_URL = "https://formulae.brew.sh/api/formula/opencode.json"
+    const val ZEN_MODELS_URL = "https://opencode.ai/inference/v1/models"
+
     const val DEFAULT_THEME_COLOR = 0xFFED5564L
     const val DEFAULT_AI_TEMPERATURE = 0.85f
     const val DEFAULT_AI_TOP_P = 0.95f
