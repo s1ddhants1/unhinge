@@ -74,8 +74,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun InlineAiOpenerCard(
     prefs: PreferencesManager,
-    onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
+    onDismiss: (() -> Unit)? = null,
     candidate: CachedCandidateProfile? = null,
     screenClues: HostCandidateReader.ScreenClues? = null,
     isChatMode: Boolean = false,
@@ -84,6 +84,7 @@ fun InlineAiOpenerCard(
     onInsert: ((String) -> Unit)? = null,
     targetPrompt: PromptEntry? = null,
     isCommentMode: Boolean = false,
+    isSectionCard: Boolean = false,
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -94,7 +95,7 @@ fun InlineAiOpenerCard(
         ThemeMode.SYSTEM -> isSystemInDarkTheme()
     }
 
-    val isPromptCardMode = targetPrompt != null || isCommentMode
+    val isPromptCardMode = targetPrompt != null || isCommentMode || isSectionCard
 
     val cardBg = if (isPromptCardMode) {
         if (isDark) Color(0xFF222224) else Color(0xFFF7F7F8)
@@ -215,8 +216,13 @@ fun InlineAiOpenerCard(
                 reasoningEffort = prefs.aiReasoningEffort,
             )
         } else {
+            val promptsToGen = if (targetPrompt == null && !forceRefresh && promptEntries.size > 1) {
+                promptEntries
+            } else {
+                listOf(activeEntry)
+            }
             AiWingmanHelper.generateReplies(
-                prompts = listOf(activeEntry),
+                prompts = promptsToGen,
                 apiKey = prefs.openRouterApiKey,
                 baseUrl = prefs.openRouterBaseUrl,
                 model = prefs.openRouterModel,
@@ -254,13 +260,13 @@ fun InlineAiOpenerCard(
             delay(800)
             isCopied = false
             if (isCommentMode) {
-                onDismiss()
+                onDismiss?.invoke()
             }
         }
     }
 
-    val cardShape = if (isPromptCardMode) RoundedCornerShape(12.dp) else RoundedCornerShape(20.dp)
-    val cardElevation = if (isPromptCardMode) 0.dp else 10.dp
+    val cardShape = if (isSectionCard) RoundedCornerShape(14.dp) else if (isPromptCardMode) RoundedCornerShape(12.dp) else RoundedCornerShape(20.dp)
+    val cardElevation = if (isSectionCard) 0.dp else if (isPromptCardMode) 0.dp else 10.dp
     val cardModifier = if (isPromptCardMode) {
         modifier
             .fillMaxWidth()
@@ -461,7 +467,7 @@ fun InlineAiOpenerCard(
     }
 }
 
-private fun buildProfileBlock(candidate: CachedCandidateProfile): String {
+internal fun buildProfileBlock(candidate: CachedCandidateProfile): String {
     val work = listOf(candidate.jobTitle, candidate.employer).filter { it.isNotBlank() }.joinToString(" at ")
     return listOfNotNull(
         buildString {

@@ -133,6 +133,11 @@ This guide documents the technical specifications, target classes, intercepted m
   7. **Direct In-App Reply Injection (`insertReplyIntoChatInput`)**:
      - When tapping "Insert into Chat" inside the AI Wingman sheet, traverses the active activity's view hierarchy for `messageComposition` (`EditText`), sets the generated reply text, moves the cursor to the end (`setSelection(text.length)`), and requests input focus directly into Hinge without needing to paste manually.
   8. **Real-Time Available Likes Extraction (`HostLikesReader`)**: Reads Hinge's live remaining likes (`localAvailableLikes`/`apiAvailableLikes`) and roses (`localAvailableSuperlikes`/`apiAvailableSuperLikes`) directly from Hinge's private SharedPreferences (`default.xml`). Uses a strong-referenced `OnSharedPreferenceChangeListener` to immediately reflect decrements upon sending likes. Injects an authentic pill badge (`TAG_AVAILABLE_LIKES`) docked 6dp above the AI FAB with authentic Hinge vector icons (`HingeIcons`), dynamic warning color tiers, and interactive summary tooltips.
+  9. **Native In-Feed Prompt Section Opener Cards (`InlineAiOpenerCard`)**:
+     - Eliminates floating bottom overlay cards in feed mode. Injects up to `MAX_SECTION_CARDS` (3) `ComposeView` cards anchored directly below each prompt card in the feed at `promptRect.bottom - containerScreenY + 8dp`.
+     - **Individual Tailored Openers**: Each section card binds to its corresponding `PromptEntry`, guaranteeing distinct AI suggestions for every prompt rather than repeating Prompt 1's opener.
+     - **120Hz Scroll Synchronization**: Tracks virtual node screen bounds via `OnPreDrawListener`, maintaining zero-latency alignment as the user scrolls.
+     - **Proximity-Based Comment Targeting (`scorePromptProximity`)**: When tapping like on any prompt card, selects the prompt node immediately above the comment input box by scoring answers (+100) and questions (+50), ensuring the comment card opener matches the specific prompt being liked.
 
 ### 2.14 Non-Destructive Feed Navigation (`HostFeedNavigationHook`)
 - **Target**: `android.database.sqlite.SQLiteDatabase.rawQueryWithFactory(...)`, `androidx.room.RoomDatabase`, and `android.app.SharedPreferencesImpl.getStringSet(...)`.

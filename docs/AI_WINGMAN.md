@@ -438,22 +438,33 @@ Unlike generic chatbots that produce robotic praise or interrogation lists, Unhi
 
 ---
 
-## 9. Native In-Prompt-Card AI Opener (`InlineAiOpenerCard.kt`)
+## 9. Native In-Prompt-Card & In-Feed Section AI Openers (`InlineAiOpenerCard.kt` & `HostAppAiFab.kt`)
 
-Rather than relying on floating bottom sheets or intrusive modal dialogs, Unhinge embeds AI openers directly into Hinge's active prompt cards in the whitespace above the "Add a comment" input box.
+Rather than relying on floating bottom sheets or intrusive modal dialogs, Unhinge embeds AI openers directly into Hinge's active prompt cards in the whitespace above the "Add a comment" input box, and directly below each prompt card section in the profile feed.
 
-### 9.1 Minimal, Surgical & Pill-Free Design
-- **Zero Pill Clutter**: All bulky pills (such as "Try another", "Insert", "Copy", and pagination selectors) are omitted.
-- **Small Top-Right Corner Retry Button**: A compact 26dp circular button in the top right corner houses the retry trigger (`Icons.Default.Refresh`), rotating into a mini progress spinner (`CircularProgressIndicator`) during generation.
+### 9.1 Minimal, Surgical & Native Hinge Card Aesthetics
+- **Seamless Feed Integration**: In feed mode, floating bottom overlay cards are completely eliminated. Instead, up to `MAX_SECTION_CARDS` (3) native Hinge-styled section cards are rendered directly below each prompt section card in the feed.
+- **Individual Per-Prompt Openers**: Each prompt section holds its own distinct `PromptEntry` with tailored opener generation. The previous limitation where Prompt 1's opener was replicated across subsequent prompts is permanently eliminated.
+- **Zero Pill Clutter**: All bulky pills (such as "Try another", "Insert", "Copy", and pagination selectors) are omitted in favor of a sleek native card with flat elevation (`0.dp`), native background colors (`#F7F7F8` light, `#222224` dark), subtle borders (`#E5E7EB` light, `#333336` dark), and 14dp rounded corners.
+- **Compact Top-Right Corner Retry Button**: A compact 26dp circular button in the top right corner houses the retry trigger (`Icons.Default.Refresh`), rotating into a mini progress spinner (`CircularProgressIndicator`) during generation.
 - **Direct Tap-to-Copy Opener Body**: Tapping the opener text immediately copies it to the system clipboard (`ClipData.newPlainText`), displays a confirmation toast, and temporarily renders an inline green "Copied!" indicator.
 
-### 9.2 Precision In-Card Docking & 120Hz Scroll Tracking
-- **Target Node Bounds Matching**:
-  - `width`: Set to `commentRect.width()`, perfectly matching Hinge's "Add a comment" field and prompt card bounds.
-  - `x`: `(commentRect.left - containerScreenX).toFloat()`.
-  - `y`: `commentRect.top - containerScreenY - cardHeight - gap`, docking directly inside the white prompt card above the comment box.
-- **120Hz PreDraw Refresh**: In `preDrawListener`, screen coordinates of the active virtual comment node are queried on each frame via `node.getBoundsInScreen(info.commentInputRect)`, keeping the card glued to the scrolling prompt card without jitter.
-- **Automatic Lifecycle**: The card appears automatically whenever a user taps "Like" on any prompt card or photo, and dismisses immediately (`View.GONE`) when comment mode is exited.
+### 9.2 Precision In-Section Docking & 120Hz Scroll Synchronization
+- **Screen Bounds & Anchor Matching**:
+  - `width`: Spans the prompt card width (`containerWidth - 32dp`).
+  - `x`: `16.dp` horizontal margin.
+  - `y`: `promptRect.bottom - containerScreenY + 8.dp`, positioning the AI card directly below the prompt card without overlapping content.
+- **120Hz PreDraw Refresh**: In `preDrawListener`, screen coordinates of the active virtual prompt nodes are queried on each frame via `section.provider.createAccessibilityNodeInfo(section.virtualId)` and `node.getBoundsInScreen(rect)`. Card vertical translation updates at 60/120Hz, keeping cards synchronously anchored to scrolling prompt sections without 1-frame visual lag.
+
+### 9.3 Proximity-Based Comment Target Resolution
+- **Precision Comment Prompt Targeting (`scorePromptProximity`)**:
+  - When the user taps the heart/comment button on any prompt card, Hinge opens the comment sheet, displaying the liked prompt directly above the comment input box.
+  - `findCommentCardInfo` scores all candidate prompts against accessibility nodes located immediately above `commentRect.top`.
+  - Prompts with matching answers (+100) or questions (+50) located within proximity of `commentRect.top` receive highest priority, guaranteeing that liking Prompt 2 or Prompt 3 opens the AI card targeted specifically to that prompt rather than falling back to Prompt 1.
+- **Batch Asynchronous Prompt Generation**:
+  - On candidate profile transition, `HostAppAiFab` triggers batch prompt generation for all candidate prompts via `AiWingmanHelper.generateReplies`.
+  - Openers for all prompts are generated in parallel so that as the user scrolls through the feed, openers are already populated and instantly visible.
+
 
 
 

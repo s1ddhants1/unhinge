@@ -16,6 +16,7 @@ pr-debug.keystore
 *.apk
 *.aab
 *.apks
+*.apkm
 *.idsig
 *.apk.idsig
 *-unsigned.apk

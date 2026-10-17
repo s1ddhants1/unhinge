@@ -78,7 +78,7 @@ Refer to the dedicated modular documentation files in `docs/` for deep technical
 - **[On-Device Target Decompilation Analysis](docs/HINGE_ANALYSIS.md)**:
   Target application decompilation analysis, component architecture, native splits, manifest entry points, network endpoints, and anti-tamper detections.
 - **[AI Prompt Wingman Architecture](docs/AI_WINGMAN.md)**:
-  Floating Action Button mechanics, touch physics, snap-to-edge docking, ViewTree owner bridging, in-process candidate SQLite extraction, and production AI wingman architecture (`LlmClient`, `LlmClientRegistry`, `OpenAiChatClient`, `AiHttpClient`, `AiWingmanHelper`, `PromptEntry`, native Hinge-styled `InlineAiOpenerCard`, non-modal overlay docking, and one-tap retry).
+  Floating Action Button mechanics, touch physics, snap-to-edge docking, ViewTree owner bridging, in-process candidate SQLite extraction, and production AI wingman architecture (`LlmClient`, `LlmClientRegistry`, `OpenAiChatClient`, `AiHttpClient`, `AiWingmanHelper`, `PromptEntry`, native Hinge-styled `InlineAiOpenerCard`, in-feed prompt section cards with 120Hz scroll tracking, proximity-based comment prompt resolution, and one-tap retry).
 - **[Database, Storage & Archival Systems](docs/DATABASE_AND_STORAGE.md)**:
   Companion application SQLite persistence (`candidate_archive.db`, version 3), root-assisted fallback extraction engine (`SuStorageReader`), and serialized candidate data models.
 - **[Telemetry, Privacy & Surveillance Analysis](docs/TELEMETRY_AND_PRIVACY.md)**:
