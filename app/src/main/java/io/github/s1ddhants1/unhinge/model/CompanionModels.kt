@@ -181,7 +181,11 @@ data class CachedCandidateProfile(
     val incomingTimestamp: Long = 0L,
     val firstSeenTimestamp: Long = 0L,
     val lastSeenTimestamp: Long = 0L,
-    val lastActiveStatusId: Int? = null
+    val lastActiveStatusId: Int? = null,
+    val isSaved: Boolean = false,
+    val pronouns: String = "",
+    val languagesSpoken: String = "",
+    val screenshotProtected: Boolean = false
 ) {
     val activeStatusText: String
         get() = when (lastActiveStatusId) {
@@ -189,6 +193,60 @@ data class CachedCandidateProfile(
             2 -> "Active today"
             else -> ""
         }
+}
+
+object PronounDecoder {
+    private val pronounMap: Map<Int, String> = mapOf(
+        1 to "she", 2 to "her", 3 to "hers",
+        4 to "he", 5 to "him", 6 to "his",
+        7 to "they", 8 to "them", 9 to "theirs",
+        10 to "ve", 11 to "ver", 12 to "vis",
+        14 to "hir", 15 to "hirs",
+        16 to "sie", 17 to "ihr", 18 to "ihre",
+        19 to "er", 20 to "ihm", 21 to "sein",
+        22 to "ihnen", 23 to "ihrs",
+        24 to "xihr", 25 to "xihre", 26 to "xein",
+        27 to "sier", 28 to "xier", 29 to "xiere",
+        30 to "seine", 31 to "xeine",
+        32 to "hon", 33 to "henne", 34 to "hennes",
+        35 to "han", 36 to "honom", 37 to "hans",
+        38 to "de", 39 to "dem", 40 to "deras",
+        41 to "hen", 42 to "hens", 43 to "en",
+        44 to "henom", 45 to "henoms",
+        46 to "elle", 47 to "il", 48 to "lui",
+        49 to "iel", 50 to "elleux",
+        51 to "ael", 52 to "aelle",
+        53 to "ol", 55 to "ul", 57 to "al",
+        58 to "lan", 59 to "aem", 60 to "ae",
+        61 to "ille", 62 to "ex", 63 to "exe",
+        64 to "lei", 65 to "la", 66 to "le",
+        69 to "gli", 70 to "loro",
+        82 to "hende", 83 to "hendes",
+        85 to "ham", 89 to "deres",
+        92 to "høn", 93 to "høns",
+        94 to "zij", 95 to "har", 96 to "hij", 97 to "hem", 98 to "zijn",
+        101 to "die", 102 to "diens",
+        123 to "aer", 124 to "aers",
+        125 to "ey", 126 to "em", 127 to "eirs",
+        128 to "fae", 129 to "faer", 130 to "faers",
+        131 to "xe", 132 to "xem", 133 to "xyrs",
+        134 to "zir", 135 to "zirs",
+        136 to "ela", 137 to "lhe",
+        139 to "a", 140 to "dela", 141 to "ele",
+        143 to "o", 144 to "dele", 145 to "eles",
+        146 to "elas", 147 to "deles", 148 to "delas",
+        149 to "elu", 150 to "delu"
+    )
+
+    fun decode(raw: String): String {
+        if (raw.isBlank()) return ""
+        if (raw.any { it.isLetter() }) return raw.replace("|", "/")
+        val tokens = raw.split("|").map { it.trim() }.filter { it.isNotEmpty() }
+        if (tokens.isEmpty()) return ""
+        return tokens.map { token ->
+            token.toIntOrNull()?.let { pronounMap[it] } ?: token
+        }.joinToString("/")
+    }
 }
 
 @Keep

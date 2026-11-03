@@ -17,7 +17,7 @@ data class CandidateRatingRecord(
     val comment: String = ""
 )
 
-class CandidateArchiveDb(context: Context) : SQLiteOpenHelper(context, "candidate_archive.db", null, 3) {
+class CandidateArchiveDb(context: Context) : SQLiteOpenHelper(context, "candidate_archive.db", null, 4) {
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
@@ -64,7 +64,11 @@ class CandidateArchiveDb(context: Context) : SQLiteOpenHelper(context, "candidat
                 lastSeenTimestamp INTEGER,
                 photosJson TEXT,
                 promptsJson TEXT,
-                lastActiveStatusId INTEGER DEFAULT 0
+                lastActiveStatusId INTEGER DEFAULT 0,
+                isSaved INTEGER DEFAULT 0,
+                pronouns TEXT DEFAULT '',
+                languagesSpoken TEXT DEFAULT '',
+                screenshotProtected INTEGER DEFAULT 0
             )
         """.trimIndent())
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_archived_live ON archived_candidates (isLiveInFeed)")
@@ -101,7 +105,11 @@ class CandidateArchiveDb(context: Context) : SQLiteOpenHelper(context, "candidat
             "incomingComment TEXT DEFAULT ''",
             "incomingLikeType TEXT DEFAULT ''",
             "incomingTimestamp INTEGER DEFAULT 0",
-            "lastActiveStatusId INTEGER DEFAULT 0"
+            "lastActiveStatusId INTEGER DEFAULT 0",
+            "isSaved INTEGER DEFAULT 0",
+            "pronouns TEXT DEFAULT ''",
+            "languagesSpoken TEXT DEFAULT ''",
+            "screenshotProtected INTEGER DEFAULT 0"
         )
         for (col in columns) {
             try {
@@ -129,12 +137,20 @@ class CandidateArchiveDb(context: Context) : SQLiteOpenHelper(context, "candidat
                     var firstSeen = now
                     var existingRating = ""
                     var existingComment = ""
+                    var existingIsSaved = false
+                    var existingPronouns = ""
+                    var existingLanguages = ""
+                    var existingScreenshotProtected = false
 
-                    db.rawQuery("SELECT firstSeenTimestamp, ratingStatus, likeComment FROM archived_candidates WHERE userId = ?", arrayOf(c.userId)).use { cursor ->
+                    db.rawQuery("SELECT firstSeenTimestamp, ratingStatus, likeComment, isSaved, pronouns, languagesSpoken, screenshotProtected FROM archived_candidates WHERE userId = ?", arrayOf(c.userId)).use { cursor ->
                         if (cursor.moveToNext()) {
                             firstSeen = cursor.getLong(0)
                             existingRating = cursor.getString(1) ?: ""
                             existingComment = cursor.getString(2) ?: ""
+                            existingIsSaved = cursor.getInt(3) == 1
+                            existingPronouns = cursor.getString(4) ?: ""
+                            existingLanguages = cursor.getString(5) ?: ""
+                            existingScreenshotProtected = cursor.getInt(6) == 1
                         }
                     }
 
@@ -186,6 +202,10 @@ class CandidateArchiveDb(context: Context) : SQLiteOpenHelper(context, "candidat
                         put("photosJson", json.encodeToString(c.photos))
                         put("promptsJson", json.encodeToString(c.prompts))
                         put("lastActiveStatusId", c.lastActiveStatusId ?: 0)
+                        put("isSaved", if (c.isSaved || existingIsSaved) 1 else 0)
+                        put("pronouns", c.pronouns.ifBlank { existingPronouns })
+                        put("languagesSpoken", c.languagesSpoken.ifBlank { existingLanguages })
+                        put("screenshotProtected", if (c.screenshotProtected || existingScreenshotProtected) 1 else 0)
                     }
 
                     db.insertWithOnConflict("archived_candidates", null, values, SQLiteDatabase.CONFLICT_REPLACE)
@@ -223,7 +243,7 @@ class CandidateArchiveDb(context: Context) : SQLiteOpenHelper(context, "candidat
                        school, employer, politics, smoking, drinking, marijuana, drugs,
                        kids, familyPlans, pet, zodiac, isNewHere, isYourTypeLately,
                        isSecondChance, isIncomingLike, incomingComment, incomingLikeType, incomingTimestamp,
-                       lastActiveStatusId
+                       lastActiveStatusId, isSaved, pronouns, languagesSpoken, screenshotProtected
                 FROM archived_candidates
                 ORDER BY isLiveInFeed DESC,
                          CASE
