@@ -105,15 +105,10 @@ data class RawHingeTelemetry(
     val shouldShowVoicePromptContextualNudge: Boolean = false,
     val hasViewedPromptFeedback: Boolean = false,
     val createdTimestamp: Long = 0L,
-    val firstHingeSync: Long = 0L,
     val lastHingeSync: Long = 0L,
-    val userProfileLastChanged: Long = 0L,
     val userPreferencesLastChanged: Long = 0L,
     val likesCacheTimestamp: Long = 0L,
     val standoutsExpiration: Long = 0L,
-    val userPermissions: List<String> = emptyList(),
-    val installId: String = "",
-    val discoverCacheEtag: String = "",
     val isRootGranted: Boolean = false,
     val lastReadTimestamp: Long = 0L
 )
@@ -239,29 +234,6 @@ data class MatchRecord(
 
 @Keep
 @Serializable
-data class DatabaseTableSummary(
-    val tableName: String = "",
-    val rowCount: Int = 0
-)
-
-@Keep
-@Serializable
-data class StoragePrefEntry(
-    val file: String = "",
-    val key: String = "",
-    val type: String = "",
-    val value: String = ""
-)
-
-@Keep
-@Serializable
-data class RawPrefFile(
-    val fileName: String = "",
-    val entries: List<StoragePrefEntry> = emptyList()
-)
-
-@Keep
-@Serializable
 data class CompleteHingeData(
     val telemetry: RawHingeTelemetry = RawHingeTelemetry(),
     val dailyLikes: DailyLikeStatus = DailyLikeStatus(),
@@ -272,8 +244,6 @@ data class CompleteHingeData(
     val playerAnswers: List<PlayerAnswerItem> = emptyList(),
     val candidates: List<CachedCandidateProfile> = emptyList(),
     val matches: List<MatchRecord> = emptyList(),
-    val databaseTables: List<DatabaseTableSummary> = emptyList(),
-    val allPrefFiles: List<RawPrefFile> = emptyList(),
     val isRootGranted: Boolean = false,
     val lastUpdatedTimestamp: Long = 0L
 )

@@ -62,12 +62,10 @@
     <string name="nav_tab_title_matches">Matches &amp; Chats</string>
     <string name="nav_tab_title_home">Home</string>
     <string name="nav_tab_title_profile">My Profile Data</string>
-    <string name="nav_tab_title_explorer">Raw Storage Explorer</string>
     <string name="nav_label_candidates">Candidates</string>
     <string name="nav_label_matches">Matches</string>
     <string name="nav_label_home">Home</string>
     <string name="nav_label_profile">Profile</string>
-    <string name="nav_label_explorer">Explorer</string>
     <string name="nav_settings_menu">Settings</string>
     <string name="cd_back">Back</string>
     <string name="cd_options">Options</string>
@@ -75,7 +73,6 @@
     <string name="cd_matches_tab">Matches</string>
     <string name="cd_home_tab">Home</string>
     <string name="cd_profile_tab">Profile</string>
-    <string name="cd_explorer_tab">Explorer</string>
     <string name="action_ok">OK</string>
     <string name="action_cancel">Cancel</string>
     <string name="action_dismiss">Dismiss</string>
@@ -208,29 +205,8 @@
     <string name="cd_photo_full_preview">Full photo preview</string>
     <string name="cd_photo_index_format">Photo <xliff:g id="index" example="2">%1$d</xliff:g></string>
     <string name="cd_copy">Copy</string>
-    <string name="cd_copy_all_flags">Copy All Flags</string>
-    <string name="cd_copy_key">Copy Key</string>
-    <string name="cd_copy_value">Copy Value</string>
     <string name="cd_copy_label_format">Copy <xliff:g id="label" example="Name">%1$s</xliff:g></string>
     <string name="cd_clear">Clear</string>
-    <string name="explorer_active_format"><xliff:g id="count" example="14">%1$d</xliff:g> Active</string>
-    <string name="explorer_rows_format"><xliff:g id="count" example="42">%1$d</xliff:g> Rows</string>
-    <string name="explorer_tab_prefs">Preferences (<xliff:g id="count" example="4">%1$d</xliff:g>)</string>
-    <string name="explorer_tab_sqlite">SQLite (<xliff:g id="count" example="9">%1$d</xliff:g>)</string>
-    <string name="explorer_tab_flags">Server Flags (<xliff:g id="count" example="14">%1$d</xliff:g>)</string>
-    <string name="explorer_empty_prefs_title">No Preference Entries</string>
-    <string name="explorer_empty_search_prefs">No entries match \'<xliff:g id="query" example="theme">%1$s</xliff:g>\'</string>
-    <string name="explorer_empty_prefs_none">This XML file has no entries</string>
-    <string name="explorer_empty_tables_title">No Tables Found</string>
-    <string name="explorer_empty_search_tables">No tables match \'<xliff:g id="query" example="chat">%1$s</xliff:g>\'</string>
-    <string name="explorer_empty_tables_none">No SQLite database tables detected</string>
-    <string name="explorer_section_ids">Server Identifiers &amp; Parameters</string>
-    <string name="explorer_section_flags">Server Flags</string>
-    <string name="explorer_empty_flags_title">No Flags Found</string>
-    <string name="explorer_empty_search_flags">No flags match \'<xliff:g id="query" example="likes">%1$s</xliff:g>\'</string>
-    <string name="explorer_empty_flags_none">No server permissions recorded in storage</string>
-    <string name="explorer_table_title">SQLite Database Table</string>
-    <string name="explorer_clear_filter">Clear Filter</string>
     <string name="match_empty_chat">No recorded chat messages in local database</string>
     <string name="settings_appearance">Appearance</string>
     <string name="settings_wingman">AI Prompt Wingman</string>
@@ -352,14 +328,6 @@
     <string name="matches_messages_recorded_format"><xliff:g id="count" example="18">%1$d</xliff:g> total messages recorded</string>
     <string name="matches_unsent_draft">Unsent Saved Draft:</string>
     <string name="matches_search_placeholder">Search matches, prompts, messages, drafts…</string>
-
-    <string name="explorer_search_keys">Search keys or values…</string>
-    <string name="explorer_search_tables">Search tables…</string>
-    <string name="explorer_search_flags">Search flags…</string>
-    <string name="explorer_server_install_id">Install ID</string>
-    <string name="explorer_server_discover_etag">Discover ETag</string>
-    <string name="explorer_server_first_sync">First Sync</string>
-    <string name="explorer_server_last_changed">Last Changed</string>
 
     <string name="profile_ai_coaching_title">AI Coaching Recommendations</string>
     <string name="profile_prompt_question_fallback">Prompt Question</string>

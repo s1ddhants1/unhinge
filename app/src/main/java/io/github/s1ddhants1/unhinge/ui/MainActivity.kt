@@ -39,8 +39,7 @@ enum class AppTab(val titleRes: Int) {
     Candidates(R.string.nav_tab_title_candidates),
     Matches(R.string.nav_tab_title_matches),
     Home(R.string.nav_tab_title_home),
-    Profile(R.string.nav_tab_title_profile),
-    Explorer(R.string.nav_tab_title_explorer)
+    Profile(R.string.nav_tab_title_profile)
 }
 
 class MainActivity : ComponentActivity() {
@@ -258,12 +257,6 @@ class MainActivity : ComponentActivity() {
                                     icon = { Icon(Icons.Default.AccountCircle, contentDescription = stringResource(R.string.cd_profile_tab)) },
                                     label = { Text(stringResource(R.string.nav_label_profile)) }
                                 )
-                                NavigationBarItem(
-                                    selected = currentTab == AppTab.Explorer,
-                                    onClick = { selectTab(AppTab.Explorer) },
-                                    icon = { Icon(Icons.Default.FolderOpen, contentDescription = stringResource(R.string.cd_explorer_tab)) },
-                                    label = { Text(stringResource(R.string.nav_label_explorer)) }
-                                )
                             }
                         }
                     }
@@ -345,11 +338,6 @@ class MainActivity : ComponentActivity() {
                                         AppTab.Profile -> ProfileRawScreen(data = state.completeData)
                                         AppTab.Candidates -> CandidatesScreen(candidates = state.completeData.candidates, prefs = prefs)
                                         AppTab.Matches -> MatchesScreen(matches = state.completeData.matches, prefs = prefs)
-                                        AppTab.Explorer -> RawExplorerScreen(
-                                            prefFiles = state.completeData.allPrefFiles,
-                                            dbTables = state.completeData.databaseTables,
-                                            telemetry = state.completeData.telemetry
-                                        )
                                     }
                                 }
                             }

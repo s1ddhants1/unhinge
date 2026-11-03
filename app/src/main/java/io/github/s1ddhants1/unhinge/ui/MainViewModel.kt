@@ -73,7 +73,7 @@ class MainViewModel @JvmOverloads constructor(
             _uiState.value = _uiState.value.copy(isRefreshing = true)
             try {
                 val fullData = getHingeDataUseCase()
-                Log.d(Consts.TAG, "MainViewModel: GetHingeDataUseCase finished, root=${fullData.isRootGranted}, name=${fullData.telemetry.firstName}, tables=${fullData.databaseTables.size}")
+                Log.d(Consts.TAG, "MainViewModel: GetHingeDataUseCase finished, root=${fullData.isRootGranted}, name=${fullData.telemetry.firstName}")
                 _uiState.value = _uiState.value.copy(
                     completeData = fullData,
                     isRootGranted = fullData.isRootGranted,

@@ -29,31 +29,12 @@ object SuStorageReader {
             return@withContext CompleteHingeData(isRootGranted = false)
         }
 
-        val prefFiles = mutableListOf<RawPrefFile>()
-        val defaultMap = mutableMapOf<String, Any>()
-        val insightsMap = mutableMapOf<String, Any>()
+        val defaultXml = executeSu("cat $HINGE_SHARED_PREFS/default.xml")
+        val defaultMap = if (defaultXml != null) parseSharedPrefsXml(defaultXml) else emptyMap()
 
-        val fileListOutput = executeSu("ls -1 $HINGE_SHARED_PREFS")
-        Log.d(Consts.TAG, "SuStorageReader: fileListOutput = $fileListOutput")
-        val fileNames = fileListOutput?.lines()?.map { it.trim() }?.filter { it.endsWith(".xml") } ?: emptyList()
-        Log.d(Consts.TAG, "SuStorageReader: fileNames found = $fileNames")
+        val insightsXml = executeSu("cat $HINGE_SHARED_PREFS/unhinge_insights.xml")
+        val insightsMap = if (insightsXml != null) parseSharedPrefsXml(insightsXml) else emptyMap()
 
-        for (fileName in fileNames) {
-            val xmlContent = executeSu("cat $HINGE_SHARED_PREFS/$fileName")
-            if (xmlContent == null) {
-                Log.w(Consts.TAG, "SuStorageReader: failed to cat $fileName")
-                continue
-            }
-            val (parsedMap, entries) = parseSharedPrefsXmlWithEntries(fileName, xmlContent)
-            Log.d(Consts.TAG, "SuStorageReader: parsed $fileName, keys=${parsedMap.size}, entries=${entries.size}")
-            prefFiles.add(RawPrefFile(fileName, entries))
-
-            if (fileName == "default.xml") {
-                defaultMap.putAll(parsedMap)
-            } else if (fileName == "unhinge_insights.xml") {
-                insightsMap.putAll(parsedMap)
-            }
-        }
         Log.d(Consts.TAG, "SuStorageReader: defaultMap has ${defaultMap.size} keys, firstName=${defaultMap["firstName"]}")
 
         val telemetry = RawHingeTelemetry(
@@ -82,15 +63,10 @@ object SuStorageReader {
             shouldShowVoicePromptContextualNudge = defaultMap["shouldShowVoicePromptContextualNudge"] as? Boolean ?: false,
             hasViewedPromptFeedback = defaultMap["hasViewedPromptFeedback"] as? Boolean ?: false,
             createdTimestamp = (defaultMap["created"] as? Number)?.toLong() ?: 0L,
-            firstHingeSync = (defaultMap["firstHingeSync"] as? Number)?.toLong() ?: 0L,
             lastHingeSync = (defaultMap["lastHingeSync"] as? Number)?.toLong() ?: 0L,
-            userProfileLastChanged = (defaultMap["userProfileLastChanged"] as? Number)?.toLong() ?: 0L,
             userPreferencesLastChanged = (defaultMap["userPreferencesLastChanged"] as? Number)?.toLong() ?: 0L,
             likesCacheTimestamp = (defaultMap["likesCache"] as? Number)?.toLong() ?: 0L,
             standoutsExpiration = (defaultMap["standouts.expiration"] as? Number)?.toLong() ?: 0L,
-            userPermissions = (defaultMap["USER_PERMISSIONS"] as? Set<*>)?.mapNotNull { it?.toString() }?.sorted() ?: emptyList(),
-            installId = defaultMap["installId"] as? String ?: "",
-            discoverCacheEtag = defaultMap["discoverCache.eTag"] as? String ?: "",
             isRootGranted = true,
             lastReadTimestamp = System.currentTimeMillis()
         )
@@ -119,7 +95,7 @@ object SuStorageReader {
             try { json.decodeFromString<SessionBehaviorMetrics>(it) } catch (e: Exception) { null }
         } ?: SessionBehaviorMetrics()
 
-        val (playerMedia, playerAnswers, candidates, matches, dbTables) = readLocalDatabase(context)
+        val (playerMedia, playerAnswers, candidates, matches) = readLocalDatabase(context)
 
         CompleteHingeData(
             telemetry = telemetry,
@@ -131,8 +107,6 @@ object SuStorageReader {
             playerAnswers = playerAnswers,
             candidates = candidates,
             matches = matches,
-            databaseTables = dbTables,
-            allPrefFiles = prefFiles.sortedBy { it.fileName },
             isRootGranted = true,
             lastUpdatedTimestamp = System.currentTimeMillis()
         )
@@ -167,12 +141,8 @@ object SuStorageReader {
         }
     }
 
-    private data class ParsedXmlResult(val map: Map<String, Any>, val entries: List<StoragePrefEntry>)
-
-    private fun parseSharedPrefsXmlWithEntries(fileName: String, xmlString: String): ParsedXmlResult {
+    private fun parseSharedPrefsXml(xmlString: String): Map<String, Any> {
         val map = mutableMapOf<String, Any>()
-        val entries = mutableListOf<StoragePrefEntry>()
-
         try {
             val parser = Xml.newPullParser()
             parser.setInput(StringReader(xmlString))
@@ -194,7 +164,6 @@ object SuStorageReader {
                                 } else if (name != null) {
                                     val text = parser.nextText()
                                     map[name] = text
-                                    entries.add(StoragePrefEntry(fileName, name, "STRING", text))
                                 }
                             }
                             "int" -> {
@@ -202,7 +171,6 @@ object SuStorageReader {
                                 val value = parser.getAttributeValue(null, "value")?.toIntOrNull()
                                 if (name != null && value != null) {
                                     map[name] = value
-                                    entries.add(StoragePrefEntry(fileName, name, "INT", value.toString()))
                                 }
                             }
                             "long" -> {
@@ -210,7 +178,6 @@ object SuStorageReader {
                                 val value = parser.getAttributeValue(null, "value")?.toLongOrNull()
                                 if (name != null && value != null) {
                                     map[name] = value
-                                    entries.add(StoragePrefEntry(fileName, name, "LONG", value.toString()))
                                 }
                             }
                             "float" -> {
@@ -218,7 +185,6 @@ object SuStorageReader {
                                 val value = parser.getAttributeValue(null, "value")?.toFloatOrNull()
                                 if (name != null && value != null) {
                                     map[name] = value
-                                    entries.add(StoragePrefEntry(fileName, name, "FLOAT", value.toString()))
                                 }
                             }
                             "boolean" -> {
@@ -226,7 +192,6 @@ object SuStorageReader {
                                 val value = parser.getAttributeValue(null, "value")?.toBooleanStrictOrNull()
                                 if (name != null && value != null) {
                                     map[name] = value
-                                    entries.add(StoragePrefEntry(fileName, name, "BOOLEAN", value.toString()))
                                 }
                             }
                             "set" -> {
@@ -240,7 +205,6 @@ object SuStorageReader {
                         val set = currentSet
                         if (parser.name == "set" && name != null && set != null) {
                             map[name] = set
-                            entries.add(StoragePrefEntry(fileName, name, "SET", set.joinToString(", ")))
                             currentName = null
                             currentSet = null
                         }
@@ -249,17 +213,16 @@ object SuStorageReader {
                 eventType = parser.next()
             }
         } catch (e: Exception) {
-            Log.e(Consts.TAG, "SuStorageReader: Failed to parse XML for $fileName", e)
+            Log.e(Consts.TAG, "SuStorageReader: Failed to parse XML", e)
         }
-        return ParsedXmlResult(map, entries)
+        return map
     }
 
     private data class DbExtractResult(
         val playerMedia: List<PlayerMediaItem>,
         val playerAnswers: List<PlayerAnswerItem>,
         val candidates: List<CachedCandidateProfile>,
-        val matches: List<MatchRecord>,
-        val dbTables: List<DatabaseTableSummary>
+        val matches: List<MatchRecord>
     )
 
     private fun readLocalDatabase(context: Context): DbExtractResult {
@@ -267,7 +230,6 @@ object SuStorageReader {
         val playerAnswers = mutableListOf<PlayerAnswerItem>()
         val candidates = mutableListOf<CachedCandidateProfile>()
         val matches = mutableListOf<MatchRecord>()
-        val dbTables = mutableListOf<DatabaseTableSummary>()
 
         try {
             val localDb = File(context.filesDir, "hinge_local.sqlite")
@@ -279,29 +241,10 @@ object SuStorageReader {
 
             if (!localDb.exists()) {
                 val archived = CandidateArchiveDb(context).getAllArchived()
-                return DbExtractResult(playerMedia, playerAnswers, archived, matches, dbTables)
+                return DbExtractResult(playerMedia, playerAnswers, archived, matches)
             }
 
             SQLiteDatabase.openDatabase(localDb.absolutePath, null, SQLiteDatabase.OPEN_READONLY).use { db ->
-
-                try {
-                    db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name ASC", null).use { cursor ->
-                        while (cursor.moveToNext()) {
-                            val name = cursor.getString(0) ?: continue
-                            try {
-                                db.rawQuery("SELECT COUNT(*) FROM \"$name\"", null).use { countCursor ->
-                                    if (countCursor.moveToNext()) {
-                                        dbTables.add(DatabaseTableSummary(name, countCursor.getInt(0)))
-                                    }
-                                }
-                            } catch (e: Exception) {
-                                dbTables.add(DatabaseTableSummary(name, 0))
-                            }
-                        }
-                    }
-                } catch (e: Exception) {
-                    Log.e(Consts.TAG, "SuStorageReader: Error reading table list", e)
-                }
 
                 try {
                     db.rawQuery("SELECT position, photoUrl, description, mediaPromptText FROM player_media ORDER BY position ASC", null).use { cursor ->
@@ -708,9 +651,9 @@ object SuStorageReader {
         } catch (e: Exception) {
             Log.e(Consts.TAG, "SuStorageReader: Error copying or opening SQLite database", e)
             val archived = CandidateArchiveDb(context).getAllArchived()
-            return DbExtractResult(playerMedia, playerAnswers, archived, matches, dbTables)
+            return DbExtractResult(playerMedia, playerAnswers, archived, matches)
         }
 
-        return DbExtractResult(playerMedia, playerAnswers, candidates, matches, dbTables)
+        return DbExtractResult(playerMedia, playerAnswers, candidates, matches)
     }
 }

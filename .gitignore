@@ -1,4 +1,3 @@
-# Keystores & Signing Keys (NEVER commit to git)
 *.keystore
 *.jks
 *.p12
@@ -10,20 +9,6 @@ persistent-debug.keystore
 pr-debug.keystore
 *password*
 *.secret
-
-
-# Android & Build Output Artifacts
-*.apk
-*.aab
-*.apks
-*.apkm
-*.idsig
-*.apk.idsig
-*-unsigned.apk
-*-debug.apk
-/unhinge-release.apk
-/unhinge-debug.apk
-/unhinge-release-unsigned.apk
 
 # Gradle & Build caches
 .gradle/
@@ -37,20 +22,6 @@ local.properties
 captures/
 *.hprof
 
-# Decompilation & Reverse Engineering dumps
-/hinge_apktool/
-/hinge_jadx/
-/hinge_base.apk
-/split_config.arm64_v8a.apk
-/apktool-output/
-/jadx-output/
-/apk/
-*.transcript.filtered.jsonl
-ANTIGRAVITY_IMPORT_*.md
-
-# Candidate evaluations research data and analysis (local only)
-/docs/research/
-/docs/CANDIDATE_PROMPT_RESEARCH.md
-
-# External reference repos (local only)
-/Prompt-Engineering-Guide/
+/decompiled-reference
+/docs/
+/apk
