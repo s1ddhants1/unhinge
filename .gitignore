@@ -1,0 +1,27 @@
+*.keystore
+*.jks
+*.p12
+*.pem
+*.key
+signing/
+keystores/
+persistent-debug.keystore
+pr-debug.keystore
+*password*
+*.secret
+
+# Gradle & Build caches
+.gradle/
+.kotlin/
+build/
+*/build/
+local.properties
+*.iml
+.idea/
+.DS_Store
+captures/
+*.hprof
+
+/decompiled-reference
+/docs/
+/apk
