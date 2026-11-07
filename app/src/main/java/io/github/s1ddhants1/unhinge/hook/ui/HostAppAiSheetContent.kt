@@ -8,10 +8,6 @@ import io.github.s1ddhants1.unhinge.hook.ui.sheet.InlineAiOpenerCard
 import io.github.s1ddhants1.unhinge.model.CachedCandidateProfile
 import io.github.s1ddhants1.unhinge.util.PreferencesManager
 
-/**
- * Backward-compatible coordinator delegating to [InlineAiOpenerCard].
- * Replaces the heavy multi-card bottom sheet with Hinge-styled inline opener analysis.
- */
 @Composable
 fun HostAppAiSheetContent(
     prefs: PreferencesManager,

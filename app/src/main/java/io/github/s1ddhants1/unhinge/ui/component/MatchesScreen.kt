@@ -66,11 +66,12 @@ fun MatchesScreen(
     var selectedFilter by rememberSaveable { mutableStateOf("All") }
     var activeChatSubjectId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedAiMatch by remember { mutableStateOf<MatchRecord?>(null) }
+    val toastCopiedFormat = stringResource(R.string.toast_copied_format)
 
     fun copy(label: String, text: String) {
         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         cm.setPrimaryClip(ClipData.newPlainText(label, text))
-        Toast.makeText(context, context.getString(R.string.toast_copied_format, label), Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, java.lang.String.format(toastCopiedFormat, label), Toast.LENGTH_SHORT).show()
     }
 
     val searchMatchedMatches = remember(matches, searchQuery) {

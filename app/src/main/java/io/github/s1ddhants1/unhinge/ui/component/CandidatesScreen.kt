@@ -38,6 +38,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color
+import io.github.s1ddhants1.unhinge.data.CandidateArchiveDb
 import io.github.s1ddhants1.unhinge.model.CachedCandidateProfile
 import io.github.s1ddhants1.unhinge.hook.ui.HingeIcons
 import io.github.s1ddhants1.unhinge.hook.ui.HostAppAiSheetContent
@@ -60,9 +61,9 @@ fun List<CachedCandidateProfile>.sortedByActiveStatus(): List<CachedCandidatePro
     return sortedWith(
         compareBy<CachedCandidateProfile> { candidate ->
             when (candidate.lastActiveStatusId) {
-                1 -> 0 // Active now
-                2 -> 1 // Active today
-                else -> 2 // Others
+                1 -> 0
+                2 -> 1
+                else -> 2
             }
         }.thenByDescending { it.isLiveInFeed }
          .thenByDescending { it.lastSeenTimestamp }
@@ -81,6 +82,7 @@ enum class CandidateFilter(
     ACTIVE_TODAY(R.string.filter_active_today, Icons.Default.AccessTime),
     LIKED_YOU(R.string.filter_liked_you, HingeIcons.HeartVector),
     WITH_COMMENT(R.string.filter_with_comment, Icons.AutoMirrored.Filled.Comment),
+    SAVED(R.string.filter_saved, Icons.Default.Bookmark),
     LIKED(R.string.filter_liked, Icons.Default.ThumbUp),
     PASSED(R.string.filter_passed, Icons.Default.ThumbDown),
     ARCHIVED(R.string.filter_archived_past, Icons.Default.Archive);
@@ -94,6 +96,7 @@ enum class CandidateFilter(
         ACTIVE_TODAY -> candidate.lastActiveStatusId == 2
         LIKED_YOU -> candidate.isIncomingLike
         WITH_COMMENT -> candidate.likeComment.isNotBlank()
+        SAVED -> candidate.isSaved
         LIKED -> candidate.ratingStatus.equals("Liked", ignoreCase = true)
         PASSED -> candidate.ratingStatus.equals("Passed", ignoreCase = true)
         ARCHIVED -> !candidate.isLiveInFeed
@@ -110,21 +113,38 @@ fun CandidatesScreen(
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     val candidateFallbackName = stringResource(R.string.candidate_fallback_name)
+    val toastCopiedFormat = stringResource(R.string.toast_copied_format)
+    val copyPhotoUrlLabel = stringResource(R.string.copy_photo_url)
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var selectedFilter by rememberSaveable { mutableStateOf(CandidateFilter.IN_FEED) }
     var selectedSort by rememberSaveable { mutableStateOf(CandidateSortOption.ACTIVE_STATUS) }
     var sortDropdownExpanded by remember { mutableStateOf(false) }
     var selectedAiCandidate by remember { mutableStateOf<CachedCandidateProfile?>(null) }
+    var candidateOverrides by remember { mutableStateOf<Map<String, Boolean>>(emptyMap()) }
+
+    val effectiveCandidates = remember(candidates, candidateOverrides) {
+        if (candidateOverrides.isEmpty()) candidates
+        else candidates.map { c ->
+            val overriddenSaved = candidateOverrides[c.userId]
+            if (overriddenSaved != null) c.copy(isSaved = overriddenSaved) else c
+        }
+    }
+
+    val db = remember { CandidateArchiveDb(context) }
+    val onToggleSave: (CachedCandidateProfile) -> Unit = { candidate ->
+        val newState = db.toggleSaved(candidate.userId)
+        candidateOverrides = candidateOverrides + (candidate.userId to newState)
+    }
 
     fun copy(label: String, text: String) {
         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         cm.setPrimaryClip(ClipData.newPlainText(label, text))
-        Toast.makeText(context, context.getString(R.string.toast_copied_format, label), Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, java.lang.String.format(toastCopiedFormat, label), Toast.LENGTH_SHORT).show()
     }
 
-    val searchMatchedCandidates = remember(candidates, searchQuery) {
-        if (searchQuery.isBlank()) candidates else {
-            candidates.filter { c -> matchesCandidateSearch(c, searchQuery) }
+    val searchMatchedCandidates = remember(effectiveCandidates, searchQuery) {
+        if (searchQuery.isBlank()) effectiveCandidates else {
+            effectiveCandidates.filter { c -> matchesCandidateSearch(c, searchQuery) }
         }
     }
 
@@ -377,7 +397,8 @@ fun CandidatesScreen(
                         onAiClick = {
                             selectedAiCandidate = candidate
                         },
-                        onCopy = { copy("${candidate.firstName.ifBlank { "Candidate" }}'s details", it) }
+                        onCopy = { copy("${candidate.firstName.ifBlank { "Candidate" }}'s details", it) },
+                        onToggleSave = { onToggleSave(candidate) }
                     )
                 }
             }
@@ -404,9 +425,13 @@ private fun CandidateCard(
     candidate: CachedCandidateProfile,
     onBadgeClick: (CandidateFilter) -> Unit,
     onAiClick: () -> Unit = {},
-    onCopy: (String) -> Unit
+    onCopy: (String) -> Unit,
+    onToggleSave: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val candidateFallbackName = stringResource(R.string.candidate_fallback_name)
+    val copyPhotoUrlLabel = stringResource(R.string.copy_photo_url)
+    val toastCopiedFormat = stringResource(R.string.toast_copied_format)
     var showAllDetails by remember { mutableStateOf(false) }
 
     UnhingeDoubleBezelCard(
@@ -427,7 +452,7 @@ private fun CandidateCard(
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Text(
-                            text = candidate.firstName.ifBlank { stringResource(R.string.candidate_fallback_name) },
+                            text = candidate.firstName.ifBlank { candidateFallbackName },
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
@@ -546,11 +571,11 @@ private fun CandidateCard(
             if (validPhotos.isNotEmpty()) {
                 HingePhotoCarousel(
                     photos = validPhotos,
-                    candidateName = candidate.firstName.ifBlank { stringResource(R.string.candidate_fallback_name) },
+                    candidateName = candidate.firstName.ifBlank { candidateFallbackName },
                     onCopyUrl = {
                         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        cm.setPrimaryClip(ClipData.newPlainText(context.getString(R.string.copy_photo_url), it))
-                        Toast.makeText(context, context.getString(R.string.toast_copied_format, context.getString(R.string.copy_photo_url)), Toast.LENGTH_SHORT).show()
+                        cm.setPrimaryClip(ClipData.newPlainText(copyPhotoUrlLabel, it))
+                        Toast.makeText(context, java.lang.String.format(toastCopiedFormat, copyPhotoUrlLabel), Toast.LENGTH_SHORT).show()
                     },
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -774,7 +799,7 @@ private fun CandidateCard(
                         onClick = {
                             val parts = mutableListOf<String>()
                             val header = buildString {
-                                append(candidate.firstName.ifBlank { context.getString(R.string.candidate_fallback_name) })
+                                append(candidate.firstName.ifBlank { candidateFallbackName })
                                 if (candidate.age > 0) append(", ${candidate.age}")
                                 if (candidate.height > 0) append(" (${candidate.height}cm)")
                                 val status = if (candidate.isLiveInFeed) "In Feed" else "Archived"
@@ -805,6 +830,18 @@ private fun CandidateCard(
                         modifier = Modifier.size(34.dp)
                     ) {
                         Icon(Icons.Default.ContentCopy, contentDescription = stringResource(R.string.cd_copy_profile), modifier = Modifier.size(17.dp))
+                    }
+
+                    IconButton(
+                        onClick = onToggleSave,
+                        modifier = Modifier.size(34.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (candidate.isSaved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                            contentDescription = stringResource(if (candidate.isSaved) R.string.cd_unsave_candidate else R.string.cd_save_candidate),
+                            tint = if (candidate.isSaved) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(19.dp)
+                        )
                     }
                 }
             }

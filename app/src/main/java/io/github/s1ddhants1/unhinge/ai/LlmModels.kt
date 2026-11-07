@@ -2,9 +2,6 @@ package io.github.s1ddhants1.unhinge.ai
 
 import io.github.s1ddhants1.unhinge.Consts
 
-/**
- * Standardized carrier for dating prompt reply generation requests across all LLM protocols.
- */
 data class WingmanLlmRequest(
     val text: String,
     val apiKey: String,
@@ -26,9 +23,6 @@ data class WingmanLlmRequest(
         get() = promptCount ?: text.lines().size
 }
 
-/**
- * Standardized carrier for freeform chat and profile inquiry requests across all LLM protocols.
- */
 data class ChatLlmRequest(
     val userPrompt: String,
     val systemPrompt: String,

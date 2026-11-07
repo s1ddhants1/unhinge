@@ -6,10 +6,6 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 
-/**
- * Shared HTTP client and network utilities for all LLM protocol implementations.
- * Eliminates redundant OkHttpClient instances and disparate timeout configurations.
- */
 object AiHttpClient {
     val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 

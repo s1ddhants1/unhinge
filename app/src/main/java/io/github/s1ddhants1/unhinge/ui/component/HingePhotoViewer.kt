@@ -85,6 +85,8 @@ fun HingePhotoViewer(
     val pagerState = rememberPagerState(initialPage = safeInitialIndex) { validPhotos.size }
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
+    val copyPhotoUrlLabel = stringResource(R.string.copy_photo_url)
+    val toastCopiedFormat = stringResource(R.string.toast_copied_format)
 
     var zoomScale by remember { mutableFloatStateOf(1f) }
     var panOffset by remember { mutableStateOf(Offset.Zero) }
@@ -476,10 +478,10 @@ fun HingePhotoViewer(
                             modifier = Modifier.bouncyClickable {
                                 onCopyUrl?.invoke(activeUrl) ?: run {
                                     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                    cm.setPrimaryClip(ClipData.newPlainText(context.getString(R.string.copy_photo_url), activeUrl))
+                                    cm.setPrimaryClip(ClipData.newPlainText(copyPhotoUrlLabel, activeUrl))
                                     Toast.makeText(
                                         context,
-                                        context.getString(R.string.toast_copied_format, context.getString(R.string.copy_photo_url)),
+                                        java.lang.String.format(toastCopiedFormat, copyPhotoUrlLabel),
                                         Toast.LENGTH_SHORT
                                     ).show()
                                 }

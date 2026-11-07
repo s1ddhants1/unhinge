@@ -25,7 +25,9 @@ enum class LlmProtocol(val wireId: String) {
         fun infer(provider: String, apiKey: String): LlmProtocol =
             when {
                 provider.equals("Zen", ignoreCase = true) -> OpenAiChatCompletions
+                provider.equals("Claude", ignoreCase = true) -> AnthropicMessages
                 provider.equals("Gemini", ignoreCase = true) -> GoogleOpenAi
+                apiKey.trim().startsWith("sk-ant-") -> AnthropicMessages
                 apiKey.trim().startsWith("AIzaSy") -> GoogleOpenAi
                 else -> OpenAiChatCompletions
             }

@@ -45,26 +45,6 @@ data class ProfileAuditReport(
 
 @Keep
 @Serializable
-data class BoostInsight(
-    val availableBoosts: Int = 0,
-    val lastBoostTimestamp: Long = 0L,
-    val optimalDay: String = "Sunday",
-    val optimalHourRange: String = "7:00 PM – 9:30 PM",
-    val historyCount: Int = 0,
-    val lastUpdated: Long = 0L
-)
-
-@Keep
-@Serializable
-data class FreshStartStatus(
-    val isEligible: Boolean = false,
-    val lastCheckTimestamp: Long = 0L,
-    val resetHistoryCount: Int = 0,
-    val lastResetTimestamp: Long = 0L
-)
-
-@Keep
-@Serializable
 data class SessionBehaviorMetrics(
     val totalSessions: Int = 0,
     val averageDwellSeconds: Long = 0L,

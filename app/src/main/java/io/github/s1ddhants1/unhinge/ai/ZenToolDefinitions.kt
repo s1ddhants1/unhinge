@@ -10,10 +10,6 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
-/**
- * OpenCode CLI tool definitions required for free-tier gateway emulation on Zen endpoints.
- * Extracted from ZenRouter to keep routing logic clean and maintainable.
- */
 object ZenToolDefinitions {
     private val json = Json { ignoreUnknownKeys = true }
 

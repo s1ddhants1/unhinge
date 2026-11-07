@@ -54,9 +54,11 @@ import io.github.s1ddhants1.unhinge.util.attempt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import android.annotation.SuppressLint
 import java.lang.ref.WeakReference
 import java.util.WeakHashMap
 
+@SuppressLint("SoonBlockedPrivateApi", "DiscouragedPrivateApi", "InternalInsetResource")
 object HostAppAiFab {
     internal const val TAG_FAB_CONTAINER = "unhinge_host_fab_container"
     internal const val TAG_FAB_BUTTON = "unhinge_host_fab_button"
@@ -598,7 +600,6 @@ object HostAppAiFab {
             getOrCreateCandidateEntries(activeCandidate)
         } else emptyList()
 
-        // Asynchronously trigger batch generation for all prompts of active candidate so each prompt has its opener ready
         if (activeCandidate != null && candidateEntries.isNotEmpty() && prefs.showHostAppFab) {
             val needsGeneration = candidateEntries.any { it.suggestedReplyFlow.value.isNullOrBlank() && !it.isGeneratingFlow.value }
             val isAiReady = !AiWingmanHelper.isApiKeyRequired(prefs.aiProvider, prefs.openRouterModel) || prefs.openRouterApiKey.isNotBlank()
@@ -644,13 +645,11 @@ object HostAppAiFab {
             updateLikesPill(container, HostLikesReader.getLikesInfo(activity))
         }
 
-        // Detect prompt sections on screen in feed mode
         val detectedSections = if (isFeedMode && commentInfo == null) {
             findPromptSections(container.rootView, activeCandidate, candidateEntries)
         } else emptyList()
         currentPromptSections = detectedSections
 
-        // Manage in-section ComposeViews for each prompt section
         for (i in 0 until MAX_SECTION_CARDS) {
             val cardTag = "$TAG_PROMPT_SECTION_CARD_PREFIX$i"
             var card = container.findViewWithTag<ComposeView>(cardTag)
@@ -860,7 +859,6 @@ object HostAppAiFab {
         val inlineCard = container.findViewWithTag<View>(TAG_INLINE_OPENER_CARD)
         if (inlineCard != null && inlineCard.visibility == View.VISIBLE) {
             if (commentInfo != null) {
-                // In comment mode: Render directly on the add comment textbox!
                 val commentRect = commentInfo.commentInputRect
                 val targetWidth = commentRect.width().coerceAtLeast((200 * density).toInt())
                 inlineCard.layoutParams.width = targetWidth
@@ -902,7 +900,6 @@ object HostAppAiFab {
             }
         }
 
-        // In feed mode without comment box: position each prompt section card below its prompt section!
         if (commentInfo == null && currentPromptSections.isNotEmpty()) {
             val horizontalMargin = (16 * density).toInt()
             val cardWidth = (containerWidth - (horizontalMargin * 2)).coerceAtLeast((200 * density).toInt())

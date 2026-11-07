@@ -2,10 +2,6 @@ package io.github.s1ddhants1.unhinge.ai
 
 import io.github.s1ddhants1.unhinge.Consts
 
-/**
- * Endpoint, base URL, and protocol resolver for LLM providers.
- * Decoupled from coordinator logic to ensure centralized, easily testable routing rules.
- */
 object LlmProtocolRouter {
 
     fun isApiKeyRequired(provider: String, model: String): Boolean {
@@ -40,7 +36,11 @@ object LlmProtocolRouter {
             return ZenRouter.resolve(model)
         }
         val protocol = LlmProtocol.infer(provider, apiKey)
-        val effectiveProvider = if (protocol == LlmProtocol.GoogleOpenAi) "Gemini" else provider
+        val effectiveProvider = when (protocol) {
+            LlmProtocol.GoogleOpenAi -> "Gemini"
+            LlmProtocol.AnthropicMessages -> "Claude"
+            else -> provider
+        }
 
         val effectiveBaseUrl = when {
             effectiveProvider.equals("Gemini", ignoreCase = true) && (baseUrl.isBlank() || baseUrl.contains("openrouter.ai")) ->
@@ -61,12 +61,15 @@ object LlmProtocolRouter {
         }
 
         val sanitizedModel = sanitizeModelId(model)
-        val effectiveModel = if (effectiveProvider.equals("Gemini", ignoreCase = true) && (sanitizedModel.isBlank() || sanitizedModel.contains("gemini-2.5-flash-lite"))) {
-            "gemini-flash-lite-latest"
-        } else if (sanitizedModel.isBlank() || sanitizedModel == Consts.LEGACY_OPENROUTER_DEFAULT_MODEL) {
-            Consts.OPENROUTER_DEFAULT_MODEL
-        } else {
-            sanitizedModel
+        val effectiveModel = when {
+            effectiveProvider.equals("Gemini", ignoreCase = true) && (sanitizedModel.isBlank() || sanitizedModel.contains("gemini-2.5-flash-lite")) ->
+                "gemini-flash-lite-latest"
+            effectiveProvider.equals("Claude", ignoreCase = true) && sanitizedModel.isBlank() ->
+                "claude-3-5-sonnet-latest"
+            sanitizedModel.isBlank() || sanitizedModel == Consts.LEGACY_OPENROUTER_DEFAULT_MODEL ->
+                Consts.OPENROUTER_DEFAULT_MODEL
+            else ->
+                sanitizedModel
         }
 
         return Triple(protocol, effectiveBaseUrl, effectiveModel)

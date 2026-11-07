@@ -69,6 +69,11 @@ fun AiWingmanSettingsPage(
     prefs: PreferencesManager
 ) {
     val context = LocalContext.current
+    val zenSyncInProgressMsg = stringResource(R.string.zen_sync_in_progress)
+    val zenSyncSuccessFormat = stringResource(R.string.zen_sync_success_format)
+    val zenSyncFailureFormat = stringResource(R.string.zen_sync_failure)
+    val promptSyncSuccessMsg = stringResource(R.string.ai_remote_sync_success)
+    val promptSyncFailureFormat = stringResource(R.string.ai_remote_sync_failure)
     var aiProvider by rememberSaveable { mutableStateOf(prefs.aiProvider) }
     var openRouterApiKey by rememberSaveable { mutableStateOf(prefs.openRouterApiKey) }
     var openRouterBaseUrl by rememberSaveable { mutableStateOf(prefs.openRouterBaseUrl) }
@@ -660,15 +665,15 @@ fun AiWingmanSettingsPage(
                     onClick = {
                         if (!isSyncingCatalog) {
                             isSyncingCatalog = true
-                            Toast.makeText(context, context.getString(R.string.zen_sync_in_progress), Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, zenSyncInProgressMsg, Toast.LENGTH_SHORT).show()
                             coroutineScope.launch {
                                 val result = ZenRouter.syncCatalogAndVersion(prefs, force = true)
                                 isSyncingCatalog = false
                                 if (result.success) {
                                     Toast.makeText(
                                         context,
-                                        context.getString(
-                                            R.string.zen_sync_success_format,
+                                        java.lang.String.format(
+                                            zenSyncSuccessFormat,
                                             result.version,
                                             result.freeCount,
                                             result.totalCount,
@@ -678,8 +683,8 @@ fun AiWingmanSettingsPage(
                                 } else {
                                     Toast.makeText(
                                         context,
-                                        context.getString(
-                                            R.string.zen_sync_failure,
+                                        java.lang.String.format(
+                                            zenSyncFailureFormat,
                                             result.errorMessage ?: "Unknown error"
                                         ),
                                         Toast.LENGTH_LONG
@@ -763,14 +768,14 @@ fun AiWingmanSettingsPage(
                                     prefs.aiOpenerPromptTemplate = newTemplate
                                     Toast.makeText(
                                         context,
-                                        context.getString(R.string.ai_remote_sync_success),
+                                        promptSyncSuccessMsg,
                                         Toast.LENGTH_SHORT
                                     ).show()
                                 },
                                 onFailure = { err ->
                                     Toast.makeText(
                                         context,
-                                        context.getString(R.string.ai_remote_sync_failure, err.message ?: "Network error"),
+                                        java.lang.String.format(promptSyncFailureFormat, err.message ?: "Network error"),
                                         Toast.LENGTH_LONG
                                     ).show()
                                 }

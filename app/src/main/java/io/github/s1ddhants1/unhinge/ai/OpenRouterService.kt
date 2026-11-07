@@ -1,10 +1,6 @@
 package io.github.s1ddhants1.unhinge.ai
 
 import io.github.s1ddhants1.unhinge.Consts
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -18,54 +14,10 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.put
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
-import java.util.concurrent.TimeUnit
 
 const val OpenRouterDefaultBaseUrl = "https://openrouter.ai/api/v1/chat/completions"
 
 private val wingmanJson = Json { ignoreUnknownKeys = true }
-
-object OpenRouterService {
-    suspend fun generate(
-        text: String,
-        apiKey: String,
-        baseUrl: String,
-        model: String,
-        maxRetries: Int = 3,
-        customSystemPrompt: String = "",
-        profileBlock: String = "",
-        avoidReplies: List<String> = emptyList(),
-        temperature: Float = Consts.DEFAULT_AI_TEMPERATURE,
-        topP: Float = Consts.DEFAULT_AI_TOP_P,
-        structured: Boolean = true,
-        reasoningEffort: String = Consts.DEFAULT_AI_REASONING_EFFORT,
-        promptTemplate: String? = null,
-        directionalStimulus: String = "",
-        promptCount: Int? = null,
-    ): Result<List<String>> =
-        OpenAiChatClient.generate(
-            WingmanLlmRequest(
-                text = text,
-                apiKey = apiKey,
-                baseUrl = baseUrl,
-                model = model,
-                maxRetries = maxRetries,
-                customSystemPrompt = customSystemPrompt,
-                profileBlock = profileBlock,
-                avoidReplies = avoidReplies,
-                temperature = temperature,
-                topP = topP,
-                structured = structured,
-                reasoningEffort = reasoningEffort,
-                promptTemplate = promptTemplate,
-                directionalStimulus = directionalStimulus,
-                promptCount = promptCount,
-            )
-        )
-}
 
 internal fun buildGenerationRequest(
     text: String,

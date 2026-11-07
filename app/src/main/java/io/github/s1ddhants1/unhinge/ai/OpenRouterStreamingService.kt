@@ -3,9 +3,6 @@ package io.github.s1ddhants1.unhinge.ai
 import io.github.s1ddhants1.unhinge.Consts
 import kotlinx.coroutines.flow.Flow
 
-/**
- * Backward-compatible facade delegating to the unified [OpenAiChatClient].
- */
 object OpenRouterStreamingService {
 
     fun streamGeneration(

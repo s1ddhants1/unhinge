@@ -21,10 +21,6 @@ import kotlinx.serialization.json.put
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 
-/**
- * Unified client for OpenAI Chat Completions wire protocol (OpenRouter, OpenAI, Zen, Perplexity, xAI, Mistral).
- * Unifies non-streaming generation, streaming opener generation, and single-turn chat streaming.
- */
 object OpenAiChatClient : LlmClient {
 
     override suspend fun generate(request: WingmanLlmRequest): Result<List<String>> =

@@ -19,10 +19,6 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-/**
- * High-level coordinator orchestrating dating prompt and match chat reply generation.
- * Manages request lifecycles, streaming state transitions, in-memory caching, and fallback policies.
- */
 object AiWingmanHelper {
     private val _status = MutableStateFlow<WingmanStatus>(WingmanStatus.Idle)
     val status: StateFlow<WingmanStatus> = _status.asStateFlow()
@@ -529,7 +525,6 @@ object AiWingmanHelper {
                             }
                         }
                         is OpenRouterStreamingService.ChatStreamChunk.Complete -> {
-                            // Handled after collection
                         }
                         is OpenRouterStreamingService.ChatStreamChunk.Error -> {
                             hasError = true

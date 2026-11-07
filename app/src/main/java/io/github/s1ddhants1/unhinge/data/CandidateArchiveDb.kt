@@ -308,7 +308,11 @@ class CandidateArchiveDb(context: Context) : SQLiteOpenHelper(context, "candidat
                             incomingComment = c.getString(37) ?: "",
                             incomingLikeType = c.getString(38) ?: "",
                             incomingTimestamp = c.getLong(39),
-                            lastActiveStatusId = if (c.isNull(40) || c.getInt(40) == 0) null else c.getInt(40)
+                            lastActiveStatusId = if (c.isNull(40) || c.getInt(40) == 0) null else c.getInt(40),
+                            isSaved = c.getInt(41) == 1,
+                            pronouns = c.getString(42) ?: "",
+                            languagesSpoken = c.getString(43) ?: "",
+                            screenshotProtected = c.getInt(44) == 1
                         )
                     )
                 }
@@ -386,6 +390,11 @@ class CandidateArchiveDb(context: Context) : SQLiteOpenHelper(context, "candidat
                         put("lastSeenTimestamp", if (c.lastSeenTimestamp > 0) c.lastSeenTimestamp else now)
                         put("photosJson", json.encodeToString(c.photos))
                         put("promptsJson", json.encodeToString(c.prompts))
+                        put("lastActiveStatusId", c.lastActiveStatusId ?: 0)
+                        put("isSaved", if (c.isSaved) 1 else 0)
+                        put("pronouns", c.pronouns)
+                        put("languagesSpoken", c.languagesSpoken)
+                        put("screenshotProtected", if (c.screenshotProtected) 1 else 0)
                     }
                     val rowId = db.insertWithOnConflict("archived_candidates", null, values, SQLiteDatabase.CONFLICT_REPLACE)
                     if (rowId != -1L) count++
@@ -395,5 +404,21 @@ class CandidateArchiveDb(context: Context) : SQLiteOpenHelper(context, "candidat
             Log.e(Consts.TAG, "CandidateArchiveDb: Error during upsertCandidates", e)
         }
         return count
+    }
+
+    @Synchronized
+    fun toggleSaved(userId: String): Boolean {
+        val db = writableDatabase
+        var newState = true
+        db.rawQuery("SELECT isSaved FROM archived_candidates WHERE userId = ?", arrayOf(userId)).use { cursor ->
+            if (cursor.moveToNext()) {
+                newState = cursor.getInt(0) != 1
+            }
+        }
+        val cv = ContentValues().apply {
+            put("isSaved", if (newState) 1 else 0)
+        }
+        db.update("archived_candidates", cv, "userId = ?", arrayOf(userId))
+        return newState
     }
 }

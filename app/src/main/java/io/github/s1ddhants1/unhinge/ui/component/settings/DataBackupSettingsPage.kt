@@ -38,6 +38,13 @@ fun DataBackupSettingsPage(
     onDataRestored: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val exportOkMsg = stringResource(R.string.backup_export_ok)
+    val exportFailMsg = stringResource(R.string.backup_export_fail)
+    val readFailMsg = stringResource(R.string.backup_read_fail)
+    val restorePrefix = stringResource(R.string.backup_restore_prefix)
+    val restoreSettingsMsg = stringResource(R.string.backup_restore_settings)
+    val importFailMsg = stringResource(R.string.backup_import_fail)
+    val clearedMsg = stringResource(R.string.backup_cleared)
     val scope = rememberCoroutineScope()
     val archiveDb = remember { CandidateArchiveDb(context) }
     var archiveCount by remember { mutableIntStateOf(archiveDb.getArchiveCount()) }
@@ -79,9 +86,9 @@ fun DataBackupSettingsPage(
                     BackupRestoreManager.writeToUri(context, uri, jsonString)
                 }
                 if (success) {
-                    Toast.makeText(context, context.getString(R.string.backup_export_ok), Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, exportOkMsg, Toast.LENGTH_SHORT).show()
                 } else {
-                    Toast.makeText(context, context.getString(R.string.backup_export_fail), Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, exportFailMsg, Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -96,7 +103,7 @@ fun DataBackupSettingsPage(
                     BackupRestoreManager.readFromUri(context, uri)
                 }
                 if (jsonString.isNullOrBlank()) {
-                    Toast.makeText(context, context.getString(R.string.backup_read_fail), Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, readFailMsg, Toast.LENGTH_SHORT).show()
                     return@launch
                 }
                 val result = withContext(Dispatchers.IO) {
@@ -106,13 +113,13 @@ fun DataBackupSettingsPage(
                     archiveCount = withContext(Dispatchers.IO) { archiveDb.getArchiveCount() }
                     onDataRestored()
                     val msg = buildString {
-                        append(context.getString(R.string.backup_restore_prefix))
-                        if (result.settingsRestored) append(context.getString(R.string.backup_restore_settings))
+                        append(restorePrefix)
+                        if (result.settingsRestored) append(restoreSettingsMsg)
                         if (result.candidatesImported > 0) append(context.resources.getQuantityString(R.plurals.backup_restore_candidates, result.candidatesImported, result.candidatesImported))
                     }
                     Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                 } else {
-                    val errorMsg = result.errorMessage ?: context.getString(R.string.backup_import_fail)
+                    val errorMsg = result.errorMessage ?: importFailMsg
                     Toast.makeText(context, errorMsg, Toast.LENGTH_LONG).show()
                 }
             }
@@ -133,7 +140,7 @@ fun DataBackupSettingsPage(
                             }
                             archiveCount = 0
                             onDataRestored()
-                            Toast.makeText(context, context.getString(R.string.backup_cleared), Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, clearedMsg, Toast.LENGTH_SHORT).show()
                             showClearDialog = false
                         }
                     }

@@ -111,6 +111,8 @@ class MainActivity : ComponentActivity() {
             }
 
             val topBarTitle = if (!showSettings) stringResource(currentTab.titleRes) else (settingsSubpage?.let { stringResource(it.titleRes) } ?: stringResource(R.string.nav_settings_menu))
+            val quickForceStoppedMsg = stringResource(R.string.quick_force_stopped)
+            val quickOpenedSettingsMsg = stringResource(R.string.quick_opened_settings)
 
             Theme(
                 themeMode = prefs.themeMode,
@@ -180,8 +182,8 @@ class MainActivity : ComponentActivity() {
                                         coroutineScope.launch {
                                             val stopped = AppActions.forceStopTargetApp(context)
                                             snackbarHostState.showSnackbar(
-                                                if (stopped) context.getString(R.string.quick_force_stopped)
-                                                else context.getString(R.string.quick_opened_settings)
+                                                if (stopped) quickForceStoppedMsg
+                                                else quickOpenedSettingsMsg
                                             )
                                         }
                                     },

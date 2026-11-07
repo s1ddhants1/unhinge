@@ -16,6 +16,16 @@ class LlmProtocolTest {
     }
 
     @Test
+    fun claudeBrandResolvesToAnthropicProtocol() {
+        assertEquals(LlmProtocol.AnthropicMessages, LlmProtocol.infer("Claude", "sk-anything"))
+    }
+
+    @Test
+    fun claudeKeyRoutesToAnthropicEvenWhenBrandLags() {
+        assertEquals(LlmProtocol.AnthropicMessages, LlmProtocol.infer("OpenRouter", "  sk-ant-api03-xyz"))
+    }
+
+    @Test
     fun otherBrandsDefaultToOpenAiCompat() {
         assertEquals(LlmProtocol.OpenAiChatCompletions, LlmProtocol.infer("OpenRouter", "sk-abc"))
         assertEquals(LlmProtocol.OpenAiChatCompletions, LlmProtocol.infer("Custom", ""))
@@ -45,5 +55,18 @@ class LlmProtocolTest {
     fun googleDefaultEndpointIsOpenAiCompatBridge() {
         assertTrue(LlmProtocol.GoogleOpenAi.defaultEndpoint().contains("generativelanguage.googleapis.com"))
         assertTrue(LlmProtocol.GoogleOpenAi.defaultEndpoint().endsWith("/v1beta/openai/chat/completions"))
+    }
+
+    @Test
+    fun resolveEffectiveEndpointForClaude() {
+        val (protocol, endpoint, model) = LlmProtocolRouter.resolveEffectiveEndpoint(
+            provider = "Claude",
+            apiKey = "sk-ant-test",
+            baseUrl = "",
+            model = ""
+        )
+        assertEquals(LlmProtocol.AnthropicMessages, protocol)
+        assertEquals("https://api.anthropic.com/v1/messages", endpoint)
+        assertEquals("claude-3-5-sonnet-latest", model)
     }
 }

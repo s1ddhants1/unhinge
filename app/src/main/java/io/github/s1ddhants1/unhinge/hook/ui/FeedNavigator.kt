@@ -207,7 +207,6 @@ object FeedNavigator {
     fun triggerHingeRefresh(activity: Activity? = null) {
         val act = activity ?: HostAppAiFab.currentActivityRef?.get()
 
-        // 1. Room InvalidationTracker table observer trigger across all discover-related tables
         val tracker = invalidationTrackerRef?.get()
         if (tracker != null) {
             try {
@@ -226,7 +225,6 @@ object FeedNavigator {
             }
         }
 
-        // 2. Touch discover_subject in writable DB
         val db = getWritableDb(act)
         if (db != null && db.isOpen && !db.isReadOnly) {
             isInternalQuery.set(true)
@@ -238,30 +236,16 @@ object FeedNavigator {
             }
         }
 
-        // 3. Dispatch native refresh mechanisms on the UI thread of the active Hinge Activity
         if (act != null) {
             act.runOnUiThread {
                 attempt("trigger Hinge native feed refresh", silent = false) {
-                    var refreshed = false
-
-                    // Layer A: DiscoverActor Direct Event Dispatch (defpackage.w65.a / ReloadPotential)
                     val discoverFragment = findDiscoverFragment(act)
                     if (discoverFragment != null) {
-                        refreshed = dispatchReloadPotential(discoverFragment)
-                        if (refreshed) {
-                            Log.i(Consts.TAG, "FeedNavigator: Successfully triggered DiscoverActor ReloadPotential event")
-                        }
-
-                        // Also attempt capturing RoomDatabase from repository if not already captured
                         attempt("capture Room from DiscoverFragment", silent = true) {
                             captureRoomFromFragment(discoverFragment)
                         }
-
-                        // Layer B: Fragment Re-attachment with action=refresh parameter
                         reAttachDiscoverFragment(discoverFragment)
                     }
-
-                    // Layer C: Discover Bottom Navigation Tab Trigger / Reselect
                     triggerDiscoverTabReselect(act)
                 }
             }
@@ -295,105 +279,6 @@ object FeedNavigator {
                 }
             }
         } catch (_: Throwable) {}
-        return null
-    }
-
-    fun dispatchReloadPotential(fragment: Any): Boolean {
-        return attempt("dispatch ReloadPotential event", silent = true) {
-            val classLoader = fragment.javaClass.classLoader ?: return@attempt false
-            val reloadEvent = resolveReloadPotentialEvent(classLoader)
-
-            val viewModel = resolveDiscoverViewModel(fragment) ?: return@attempt false
-            val controller = resolveDiscoverController(viewModel) ?: return@attempt false
-
-            if (reloadEvent != null) {
-                // Method U(n75) on controller (u85)
-                val uMethod = controller.javaClass.methods.firstOrNull {
-                    it.name == "U" && it.parameterTypes.size == 1
-                }
-                if (uMethod != null) {
-                    uMethod.invoke(controller, reloadEvent)
-                    return@attempt true
-                }
-
-                // Field C1 (eea) on controller (u85)
-                val c1Field = controller.javaClass.fields.firstOrNull { it.name == "C1" }
-                    ?: controller.javaClass.declaredFields.firstOrNull { it.name == "C1" }?.apply { isAccessible = true }
-                val c1 = c1Field?.get(controller)
-                if (c1 != null) {
-                    val fMethod = c1.javaClass.methods.firstOrNull {
-                        it.name == "f" && it.parameterTypes.size == 1
-                    }
-                    if (fMethod != null) {
-                        fMethod.invoke(c1, reloadEvent)
-                        return@attempt true
-                    }
-                }
-            }
-            false
-        } ?: false
-    }
-
-    private fun resolveReloadPotentialEvent(classLoader: ClassLoader): Any? {
-        // Direct known R8 class in target Hinge build
-        try {
-            val clazz = classLoader.loadClass("defpackage.w65")
-            val instance = clazz.getField("a").get(null)
-            if (instance != null) return instance
-        } catch (_: Throwable) {}
-
-        // Obfuscation fallback: scan common event classes extending n75 or returning "ReloadPotential"
-        for (className in listOf("defpackage.w65", "defpackage.v65", "defpackage.t65", "defpackage.w55")) {
-            try {
-                val clazz = classLoader.loadClass(className)
-                val instance = clazz.getField("a").get(null)
-                if (instance?.toString() == "ReloadPotential") return instance
-            } catch (_: Throwable) {}
-        }
-        return null
-    }
-
-    private fun resolveDiscoverViewModel(fragment: Any): Any? {
-        try {
-            val y0Method = fragment.javaClass.methods.firstOrNull { it.name == "y0" }
-            if (y0Method != null) {
-                return y0Method.invoke(fragment)
-            }
-        } catch (_: Throwable) {}
-
-        try {
-            val o1Field = fragment.javaClass.fields.firstOrNull { it.name == "O1" }
-                ?: fragment.javaClass.declaredFields.firstOrNull { it.name == "O1" }?.apply { isAccessible = true }
-            val lazyVal = o1Field?.get(fragment)
-            if (lazyVal != null) {
-                val getValMethod = lazyVal.javaClass.methods.firstOrNull { it.name == "getValue" }
-                if (getValMethod != null) {
-                    return getValMethod.invoke(lazyVal)
-                }
-            }
-        } catch (_: Throwable) {}
-
-        return null
-    }
-
-    private fun resolveDiscoverController(viewModel: Any): Any? {
-        try {
-            val eField = viewModel.javaClass.fields.firstOrNull { it.name == "e" }
-                ?: viewModel.javaClass.declaredFields.firstOrNull { it.name == "e" }?.apply { isAccessible = true }
-            val candidate = eField?.get(viewModel)
-            if (candidate != null) return candidate
-        } catch (_: Throwable) {}
-
-        for (f in viewModel.javaClass.declaredFields) {
-            try {
-                f.isAccessible = true
-                val candidate = f.get(viewModel) ?: continue
-                if (candidate.javaClass.methods.any { it.name == "U" && it.parameterTypes.size == 1 } ||
-                    candidate.javaClass.declaredFields.any { it.name == "C1" }) {
-                    return candidate
-                }
-            } catch (_: Throwable) {}
-        }
         return null
     }
 
@@ -436,25 +321,18 @@ object FeedNavigator {
 
     private fun captureRoomFromFragment(fragment: Any) {
         if (invalidationTrackerRef?.get() != null) return
-        val viewModel = resolveDiscoverViewModel(fragment) ?: return
-        for (field in viewModel.javaClass.declaredFields) {
+        for (field in fragment.javaClass.declaredFields) {
             try {
                 field.isAccessible = true
-                val repo = field.get(viewModel) ?: continue
-                for (repoField in repo.javaClass.declaredFields) {
-                    try {
-                        repoField.isAccessible = true
-                        val obj = repoField.get(repo) ?: continue
-                        val trackerMethod = obj.javaClass.methods.firstOrNull { it.name == "getInvalidationTracker" }
-                        val tracker = trackerMethod?.invoke(obj)
-                            ?: obj.javaClass.declaredFields.firstOrNull { it.name == "mInvalidationTracker" }?.apply { isAccessible = true }?.get(obj)
-                        if (tracker != null) {
-                            invalidationTrackerRef = WeakReference(tracker)
-                            roomDbRef = WeakReference(obj)
-                            Log.i(Consts.TAG, "FeedNavigator: Captured Room InvalidationTracker from repository")
-                            return
-                        }
-                    } catch (_: Throwable) {}
+                val obj = field.get(fragment) ?: continue
+                val trackerMethod = obj.javaClass.methods.firstOrNull { it.name == "getInvalidationTracker" }
+                val tracker = trackerMethod?.invoke(obj)
+                    ?: obj.javaClass.declaredFields.firstOrNull { it.name == "mInvalidationTracker" }?.apply { isAccessible = true }?.get(obj)
+                if (tracker != null) {
+                    invalidationTrackerRef = WeakReference(tracker)
+                    roomDbRef = WeakReference(obj)
+                    Log.i(Consts.TAG, "FeedNavigator: Captured Room InvalidationTracker from fragment")
+                    return
                 }
             } catch (_: Throwable) {}
         }
@@ -466,7 +344,6 @@ object FeedNavigator {
             val screenHeight = activity.resources.displayMetrics.heightPixels
             val screenWidth = activity.resources.displayMetrics.widthPixels
 
-            // 1. Accessibility click on "Discover" node
             val provider = decor.accessibilityNodeProvider
             if (provider != null) {
                 val clicked = clickTabNode(provider, AccessibilityNodeProvider.HOST_VIEW_ID, "Discover")
@@ -476,7 +353,6 @@ object FeedNavigator {
                 }
             }
 
-            // 2. Synthetic tap fallback on Discover tab coordinates
             val bottomNavTop = HostAppAiFab.findBottomNavTop(decor, screenHeight)
             if (bottomNavTop != null) {
                 val targetX = screenWidth * 0.10f

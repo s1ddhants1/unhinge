@@ -71,6 +71,23 @@ object HostUndoHook : HookHandler {
                     }
             }
 
+            attempt("hook SharedPreferencesImpl.getStringSet", silent = true) {
+                val getStringSetMethod = spClass.getDeclaredMethod("getStringSet", String::class.java, Set::class.java)
+                module.hookTracked(getStringSetMethod, idPrefix = "undo-sp-get-stringset", deoptimize = true)
+                    .intercept { chain ->
+                        val result = chain.proceed()
+                        val key = chain.args.getOrNull(0) as? String
+                        if (key == "USER_PERMISSIONS") {
+                            val set = (result as? Set<*>)?.filterIsInstance<String>()?.toMutableSet() ?: mutableSetOf()
+                            if (!set.contains("undo_skip_replenish_unlimited")) {
+                                set.add("undo_skip_replenish_unlimited")
+                                return@intercept set
+                            }
+                        }
+                        result
+                    }
+            }
+
             Log.i(Consts.TAG, "HostUndoHook: successfully installed SharedPreferences hooks for unlimited undos")
         }
     }

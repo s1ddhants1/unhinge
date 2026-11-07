@@ -64,13 +64,6 @@ import io.github.s1ddhants1.unhinge.util.ThemeMode
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-/**
- * Compact inline AI Opener Card styled directly after Hinge's native AI Prompt Feedback
- * and Analysis UI for own profile prompts.
- *
- * Renders inline over the host screen without modal dimming or fullscreen sheets.
- * Provides the generated opener, instant prompt cycling, one-tap copy, and prominent retry.
- */
 @Composable
 fun InlineAiOpenerCard(
     prefs: PreferencesManager,
@@ -289,7 +282,6 @@ fun InlineAiOpenerCard(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            // Header: Sparkle + title on left | Retry and Dismiss buttons on top right
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -334,7 +326,6 @@ fun InlineAiOpenerCard(
                     }
                 }
 
-                // Small retry button on top right corner of the card
                 Box(
                     modifier = Modifier
                         .size(26.dp)
@@ -362,7 +353,6 @@ fun InlineAiOpenerCard(
                 }
             }
 
-            // Opener body (tapping the opener copies it)
             Surface(
                 shape = RoundedCornerShape(10.dp),
                 color = if (isCopied) (if (isDark) Color(0xFF1E2E24) else Color(0xFFF0FDF4)) else commentBg,

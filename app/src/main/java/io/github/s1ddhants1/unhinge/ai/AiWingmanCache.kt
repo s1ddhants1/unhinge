@@ -2,10 +2,6 @@ package io.github.s1ddhants1.unhinge.ai
 
 import java.util.concurrent.ConcurrentHashMap
 
-/**
- * Thread-safe in-memory cache for generated dating prompt replies and match chat suggestions.
- * Prevents redundant LLM API calls and avoids re-querying models for identical profile contexts.
- */
 object AiWingmanCache {
     private val replyCache = ConcurrentHashMap<String, List<String>>()
 

@@ -56,19 +56,6 @@ object PrivacyOkHttpHook : HookHandler {
         return Consts.TELEMETRY_HOST_SUBSTRINGS.any { h.contains(it) }
     }
 
-    private fun getRequest(realCall: Any?): Any? {
-        if (realCall == null) return null
-        return try {
-            realCall.javaClass.getMethod("request").invoke(realCall)
-        } catch (_: Throwable) {
-            try {
-                val f = findField(realCall.javaClass, "originalRequest")
-                f.isAccessible = true
-                f.get(realCall)
-            } catch (_: Throwable) { null }
-        }
-    }
-
     private fun requestHost(realCall: Any?): String? {
         if (realCall == null) return null
         return try {

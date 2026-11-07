@@ -64,34 +64,6 @@ class CompanionModelsSerializationTest {
     }
 
     @Test
-    fun testBoostInsightSerialization() {
-        val original = BoostInsight(
-            availableBoosts = 1,
-            lastBoostTimestamp = 1750000000000L,
-            optimalDay = "Sunday",
-            optimalHourRange = "7:00 PM – 9:30 PM",
-            historyCount = 2,
-            lastUpdated = 1750000001000L
-        )
-        val str = json.encodeToString(original)
-        val decoded = json.decodeFromString<BoostInsight>(str)
-        assertEquals(original, decoded)
-    }
-
-    @Test
-    fun testFreshStartStatusSerialization() {
-        val original = FreshStartStatus(
-            isEligible = true,
-            lastCheckTimestamp = 1750000000000L,
-            resetHistoryCount = 1,
-            lastResetTimestamp = 1740000000000L
-        )
-        val str = json.encodeToString(original)
-        val decoded = json.decodeFromString<FreshStartStatus>(str)
-        assertEquals(original, decoded)
-    }
-
-    @Test
     fun testSessionBehaviorMetricsSerialization() {
         val original = SessionBehaviorMetrics(
             totalSessions = 12,

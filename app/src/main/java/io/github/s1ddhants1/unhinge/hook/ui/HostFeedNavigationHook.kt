@@ -190,25 +190,7 @@ object HostFeedNavigationHook : HookHandler {
                 }
         }
 
-        attempt<Unit>("hook SharedPreferences.getStringSet for unlimited undos", silent = true) {
-            val prefsClass = Class.forName("android.app.SharedPreferencesImpl", false, classLoader)
-            val getStringSetMethod = prefsClass.getDeclaredMethod("getStringSet", String::class.java, Set::class.java)
-            module.hookTracked(getStringSetMethod, idPrefix = "feed-nav-prefs-getstringset", deoptimize = true)
-                .intercept { chain ->
-                    val result = chain.proceed()
-                    val key = chain.args.getOrNull(0) as? String
-                    if (key == "USER_PERMISSIONS") {
-                        val set = (result as? Set<*>)?.filterIsInstance<String>()?.toMutableSet() ?: mutableSetOf()
-                        if (!set.contains("undo_skip_replenish_unlimited")) {
-                            set.add("undo_skip_replenish_unlimited")
-                            return@intercept set
-                        }
-                    }
-                    result
-                }
-        }
-
-        Log.i(Consts.TAG, "HostFeedNavigationHook installed on rawQuery + SQLiteStatement + SQLiteOpenHelper + SharedPreferences")
+        Log.i(Consts.TAG, "HostFeedNavigationHook installed on rawQuery + SQLiteStatement + SQLiteOpenHelper")
     }
 
     fun isHingeDatabase(db: SQLiteDatabase?): Boolean {

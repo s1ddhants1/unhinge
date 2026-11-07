@@ -44,11 +44,14 @@ fun ProfileRawScreen(
     val photos = data.playerMedia
     val answers = data.playerAnswers
     val ratingFallback = stringResource(R.string.profile_rating_default)
+    val toastCopiedFormat = stringResource(R.string.toast_copied_format)
+    val copyPhotoUrlLabel = stringResource(R.string.copy_photo_url)
+    val copyPromptAnswerLabel = stringResource(R.string.copy_prompt_answer)
 
     fun copy(label: String, text: String) {
         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         cm.setPrimaryClip(ClipData.newPlainText(label, text))
-        Toast.makeText(context, context.getString(R.string.toast_copied_format, label), Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, java.lang.String.format(toastCopiedFormat, label), Toast.LENGTH_SHORT).show()
     }
 
     Column(
@@ -252,7 +255,7 @@ fun ProfileRawScreen(
                 photos = validMedia.map { it.photoUrl },
                 captions = validMedia.map { it.promptCaption },
                 candidateName = if (t.firstName.isNotBlank()) stringResource(R.string.profile_title_format, t.firstName) else "",
-                onCopyUrl = { copy(context.getString(R.string.copy_photo_url), it) },
+                onCopyUrl = { copy(copyPhotoUrlLabel, it) },
                 modifier = Modifier.fillMaxWidth()
             )
         }
@@ -271,7 +274,7 @@ fun ProfileRawScreen(
                     PlayerAnswerCard(
                         answer = answer,
                         index = idx + 1,
-                        onCopy = { copy(context.getString(R.string.copy_prompt_answer), "${answer.questionText}: ${answer.responseText}") }
+                        onCopy = { copy(copyPromptAnswerLabel, "${answer.questionText}: ${answer.responseText}") }
                     )
                 }
             }

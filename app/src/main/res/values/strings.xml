@@ -68,45 +68,26 @@
     <string name="nav_label_profile">Profile</string>
     <string name="nav_settings_menu">Settings</string>
     <string name="cd_back">Back</string>
-    <string name="cd_options">Options</string>
     <string name="cd_candidates_tab">Candidates</string>
     <string name="cd_matches_tab">Matches</string>
     <string name="cd_home_tab">Home</string>
     <string name="cd_profile_tab">Profile</string>
     <string name="action_ok">OK</string>
     <string name="action_cancel">Cancel</string>
-    <string name="action_dismiss">Dismiss</string>
-    <string name="action_copy">Copy</string>
     <string name="action_copied">Copied!</string>
     <string name="action_copy_url">Copy URL</string>
     <string name="action_reset_to_default">Reset to default</string>
     <string name="action_clear_search">Clear Search</string>
     <string name="action_close">Close</string>
-    <string name="action_close_preview">Close Preview</string>
     <string name="action_reset_filters">Reset Filters</string>
     <string name="action_view_transcript">View Transcript</string>
     <string name="action_clear_archive">Clear Archive</string>
     <string name="toast_copied_format">Copied <xliff:g id="label" example="Profile">%1$s</xliff:g></string>
     <string name="search_candidates_hint">Search candidates, prompts, jobs, intent…</string>
     <string name="search_matches_hint">Search matches, messages, jobs…</string>
-    <string name="cd_filter_in_feed">In Feed filter options</string>
-    <string name="cd_filter_options">Filter options</string>
     <string name="cd_filter_active">Active Filter</string>
-    <string name="feed_both_format">Both (<xliff:g id="count" example="12">%1$d</xliff:g>)</string>
-    <string name="feed_discover_format">Discover (<xliff:g id="count" example="8">%1$d</xliff:g>)</string>
-    <string name="feed_standouts_format">Standouts (<xliff:g id="count" example="4">%1$d</xliff:g>)</string>
-    <string name="filter_in_feed_both">In Feed (<xliff:g id="count" example="12">%1$d</xliff:g>)</string>
-    <string name="filter_in_feed_discover">In Feed: Discover (<xliff:g id="count" example="8">%1$d</xliff:g>)</string>
-    <string name="filter_in_feed_standouts">In Feed: Standouts (<xliff:g id="count" example="4">%1$d</xliff:g>)</string>
-    <string name="filter_both_full">Both (Discover &amp; Standouts)</string>
-    <string name="filter_discover_feed">Discover Feed</string>
     <string name="filter_discover">Discover</string>
     <string name="filter_standouts">Standouts</string>
-    <string name="filter_more">More Filters</string>
-    <string name="filter_in_feed_reset_both">In Feed (Both)</string>
-    <string name="filter_in_feed_reset_discover">In Feed (Discover)</string>
-    <string name="filter_in_feed_reset_standouts">In Feed (Standouts)</string>
-    <string name="filter_feed_prefix">Feed:</string>
     <string name="filter_option_count_format"><xliff:g id="label" example="Liked You">%1$s</xliff:g> (<xliff:g id="count" example="5">%2$d</xliff:g>)</string>
     <string name="filter_all">All</string>
     <string name="filter_active_now">Active Now</string>
@@ -114,6 +95,9 @@
     <string name="filter_liked_you">Liked You</string>
     <string name="filter_liked">Liked</string>
     <string name="filter_passed">Passed</string>
+    <string name="filter_saved">Saved</string>
+    <string name="cd_save_candidate">Save candidate</string>
+    <string name="cd_unsave_candidate">Unsave candidate</string>
     <string name="filter_archived_past">Archived Past</string>
     <string name="filter_with_comment">With Comment</string>
     <string name="filter_in_feed">In Feed</string>
@@ -129,7 +113,6 @@
     <string name="empty_candidates_archived">No Archived Profiles</string>
     <string name="empty_candidates_default">No Profiles Matching Filter</string>
     <string name="empty_candidates_filter_desc">Try selecting another filter or clearing search.</string>
-    <string name="sort_label">Sort</string>
     <string name="sort_active_status">Active Status</string>
     <string name="sort_recent">Most Recent</string>
     <string name="sort_name">Name (A–Z)</string>
@@ -202,11 +185,8 @@
     <string name="profile_empty_prompts_desc">Answer records will appear here after syncing with local storage.</string>
     <string name="copy_photo_url">Photo URL</string>
     <string name="copy_prompt_answer">Prompt Answer</string>
-    <string name="cd_photo_full_preview">Full photo preview</string>
     <string name="cd_photo_index_format">Photo <xliff:g id="index" example="2">%1$d</xliff:g></string>
     <string name="cd_copy">Copy</string>
-    <string name="cd_copy_label_format">Copy <xliff:g id="label" example="Name">%1$s</xliff:g></string>
-    <string name="cd_clear">Clear</string>
     <string name="match_empty_chat">No recorded chat messages in local database</string>
     <string name="settings_appearance">Appearance</string>
     <string name="settings_wingman">AI Prompt Wingman</string>
@@ -292,10 +272,6 @@
     <string name="telemetry_metric_likes_sent">Lifetime Likes Sent</string>
     <string name="telemetry_metric_discover_likes">Discover Likes Counter</string>
     <string name="telemetry_metric_rose_dialogs">Rose Upsell Dialogs</string>
-    <string name="telemetry_metric_standout_views">Standout Views</string>
-    <string name="telemetry_metric_standout_likes">Standout Likes</string>
-    <string name="telemetry_metric_chats_started">Chats Started</string>
-    <string name="telemetry_metric_we_met_prompts">We Met Prompts</string>
 
     <string name="candidates_empty_archived_title">No Profiles Archived Yet</string>
     <string name="candidates_empty_archived_desc">Profiles will appear here automatically when viewed in Hinge.</string>
@@ -303,7 +279,6 @@
     <string name="candidates_empty_discover_desc">Browse the Discover feed in Hinge to populate local profiles.</string>
     <string name="candidates_empty_standouts_title">No Standouts In Feed</string>
     <string name="candidates_empty_standouts_desc">Browse Standouts in Hinge to view recommended profiles.</string>
-    <string name="candidates_empty_action_both">Show Both Feeds</string>
     <string name="candidates_tag_sent_rose">Sent You a Rose</string>
     <string name="candidates_tag_liked_profile">Liked Your Profile</string>
     <string name="candidates_action_show_less">Show less</string>
@@ -312,10 +287,6 @@
     <string name="candidates_photos_count_format"><xliff:g id="count" example="4">%1$d</xliff:g> Photos in Archive</string>
     <string name="candidates_meta_first_format">First: <xliff:g id="date" example="Oct 12">%1$s</xliff:g></string>
     <string name="candidates_meta_last_format">Last: <xliff:g id="date" example="Oct 14">%1$s</xliff:g></string>
-    <string name="candidates_search_placeholder">Search name, prompts, bio, school, religion…</string>
-    <string name="tag_liked">Liked</string>
-    <string name="tag_passed">Passed</string>
-    <string name="tag_with_comment">With Comment</string>
     <string name="tag_circle">Circle</string>
 
     <string name="matches_empty_title">No Matches Found</string>
@@ -327,7 +298,6 @@
     <string name="matches_kpi_priority">Priority</string>
     <string name="matches_messages_recorded_format"><xliff:g id="count" example="18">%1$d</xliff:g> total messages recorded</string>
     <string name="matches_unsent_draft">Unsent Saved Draft:</string>
-    <string name="matches_search_placeholder">Search matches, prompts, messages, drafts…</string>
 
     <string name="profile_ai_coaching_title">AI Coaching Recommendations</string>
     <string name="profile_prompt_question_fallback">Prompt Question</string>

@@ -55,33 +55,18 @@ object PromptSanitizer {
         "has entered the chat",
     )
 
-    /**
-     * Neutralizes prompt delimiters and XML-like tags from untrusted candidate data
-     * (bio, prompt answers, names) to prevent delimiter spoofing and prompt injection.
-     */
     fun sanitizeUntrusted(text: String): String {
         if (text.isBlank()) return ""
-        // Replace potential delimiter injections
         val stripped = text.replace(DELIMITER_TAG_REGEX) { match ->
-            // Escape angle brackets so LLM sees literal text, not a structural delimiter tag
             match.value.replace("<", "‹").replace(">", "›")
         }
-        // Normalize control characters except standard newlines and tabs
         return stripped.filter { ch -> ch == '\n' || ch == '\r' || ch == '\t' || !ch.isISOControl() }
     }
 
-    /**
-     * Cleans an individual opener reply from raw LLM output:
-     * - Strips wrapping quotes, markdown code fences, and quote markers
-     * - Removes analytical reasoning preambles (e.g. "Why this works:", "Opener 1:")
-     * - Trims conversational throat-clearing fillers (e.g. "Hey! ", "Fair enough, ")
-     * - Normalizes multiple questions to at most one question
-     */
     fun cleanOpenerReply(raw: String): String {
         var line = raw.trim()
         if (line.isBlank()) return ""
 
-        // Strip markdown formatting & bullet points
         line = line.removePrefix(">").trim()
             .removePrefix("-").trim()
             .removePrefix("*").trim()
@@ -91,15 +76,12 @@ object PromptSanitizer {
             .removeSurrounding("`")
             .trim()
 
-        // Strip analytical preambles
         line = line.replace(REASONING_PREAMBLE_REGEX, "").trim()
             .removeSurrounding("\"")
             .trim()
 
-        // Strip conversational throat-clearing
         line = line.replace(CONVERSATIONAL_THROAT_CLEARING_REGEX, "").trim()
 
-        // Normalize multiple questions: keep up to the first question mark if multiple exist
         if (MULTIPLE_QUESTIONS_REGEX.containsMatchIn(line)) {
             val firstQ = line.indexOf('?')
             if (firstQ >= 0 && firstQ < line.length - 1) {
@@ -107,15 +89,11 @@ object PromptSanitizer {
             }
         }
 
-        // Remove artificial ending semicolons
         line = line.removeSuffix(";").trim()
 
         return line
     }
 
-    /**
-     * Audits a line for compliance against dating wingman quality heuristics.
-     */
     fun auditLine(line: String): QualityAuditResult {
         val violations = mutableListOf<String>()
         val lower = line.lowercase()

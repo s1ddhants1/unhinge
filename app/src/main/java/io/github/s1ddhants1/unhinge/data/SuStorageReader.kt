@@ -26,7 +26,11 @@ object SuStorageReader {
         Log.d(Consts.TAG, "SuStorageReader: isRoot = $isRoot")
         if (!isRoot) {
             Log.w(Consts.TAG, "SuStorageReader: Root access not available, returning default state")
-            return@withContext CompleteHingeData(isRootGranted = false)
+            val archived = CandidateArchiveDb(context).getAllArchived()
+            return@withContext CompleteHingeData(
+                candidates = archived,
+                isRootGranted = false
+            )
         }
 
         val defaultXml = executeSu("cat $HINGE_SHARED_PREFS/default.xml")
@@ -79,9 +83,11 @@ object SuStorageReader {
             freeRosesLeft = telemetry.apiAvailableSuperLikes
         )
 
+        val (playerMedia, playerAnswers, candidates, matches, synthesizedIncoming) = readLocalDatabase(context)
+
         val incomingLikes = (insightsMap["likes_you_json"] as? String)?.let {
             try { json.decodeFromString<IncomingLikeInsight>(it) } catch (e: Exception) { null }
-        } ?: IncomingLikeInsight()
+        } ?: synthesizedIncoming ?: IncomingLikeInsight()
 
         val profileAudit = (insightsMap["profile_audit_json"] as? String)?.let {
             try { json.decodeFromString<ProfileAuditReport>(it) } catch (e: Exception) { null }
@@ -94,8 +100,6 @@ object SuStorageReader {
         val behavior = (insightsMap["behavior_json"] as? String)?.let {
             try { json.decodeFromString<SessionBehaviorMetrics>(it) } catch (e: Exception) { null }
         } ?: SessionBehaviorMetrics()
-
-        val (playerMedia, playerAnswers, candidates, matches) = readLocalDatabase(context)
 
         CompleteHingeData(
             telemetry = telemetry,
@@ -222,7 +226,8 @@ object SuStorageReader {
         val playerMedia: List<PlayerMediaItem>,
         val playerAnswers: List<PlayerAnswerItem>,
         val candidates: List<CachedCandidateProfile>,
-        val matches: List<MatchRecord>
+        val matches: List<MatchRecord>,
+        val incomingLikesInsight: IncomingLikeInsight? = null
     )
 
     private fun readLocalDatabase(context: Context): DbExtractResult {
@@ -230,6 +235,7 @@ object SuStorageReader {
         val playerAnswers = mutableListOf<PlayerAnswerItem>()
         val candidates = mutableListOf<CachedCandidateProfile>()
         val matches = mutableListOf<MatchRecord>()
+        var synthesizedIncomingLikes: IncomingLikeInsight? = null
 
         try {
             val localDb = File(context.filesDir, "hinge_local.sqlite")
@@ -497,6 +503,26 @@ object SuStorageReader {
                     } catch (e: Exception) {
                         Log.e(Consts.TAG, "SuStorageReader: Error during archive merge", e)
                     }
+
+                    if (incomingLikesMap.isNotEmpty()) {
+                        val total = incomingLikesMap.size
+                        val commentCount = incomingLikesMap.count { it.value.showMatchNote || likedContentMap.containsKey(it.key) }
+                        val photoCount = incomingLikesMap.count { it.value.type.contains("photo", true) }
+                        val promptCount = incomingLikesMap.count { it.value.type.contains("prompt", true) }
+                        val voiceCount = incomingLikesMap.count { it.value.type.contains("voice", true) }
+                        val plainCount = (total - commentCount - photoCount - promptCount - voiceCount).coerceAtLeast(0)
+                        val recent = incomingLikesMap.values.map { it.timestamp }.filter { it > 0 }.sortedDescending().take(10)
+                        synthesizedIncomingLikes = IncomingLikeInsight(
+                            totalLikes = total,
+                            commentLikes = commentCount,
+                            plainLikes = plainCount,
+                            photoLikes = photoCount,
+                            promptLikes = promptCount,
+                            voicePromptLikes = voiceCount,
+                            recentLikeTimestamps = recent,
+                            lastUpdated = System.currentTimeMillis()
+                        )
+                    }
                 } catch (e: Exception) {
                     Log.e(Consts.TAG, "SuStorageReader: Error reading candidate profiles", e)
                 }
@@ -651,9 +677,9 @@ object SuStorageReader {
         } catch (e: Exception) {
             Log.e(Consts.TAG, "SuStorageReader: Error copying or opening SQLite database", e)
             val archived = CandidateArchiveDb(context).getAllArchived()
-            return DbExtractResult(playerMedia, playerAnswers, archived, matches)
+            return DbExtractResult(playerMedia, playerAnswers, archived, matches, null)
         }
 
-        return DbExtractResult(playerMedia, playerAnswers, candidates, matches)
+        return DbExtractResult(playerMedia, playerAnswers, candidates, matches, synthesizedIncomingLikes)
     }
 }
