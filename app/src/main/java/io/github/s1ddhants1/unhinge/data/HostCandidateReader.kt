@@ -231,7 +231,8 @@ object HostCandidateReader {
 
     data class ScreenClues(
         val visibleTexts: Set<String> = emptySet(),
-        val activeContext: ScreenContext = ScreenContext.UNKNOWN
+        val activeContext: ScreenContext = ScreenContext.UNKNOWN,
+        val isNonCandidate: Boolean = false,
     )
 
     data class MatchChatContext(

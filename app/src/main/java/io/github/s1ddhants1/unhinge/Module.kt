@@ -188,8 +188,18 @@ class Module : XposedModule() {
                         io.github.s1ddhants1.unhinge.hook.ui.HostAppAiFab.attach(activity, prefs)
                     }
                 }
-                override fun onActivityPaused(activity: android.app.Activity) {}
-                override fun onActivityStopped(activity: android.app.Activity) {}
+                override fun onActivityPaused(activity: android.app.Activity) {
+                    val name = activity.javaClass.name
+                    if (name.contains("AppActivity") || name.contains("hinge")) {
+                        io.github.s1ddhants1.unhinge.hook.ui.HostAppAiFab.onPause(activity)
+                    }
+                }
+                override fun onActivityStopped(activity: android.app.Activity) {
+                    val name = activity.javaClass.name
+                    if (name.contains("AppActivity") || name.contains("hinge")) {
+                        io.github.s1ddhants1.unhinge.hook.ui.HostAppAiFab.onStop(activity)
+                    }
+                }
                 override fun onActivitySaveInstanceState(activity: android.app.Activity, outState: Bundle) {}
                 override fun onActivityDestroyed(activity: android.app.Activity) {
                     io.github.s1ddhants1.unhinge.hook.ui.HostAppAiFab.remove(activity)

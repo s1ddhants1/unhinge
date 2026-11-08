@@ -12,6 +12,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,11 +25,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -78,6 +81,7 @@ fun InlineAiOpenerCard(
     targetPrompt: PromptEntry? = null,
     isCommentMode: Boolean = false,
     isSectionCard: Boolean = false,
+    showDragHandle: Boolean = false,
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -150,18 +154,23 @@ fun InlineAiOpenerCard(
         )
     }
 
-    val promptEntries = remember(targetPrompt, activeCandidate?.userId, activeCandidate?.prompts, isChatMode, chatContext?.match?.subjectId) {
-        if (targetPrompt != null) {
-            listOf(targetPrompt)
-        } else if (isChatMode) {
+    val promptEntries = remember(activeCandidate?.userId, activeCandidate?.prompts, isChatMode, chatContext?.match?.subjectId, targetPrompt) {
+        if (isChatMode) {
             chatArchetypes.map { PromptEntry(text = it) }
         } else {
             val prompts = activeCandidate?.prompts.orEmpty()
             if (prompts.isNotEmpty()) {
-                prompts.map {
+                val list = prompts.map {
                     val cleanAnswer = it.answer.replace("\\n", "\n")
                     PromptEntry(text = "${it.question}: $cleanAnswer")
                 }
+                if (targetPrompt != null && list.none { it.text.equals(targetPrompt.text, ignoreCase = true) }) {
+                    listOf(targetPrompt) + list
+                } else {
+                    list
+                }
+            } else if (targetPrompt != null) {
+                listOf(targetPrompt)
             } else if (activeCandidate != null) {
                 val bio = listOfNotNull(
                     activeCandidate.jobTitle.takeIf { it.isNotBlank() }?.let { "Job: $it" },
@@ -175,7 +184,17 @@ fun InlineAiOpenerCard(
         }
     }
 
-    var selectedIndex by remember(targetPrompt, activeCandidate?.userId, isChatMode) { mutableIntStateOf(0) }
+    val defaultIndex = remember(targetPrompt, promptEntries) {
+        if (targetPrompt != null) {
+            val idx = promptEntries.indexOfFirst {
+                it.text.equals(targetPrompt.text, ignoreCase = true) ||
+                    it.text.startsWith(targetPrompt.text.take(20), ignoreCase = true)
+            }
+            if (idx >= 0) idx else 0
+        } else 0
+    }
+
+    var selectedIndex by remember(activeCandidate?.userId, isChatMode, defaultIndex) { mutableIntStateOf(defaultIndex) }
     val safeIndex = selectedIndex.coerceIn(0, (promptEntries.size - 1).coerceAtLeast(0))
     val activeEntry = promptEntries.getOrNull(safeIndex)
 
@@ -279,9 +298,19 @@ fun InlineAiOpenerCard(
         modifier = cardModifier,
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            if (showDragHandle) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .size(width = 36.dp, height = 4.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(textSecondary.copy(alpha = 0.35f))
+                )
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -297,10 +326,16 @@ fun InlineAiOpenerCard(
                         modifier = Modifier.size(15.dp),
                         tint = sparkleColor,
                     )
+                    val title = if (isChatMode) {
+                        if (matchDisplayName.isNotBlank()) "Wingman • $matchDisplayName" else "Wingman Reply"
+                    } else {
+                        val name = activeCandidate?.firstName?.ifBlank { null }
+                        if (name != null) "Wingman • $name" else "AI Opener"
+                    }
                     Text(
-                        text = if (isChatMode) "Wingman Reply" else "AI Opener",
+                        text = title,
                         fontFamily = modernEraBold,
-                        fontSize = 12.sp,
+                        fontSize = 12.5.sp,
                         fontWeight = FontWeight.Bold,
                         color = textPrimary,
                     )
@@ -326,28 +361,121 @@ fun InlineAiOpenerCard(
                     }
                 }
 
-                Box(
-                    modifier = Modifier
-                        .size(26.dp)
-                        .clip(CircleShape)
-                        .background(if (isDark) Color(0xFF2C2C2E) else Color(0xFFEFEFF1))
-                        .clickable(enabled = isAiReady && !isEntryGenerating) {
-                            triggerGeneration(forceRefresh = true)
-                        },
-                    contentAlignment = Alignment.Center,
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    if (isEntryGenerating) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(12.dp),
-                            strokeWidth = 1.8.dp,
-                            color = sparkleColor,
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = "Retry",
-                            tint = textSecondary,
-                            modifier = Modifier.size(14.dp),
+                    Box(
+                        modifier = Modifier
+                            .size(26.dp)
+                            .clip(CircleShape)
+                            .background(if (isDark) Color(0xFF2C2C2E) else Color(0xFFEFEFF1))
+                            .clickable(enabled = isAiReady && !isEntryGenerating) {
+                                triggerGeneration(forceRefresh = true)
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (isEntryGenerating) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(12.dp),
+                                strokeWidth = 1.8.dp,
+                                color = sparkleColor,
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Retry",
+                                tint = textSecondary,
+                                modifier = Modifier.size(14.dp),
+                            )
+                        }
+                    }
+
+                    if (onDismiss != null) {
+                        Box(
+                            modifier = Modifier
+                                .size(26.dp)
+                                .clip(CircleShape)
+                                .background(if (isDark) Color(0xFF2C2C2E) else Color(0xFFEFEFF1))
+                                .clickable { onDismiss() },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Close",
+                                tint = textSecondary,
+                                modifier = Modifier.size(14.dp),
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (promptEntries.size > 1) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    promptEntries.forEachIndexed { idx, entry ->
+                        val isSelected = idx == safeIndex
+                        val chipLabel = if (isChatMode) {
+                            entry.text
+                        } else {
+                            val q = entry.text.substringBefore(":").trim()
+                            if (q.length > 24) q.take(22) + "…" else q
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isSelected) {
+                                if (isDark) Color(0xFF38383B) else Color(0xFFE5E7EB)
+                            } else {
+                                if (isDark) Color(0xFF242426) else Color(0xFFF3F4F6)
+                            },
+                            border = if (isSelected) BorderStroke(1.dp, sparkleColor.copy(alpha = 0.5f)) else null,
+                            modifier = Modifier.clickable {
+                                selectedIndex = idx
+                            }
+                        ) {
+                            Text(
+                                text = chipLabel,
+                                fontFamily = if (isSelected) modernEraBold else modernEraMedium,
+                                fontSize = 11.5.sp,
+                                color = if (isSelected) textPrimary else textSecondary,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (!isChatMode && activeEntry != null) {
+                val colonIdx = activeEntry.text.indexOf(":")
+                val question = if (colonIdx != -1) activeEntry.text.substring(0, colonIdx).trim() else ""
+                val answer = if (colonIdx != -1) activeEntry.text.substring(colonIdx + 1).trim() else activeEntry.text
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = if (isDark) Color(0xFF1B1B1D) else Color(0xFFF1F1F3),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)) {
+                        if (question.isNotBlank()) {
+                            Text(
+                                text = question,
+                                fontFamily = modernEraBold,
+                                fontSize = 11.sp,
+                                color = textSecondary,
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                        }
+                        Text(
+                            text = answer,
+                            fontFamily = modernEraMedium,
+                            fontSize = 12.5.sp,
+                            color = textPrimary,
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
@@ -448,6 +576,45 @@ fun InlineAiOpenerCard(
                                 fontFamily = modernEraMedium,
                                 fontSize = 12.5.sp,
                                 color = textSecondary,
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (!activeReply.isNullOrBlank()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = actionBtnBg,
+                        modifier = Modifier.clickable {
+                            activeReply?.let(::copyOpener)
+                        },
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Icon(
+                                imageVector = if (isCopied) Icons.Default.Check else Icons.Default.AutoAwesome,
+                                contentDescription = null,
+                                modifier = Modifier.size(13.dp),
+                                tint = actionBtnText,
+                            )
+                            Text(
+                                text = if (isCopied) {
+                                    if (isCommentMode) "Inserted!" else "Copied!"
+                                } else {
+                                    if (isCommentMode) "Insert into Comment" else if (isChatMode) "Insert into Chat" else "Copy Opener"
+                                },
+                                fontFamily = modernEraBold,
+                                fontSize = 11.5.sp,
+                                color = actionBtnText,
                             )
                         }
                     }

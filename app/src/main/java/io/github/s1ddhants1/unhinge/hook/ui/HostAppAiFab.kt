@@ -21,20 +21,33 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.core.graphics.toColorInt
 import androidx.core.view.WindowCompat
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.os.Bundle
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.setViewTreeLifecycleOwner
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.os.Bundle
 import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
@@ -50,10 +63,15 @@ import io.github.s1ddhants1.unhinge.model.CachedCandidateProfile
 import io.github.s1ddhants1.unhinge.model.CandidatePromptItem
 import io.github.s1ddhants1.unhinge.ui.theme.Theme
 import io.github.s1ddhants1.unhinge.util.PreferencesManager
+import io.github.s1ddhants1.unhinge.util.ThemeMode
 import io.github.s1ddhants1.unhinge.util.attempt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import android.annotation.SuppressLint
 import java.lang.ref.WeakReference
 import java.util.WeakHashMap
@@ -67,9 +85,7 @@ object HostAppAiFab {
     internal const val TAG_NAV_FORWARD = "unhinge_nav_forward"
     internal const val TAG_NAV_COUNTER = "unhinge_nav_counter"
     internal const val TAG_AVAILABLE_LIKES = "unhinge_available_likes"
-    internal const val TAG_INLINE_OPENER_CARD = "unhinge_inline_opener_card"
-    internal const val TAG_PROMPT_SECTION_CARD_PREFIX = "unhinge_prompt_section_card_"
-    internal const val MAX_SECTION_CARDS = 3
+    internal const val TAG_AI_SHEET = "unhinge_ai_sheet"
 
     data class CommentCardInfo(
         val commentInputRect: Rect,
@@ -77,14 +93,6 @@ object HostAppAiFab {
         val provider: AccessibilityNodeProvider?,
         val targetPrompt: PromptEntry?,
         val promptText: String?,
-    )
-
-    data class PromptSectionInfo(
-        val promptIndex: Int,
-        val targetPrompt: PromptEntry,
-        val bounds: Rect,
-        val virtualId: Int,
-        val provider: AccessibilityNodeProvider?,
     )
 
     private data class ScannedNode(
@@ -97,7 +105,6 @@ object HostAppAiFab {
 
     private val fabScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private val candidatePromptEntriesMap = mutableMapOf<String, List<PromptEntry>>()
-    private var currentPromptSections: List<PromptSectionInfo> = emptyList()
 
     private fun getOrCreateCandidateEntries(candidate: CachedCandidateProfile): List<PromptEntry> {
         val key = candidate.userId.ifBlank {
@@ -121,15 +128,22 @@ object HostAppAiFab {
     }
 
     private val layoutListeners = WeakHashMap<View, ViewTreeObserver.OnGlobalLayoutListener>()
-    private val preDrawListeners = WeakHashMap<View, ViewTreeObserver.OnPreDrawListener>()
-    private val likesObservers = WeakHashMap<Activity, (HostLikesReader.LikesState) -> Unit>()
+    private val focusListeners = WeakHashMap<View, ViewTreeObserver.OnWindowFocusChangeListener>()
     private val overlayLifecycleOwners = WeakHashMap<View, ComposeDialogLifecycleOwner>()
+    private val likesObservers = WeakHashMap<Activity, (HostLikesReader.LikesState) -> Unit>()
     internal var currentActivityRef: WeakReference<Activity>? = null
     private var currentPrefsRef: WeakReference<PreferencesManager>? = null
     private var currentCommentCardInfo: CommentCardInfo? = null
-    private var lastCommentTargetKey: String? = null
-    private var isInlineOpenerManuallyToggled: Boolean = false
-    private var isCommentCardDismissed: Boolean = false
+    private var currentTargetCandidate: CachedCandidateProfile? = null
+    internal var lastRenderedLikesState: HostLikesReader.LikesState? = null
+    internal var lastHeartColor: Int? = null
+    private var lastUpdateTime = 0L
+    private const val UPDATE_THROTTLE_MS = 350L
+    private var lastLoggedContext: HostCandidateReader.ScreenContext? = null
+    private var lastLoggedNonCandidate: Boolean? = null
+    private var foregroundMonitorJob: kotlinx.coroutines.Job? = null
+    private var pendingUpdateRunnable: Runnable? = null
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
     fun attach(activity: Activity, prefs: PreferencesManager) {
         currentActivityRef = WeakReference(activity)
@@ -149,18 +163,43 @@ object HostAppAiFab {
 
                 bindDecorLayoutListener(activity, prefs)
 
-                val observer: (HostLikesReader.LikesState) -> Unit = { state ->
-                    val container = findAttachedContainer(activity)
-                    if (container != null) {
-                        updateLikesPill(container, state)
+                if (prefs.showAvailableLikes) {
+                    val observer: (HostLikesReader.LikesState) -> Unit = { state ->
+                        val container = findAttachedContainer(activity)
+                        if (container != null) {
+                            updateLikesPill(container, state)
+                        }
                     }
+                    likesObservers[activity] = observer
+                    HostLikesReader.registerObserver(activity, observer)
                 }
-                likesObservers[activity] = observer
-                HostLikesReader.registerObserver(activity, observer)
+
+                startForegroundMonitor(activity, prefs)
+                scheduleUpdate(activity, 0)
+                scheduleUpdate(activity, 150)
+                scheduleUpdate(activity, 400)
 
                 Log.d(Consts.TAG, "HostAppAiFab attached cleanly to ${activity.localClassName}")
             } catch (e: Throwable) {
                 Log.e(Consts.TAG, "HostAppAiFab attach failed: ${e.message}", e)
+            }
+        }
+    }
+
+    fun onPause(activity: Activity) {
+        if (currentActivityRef?.get() === activity) {
+            foregroundMonitorJob?.cancel()
+            foregroundMonitorJob = null
+            pendingUpdateRunnable?.let { mainHandler.removeCallbacks(it) }
+            pendingUpdateRunnable = null
+        }
+    }
+
+    fun onStop(activity: Activity) {
+        if (currentActivityRef?.get() === activity) {
+            onPause(activity)
+            activity.runOnUiThread {
+                findAttachedContainer(activity)?.visibility = View.GONE
             }
         }
     }
@@ -170,38 +209,35 @@ object HostAppAiFab {
             currentActivityRef = null
             currentPrefsRef = null
         }
+        foregroundMonitorJob?.cancel()
+        foregroundMonitorJob = null
+        pendingUpdateRunnable?.let { mainHandler.removeCallbacks(it) }
+        pendingUpdateRunnable = null
         currentCommentCardInfo = null
-        lastCommentTargetKey = null
-        isInlineOpenerManuallyToggled = false
-        currentPromptSections = emptyList()
+        currentTargetCandidate = null
+        lastRenderedLikesState = null
+        lastHeartColor = null
         candidatePromptEntriesMap.clear()
         FeedNavigator.reset(activity)
         likesObservers.remove(activity)?.let { HostLikesReader.unregisterObserver(it) }
 
         activity.runOnUiThread {
             try {
-
                 activity.window?.decorView?.let { decor ->
                     val listener = layoutListeners.remove(decor)
                     if (listener != null) {
                         decor.viewTreeObserver.removeOnGlobalLayoutListener(listener)
                     }
-                    val preDraw = preDrawListeners.remove(decor)
-                    if (preDraw != null) {
-                        decor.viewTreeObserver.removeOnPreDrawListener(preDraw)
+                    val focusListener = focusListeners.remove(decor)
+                    if (focusListener != null) {
+                        decor.viewTreeObserver.removeOnWindowFocusChangeListener(focusListener)
                     }
                 }
 
                 findAttachedContainer(activity)?.let { container ->
-                    val inlineCard = container.findViewWithTag<View>(TAG_INLINE_OPENER_CARD)
-                    if (inlineCard != null) {
-                        overlayLifecycleOwners.remove(inlineCard)?.handleDestroy()
-                    }
-                    for (i in 0 until MAX_SECTION_CARDS) {
-                        val card = container.findViewWithTag<View>("$TAG_PROMPT_SECTION_CARD_PREFIX$i")
-                        if (card != null) {
-                            overlayLifecycleOwners.remove(card)?.handleDestroy()
-                        }
+                    val sheetView = container.findViewWithTag<View>(TAG_AI_SHEET)
+                    if (sheetView != null) {
+                        overlayLifecycleOwners.remove(sheetView)?.handleDestroy()
                     }
                     val listener = layoutListeners.remove(container)
                     if (listener != null) {
@@ -213,98 +249,124 @@ object HostAppAiFab {
         }
     }
 
+    private fun startForegroundMonitor(activity: Activity, prefs: PreferencesManager) {
+        foregroundMonitorJob?.cancel()
+        foregroundMonitorJob = fabScope.launch {
+            while (currentActivityRef?.get() === activity && !activity.isFinishing && !activity.isDestroyed) {
+                kotlinx.coroutines.delay(1000)
+                scheduleUpdate(activity, 0)
+            }
+        }
+    }
+
+    fun scheduleUpdate(activity: Activity, delayMs: Long = 0) {
+        if (activity.isFinishing || activity.isDestroyed) return
+        val prefs = currentPrefsRef?.get() ?: return
+
+        val now = SystemClock.uptimeMillis()
+        val timeSinceLast = now - lastUpdateTime
+        val waitTime = if (delayMs > 0) {
+            maxOf(delayMs, if (timeSinceLast < UPDATE_THROTTLE_MS) UPDATE_THROTTLE_MS - timeSinceLast else 0L)
+        } else {
+            if (timeSinceLast < UPDATE_THROTTLE_MS) UPDATE_THROTTLE_MS - timeSinceLast else 0L
+        }
+
+        if (pendingUpdateRunnable != null && waitTime > 0) {
+            return
+        }
+
+        pendingUpdateRunnable?.let { mainHandler.removeCallbacks(it) }
+        val r = Runnable {
+            pendingUpdateRunnable = null
+            if (!activity.isFinishing && !activity.isDestroyed) {
+                lastUpdateTime = SystemClock.uptimeMillis()
+                performUpdate(activity, prefs)
+            }
+        }
+        pendingUpdateRunnable = r
+        if (waitTime <= 0) {
+            activity.runOnUiThread(r)
+        } else {
+            mainHandler.postDelayed(r, waitTime)
+        }
+    }
+
     private fun bindDecorLayoutListener(activity: Activity, prefs: PreferencesManager) {
         val decor = activity.window?.decorView ?: return
         if (layoutListeners.containsKey(decor)) return
 
-        var lastCheckTime = 0L
-        val updateCheck = {
-            val now = SystemClock.uptimeMillis()
-            if (now - lastCheckTime >= 100) {
-                lastCheckTime = now
-                try {
-                    activity.window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
-                    val passRect = findPassButtonBounds(decor)
-                    val chatInputRect = if (passRect == null) findChatInputBounds(decor) else null
-                    val commentInfo = findCommentCardInfo(decor)
-                    val hasTarget = passRect != null || chatInputRect != null || commentInfo != null
-                    val attached = findAttachedContainer(activity)
-                    val contentFrame = (activity.findViewById(android.R.id.content) as? ViewGroup)
-                        ?: (decor as? ViewGroup)
-
-                    if (hasTarget) {
-                        val container = if (attached != null && attached.parent === contentFrame) {
-                            attached
-                        } else {
-                            attached?.let { (it.parent as? ViewGroup)?.removeView(it) }
-                            val newContainer = createContainerView(activity, prefs)
-                            contentFrame?.addView(newContainer)
-                            bindLayoutListener(newContainer, activity, prefs)
-                            newContainer
-                        }
-                        updateControlsState(container, activity, prefs, passRect, chatInputRect, commentInfo)
-                    } else {
-                        attached?.visibility = View.GONE
-                    }
-                } catch (e: Throwable) {
-                    Log.w(Consts.TAG, "decor layout error: ${e.message}", e)
-                }
-            }
+        val layoutListener = ViewTreeObserver.OnGlobalLayoutListener {
+            scheduleUpdate(activity, 50)
         }
-
-        val layoutListener = ViewTreeObserver.OnGlobalLayoutListener { updateCheck() }
-        val preDrawListener = ViewTreeObserver.OnPreDrawListener {
-            val container = findAttachedContainer(activity)
-            if (container != null && container.visibility == View.VISIBLE) {
-                val density = activity.resources.displayMetrics.density
-                val loc = IntArray(2)
-                container.getLocationOnScreen(loc)
-                val containerScreenY = loc[1]
-                val (_, screenHeight) = getWindowDimensions(activity)
-                val horizontalMargin = (16 * density).toInt()
-
-                val info = currentCommentCardInfo
-                val inlineCard = container.findViewWithTag<View>(TAG_INLINE_OPENER_CARD)
-                if (info != null && inlineCard != null && inlineCard.visibility == View.VISIBLE) {
-                    if (info.provider != null && info.virtualId != -1) {
-                        try {
-                            val node = info.provider.createAccessibilityNodeInfo(info.virtualId)
-                            if (node != null) {
-                                node.getBoundsInScreen(info.commentInputRect)
-                            }
-                        } catch (_: Throwable) {}
-                    }
-                    updateControlsPosition(container, activity)
-                } else if (currentPromptSections.isNotEmpty()) {
-                    val rect = Rect()
-                    for (section in currentPromptSections) {
-                        val cardTag = "$TAG_PROMPT_SECTION_CARD_PREFIX${section.promptIndex}"
-                        val card = container.findViewWithTag<View>(cardTag) ?: continue
-                        if (section.provider != null && section.virtualId != -1) {
-                            try {
-                                val node = section.provider.createAccessibilityNodeInfo(section.virtualId)
-                                if (node != null) {
-                                    node.getBoundsInScreen(rect)
-                                    if (rect.width() > 0 && rect.height() > 0) {
-                                        card.x = horizontalMargin.toFloat()
-                                        card.y = rect.bottom - containerScreenY + (8 * density)
-                                        val isVisible = rect.bottom > 0 && rect.top < screenHeight
-                                        card.visibility = if (isVisible) View.VISIBLE else View.GONE
-                                    }
-                                }
-                            } catch (_: Throwable) {}
-                        }
-                    }
-                }
-            }
-            updateCheck()
-            true
-        }
-
         decor.viewTreeObserver.addOnGlobalLayoutListener(layoutListener)
-        decor.viewTreeObserver.addOnPreDrawListener(preDrawListener)
         layoutListeners[decor] = layoutListener
-        preDrawListeners[decor] = preDrawListener
+
+        val focusListener = ViewTreeObserver.OnWindowFocusChangeListener { hasFocus ->
+            if (hasFocus) {
+                scheduleUpdate(activity, 0)
+            }
+        }
+        decor.viewTreeObserver.addOnWindowFocusChangeListener(focusListener)
+        focusListeners[decor] = focusListener
+    }
+
+    private fun performUpdate(activity: Activity, prefs: PreferencesManager) {
+        if (activity.isFinishing || activity.isDestroyed) return
+        try {
+            val anyFeatureEnabled = prefs.showHostAppFab || prefs.showAvailableLikes || prefs.enableFeedNavigation
+            if (!anyFeatureEnabled) {
+                remove(activity)
+                return
+            }
+
+            if (prefs.showAvailableLikes && !likesObservers.containsKey(activity)) {
+                val observer: (HostLikesReader.LikesState) -> Unit = { state ->
+                    val c = findAttachedContainer(activity)
+                    if (c != null) {
+                        updateLikesPill(c, state)
+                    }
+                }
+                likesObservers[activity] = observer
+                HostLikesReader.registerObserver(activity, observer)
+            } else if (!prefs.showAvailableLikes && likesObservers.containsKey(activity)) {
+                likesObservers.remove(activity)?.let { HostLikesReader.unregisterObserver(it) }
+            }
+
+            activity.window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            val decor = activity.window?.decorView ?: return
+            val passRect = findPassButtonBounds(decor)
+            val commentInfo = findCommentCardInfo(decor)
+
+            val screenClues = extractScreenClues(activity)
+            val isCandidate = !screenClues.isNonCandidate && (passRect != null || commentInfo != null)
+
+            val attached = findAttachedContainer(activity)
+            val rootGroup = (decor as? ViewGroup)
+                ?: (activity.findViewById(android.R.id.content) as? ViewGroup)
+
+            if (isCandidate) {
+                val container = if (attached != null && attached.parent === rootGroup) {
+                    attached
+                } else {
+                    attached?.let { (it.parent as? ViewGroup)?.removeView(it) }
+                    val newContainer = createContainerView(activity, prefs)
+                    rootGroup?.addView(newContainer)
+                    bindLayoutListener(newContainer, activity, prefs)
+                    newContainer
+                }
+                updateControlsState(container, activity, prefs, passRect, commentInfo, screenClues)
+            } else {
+                if (attached != null) {
+                    val sheetView = attached.findViewWithTag<View>(TAG_AI_SHEET)
+                    if (sheetView != null && sheetView.visibility == View.VISIBLE) {
+                        closeAiSheet(activity)
+                    }
+                    attached.visibility = View.GONE
+                }
+            }
+        } catch (e: Throwable) {
+            Log.w(Consts.TAG, "decor layout error: ${e.message}", e)
+        }
     }
 
     private fun findAttachedContainer(activity: Activity): View? {
@@ -364,36 +426,10 @@ object HostAppAiFab {
             addView(iconView)
 
             setOnClickListener {
-                val isChat = findPassButtonBounds(activity.window?.decorView) == null &&
-                        findChatInputBounds(activity.window?.decorView) != null
-                Log.i(Consts.TAG, "HostAppAiFab clicked! Toggling inline opener (isChatMode=$isChat)...")
-                toggleInlineOpenerCard(activity, prefs, isChatMode = isChat)
+                onFabClicked(activity, prefs)
             }
         }
         container.addView(fab)
-
-        val inlineLifecycleOwner = ComposeDialogLifecycleOwner()
-        inlineLifecycleOwner.handleStart()
-        container.setViewTreeLifecycleOwner(inlineLifecycleOwner)
-        container.setViewTreeViewModelStoreOwner(inlineLifecycleOwner)
-        container.setViewTreeSavedStateRegistryOwner(inlineLifecycleOwner)
-
-        val inlineCard = ComposeView(activity).apply {
-            tag = TAG_INLINE_OPENER_CARD
-            visibility = View.GONE
-            layoutParams = FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply {
-                gravity = Gravity.TOP or Gravity.START
-            }
-            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnLifecycleDestroyed(inlineLifecycleOwner))
-            setViewTreeLifecycleOwner(inlineLifecycleOwner)
-            setViewTreeViewModelStoreOwner(inlineLifecycleOwner)
-            setViewTreeSavedStateRegistryOwner(inlineLifecycleOwner)
-        }
-        overlayLifecycleOwners[inlineCard] = inlineLifecycleOwner
-        container.addView(inlineCard)
 
         val pillHeight = (26 * density).toInt()
         val likesPill = LinearLayout(activity).apply {
@@ -544,6 +580,16 @@ object HostAppAiFab {
         }
         container.addView(navCapsule)
 
+        val sheetView = ComposeView(activity).apply {
+            tag = TAG_AI_SHEET
+            visibility = View.GONE
+            layoutParams = FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        }
+        container.addView(sheetView)
+
         return container
     }
 
@@ -568,71 +614,63 @@ object HostAppAiFab {
         activity: Activity,
         prefs: PreferencesManager,
         passRect: Rect? = null,
-        chatInputRect: Rect? = null,
         detectedCommentInfo: CommentCardInfo? = null,
+        clues: HostCandidateReader.ScreenClues? = null,
     ) {
         if (activity.isFinishing || activity.isDestroyed) return
 
+        val screenClues = clues ?: extractScreenClues(activity)
         val pRect = passRect ?: findPassButtonBounds(container.rootView)
-        val cRect = if (pRect == null) (chatInputRect ?: findChatInputBounds(container.rootView)) else null
+        val detectedComment = detectedCommentInfo ?: findCommentCardInfo(container.rootView)
+        val isCommentMode = detectedComment != null
 
-        val screenClues = extractScreenClues(activity)
-        val isFeedMode = pRect != null || screenClues.activeContext == HostCandidateReader.ScreenContext.DISCOVER || screenClues.activeContext == HostCandidateReader.ScreenContext.STANDOUTS
-        val isChatMode = !isFeedMode && (cRect != null || screenClues.activeContext == HostCandidateReader.ScreenContext.MATCH_CHAT)
+        val isCandidate = !screenClues.isNonCandidate && (pRect != null || isCommentMode)
+        val sheetView = container.findViewWithTag<View>(TAG_AI_SHEET)
+        val isSheetOpen = sheetView != null && sheetView.visibility == View.VISIBLE
 
-        if (!isFeedMode && FeedNavigator.isNavigated) {
-            FeedNavigator.reset(activity)
+        if (!isCandidate) {
+            if (isSheetOpen) {
+                closeAiSheet(activity)
+            }
+            container.visibility = View.GONE
+            return
         }
-        if (isFeedMode && prefs.enableFeedNavigation) {
+
+        if (FeedNavigator.isNavigated && prefs.enableFeedNavigation) {
             FeedNavigator.refreshTotal(activity)
         }
-        val totalCandidates = FeedNavigator.totalCandidates
-        Log.i(Consts.TAG, "updateControlsState: passRect=$pRect, chatInputRect=$cRect, isFeed=$isFeedMode, isChat=$isChatMode, total=$totalCandidates")
 
-        val activeCandidate = if (isFeedMode) HostCandidateReader.readTargetCandidateSync(activity, screenClues) else null
+        val cachedTarget = currentTargetCandidate
+        val isTargetStillVisible = cachedTarget != null && (
+            screenClues.visibleTexts.any { it.equals(cachedTarget.firstName, ignoreCase = true) } ||
+            cachedTarget.prompts.any { prompt ->
+                val ans = prompt.answer.trim()
+                ans.length >= 4 && screenClues.visibleTexts.any { it.contains(ans, ignoreCase = true) }
+            }
+        )
+
+        val activeCandidate = if (isTargetStillVisible) {
+            cachedTarget
+        } else {
+            val feedCandidate = if (!isCommentMode) HostCandidateReader.readTargetCandidateSync(activity, screenClues) else null
+            if (feedCandidate != null) {
+                currentTargetCandidate = feedCandidate
+            }
+            currentTargetCandidate ?: feedCandidate
+        }
         val isStandoutCandidate = screenClues.activeContext == HostCandidateReader.ScreenContext.STANDOUTS ||
                 activeCandidate?.isStandout == true
 
-        val commentInfo = detectedCommentInfo ?: findCommentCardInfo(container.rootView, activeCandidate)
+        val commentInfo = if (isCommentMode) findCommentCardInfo(container.rootView, activeCandidate) else null
         currentCommentCardInfo = commentInfo
 
-        val candidateEntries = if (activeCandidate != null) {
-            getOrCreateCandidateEntries(activeCandidate)
-        } else emptyList()
-
-        if (activeCandidate != null && candidateEntries.isNotEmpty() && prefs.showHostAppFab) {
-            val needsGeneration = candidateEntries.any { it.suggestedReplyFlow.value.isNullOrBlank() && !it.isGeneratingFlow.value }
-            val isAiReady = !AiWingmanHelper.isApiKeyRequired(prefs.aiProvider, prefs.openRouterModel) || prefs.openRouterApiKey.isNotBlank()
-            if (needsGeneration && isAiReady) {
-                val profileBlock = buildProfileBlock(activeCandidate)
-                AiWingmanHelper.generateReplies(
-                    prompts = candidateEntries,
-                    apiKey = prefs.openRouterApiKey,
-                    baseUrl = prefs.openRouterBaseUrl,
-                    model = prefs.openRouterModel,
-                    scope = fabScope,
-                    context = activity,
-                    prefs = prefs,
-                    provider = prefs.aiProvider,
-                    useStreaming = true,
-                    systemPrompt = prefs.aiCustomSystemPrompt,
-                    profileBlock = profileBlock,
-                    forceRefresh = false,
-                    temperature = prefs.aiTemperature,
-                    topP = prefs.aiTopP,
-                    reasoningEffort = prefs.aiReasoningEffort,
-                )
-            }
-        }
-
-        val shouldShowFab = (isFeedMode || isChatMode) && prefs.showHostAppFab
-        val showNav = isFeedMode && !isStandoutCandidate && prefs.enableFeedNavigation && (totalCandidates > 1 || FeedNavigator.isNavigated)
-        val showLikes = isFeedMode && prefs.showAvailableLikes
+        val shouldShowFab = !isSheetOpen && prefs.showHostAppFab
+        val showNav = !isSheetOpen && !isCommentMode && !isStandoutCandidate && prefs.enableFeedNavigation
+        val showLikes = !isSheetOpen && !isCommentMode && prefs.showAvailableLikes
 
         val fab = container.findViewWithTag<View>(TAG_FAB_BUTTON)
         val navCapsule = container.findViewWithTag<View>(TAG_NAV_CONTAINER)
         val likesPill = container.findViewWithTag<View>(TAG_AVAILABLE_LIKES)
-        val inlineCard = container.findViewWithTag<ComposeView>(TAG_INLINE_OPENER_CARD)
 
         fab?.visibility = if (shouldShowFab) View.VISIBLE else View.GONE
         navCapsule?.visibility = if (showNav) View.VISIBLE else View.GONE
@@ -645,135 +683,11 @@ object HostAppAiFab {
             updateLikesPill(container, HostLikesReader.getLikesInfo(activity))
         }
 
-        val detectedSections = if (isFeedMode && commentInfo == null) {
-            findPromptSections(container.rootView, activeCandidate, candidateEntries)
-        } else emptyList()
-        currentPromptSections = detectedSections
-
-        for (i in 0 until MAX_SECTION_CARDS) {
-            val cardTag = "$TAG_PROMPT_SECTION_CARD_PREFIX$i"
-            var card = container.findViewWithTag<ComposeView>(cardTag)
-            val section = detectedSections.find { it.promptIndex == i }
-
-            if (section != null && isFeedMode && commentInfo == null) {
-                if (card == null) {
-                    val owner = ComposeDialogLifecycleOwner().also { it.handleStart() }
-                    card = ComposeView(activity).apply {
-                        tag = cardTag
-                        visibility = View.GONE
-                        layoutParams = FrameLayout.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.WRAP_CONTENT
-                        ).apply { gravity = Gravity.TOP or Gravity.START }
-                        setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnLifecycleDestroyed(owner))
-                        setViewTreeLifecycleOwner(owner)
-                        setViewTreeViewModelStoreOwner(owner)
-                        setViewTreeSavedStateRegistryOwner(owner)
-                    }
-                    overlayLifecycleOwners[card] = owner
-                    (container as? ViewGroup)?.addView(card)
-                }
-
-                val entry = section.targetPrompt
-                card.setContent {
-                    Theme(
-                        themeMode = prefs.themeMode,
-                        pureBlack = prefs.pureBlack,
-                        themeColor = androidx.compose.ui.graphics.Color(prefs.themeColor),
-                        setSystemBars = false,
-                    ) {
-                        InlineAiOpenerCard(
-                            prefs = prefs,
-                            targetPrompt = entry,
-                            isCommentMode = false,
-                            isSectionCard = true,
-                            candidate = activeCandidate,
-                            screenClues = screenClues,
-                            isChatMode = false,
-                            hostActivity = activity,
-                            onDismiss = null,
-                            onInsert = null,
-                        )
-                    }
-                }
-            } else {
-                card?.visibility = View.GONE
-            }
-        }
-
-        if (commentInfo != null) {
-            val targetKey = commentInfo.targetPrompt?.text ?: commentInfo.promptText ?: "comment_active"
-            val isNewTarget = lastCommentTargetKey != targetKey
-            if (isNewTarget) {
-                lastCommentTargetKey = targetKey
-                isCommentCardDismissed = false
-            }
-
-            if (!isCommentCardDismissed) {
-                if (inlineCard != null && (isNewTarget || inlineCard.visibility != View.VISIBLE)) {
-                    val owner = overlayLifecycleOwners[inlineCard] ?: ComposeDialogLifecycleOwner().also {
-                        overlayLifecycleOwners[inlineCard] = it
-                    }
-                    owner.handleStart()
-                    container.setViewTreeLifecycleOwner(owner)
-                    container.setViewTreeViewModelStoreOwner(owner)
-                    container.setViewTreeSavedStateRegistryOwner(owner)
-                    inlineCard.setViewTreeLifecycleOwner(owner)
-                    inlineCard.setViewTreeViewModelStoreOwner(owner)
-                    inlineCard.setViewTreeSavedStateRegistryOwner(owner)
-
-                    inlineCard.setContent {
-                        Theme(
-                            themeMode = prefs.themeMode,
-                            pureBlack = prefs.pureBlack,
-                            themeColor = androidx.compose.ui.graphics.Color(prefs.themeColor),
-                            setSystemBars = false,
-                        ) {
-                            InlineAiOpenerCard(
-                                prefs = prefs,
-                                targetPrompt = commentInfo.targetPrompt,
-                                isCommentMode = true,
-                                isSectionCard = false,
-                                candidate = activeCandidate,
-                                screenClues = screenClues,
-                                isChatMode = false,
-                                hostActivity = activity,
-                                onDismiss = {
-                                    activity.runOnUiThread {
-                                        inlineCard.visibility = View.GONE
-                                        isInlineOpenerManuallyToggled = false
-                                        isCommentCardDismissed = true
-                                    }
-                                },
-                                onInsert = { text ->
-                                    insertTextIntoComment(activity, commentInfo, text)
-                                },
-                            )
-                        }
-                    }
-                    inlineCard.visibility = View.VISIBLE
-                }
-            } else if (inlineCard != null && inlineCard.visibility == View.VISIBLE) {
-                inlineCard.visibility = View.GONE
-            }
-        } else if (!isInlineOpenerManuallyToggled) {
-            if (inlineCard != null && inlineCard.visibility == View.VISIBLE) {
-                inlineCard.visibility = View.GONE
-            }
-            lastCommentTargetKey = null
-            isCommentCardDismissed = false
-        }
-
-        val hasVisibleSectionCards = detectedSections.any { section ->
-            container.findViewWithTag<View>("$TAG_PROMPT_SECTION_CARD_PREFIX${section.promptIndex}")?.visibility == View.VISIBLE
-        }
-        val shouldShowContainer = shouldShowFab || showNav || showLikes || (commentInfo != null) || (inlineCard?.visibility == View.VISIBLE) || detectedSections.isNotEmpty() || hasVisibleSectionCards
+        val shouldShowContainer = shouldShowFab || showNav || showLikes || isSheetOpen
         container.visibility = if (shouldShowContainer) View.VISIBLE else View.GONE
 
-        Log.i(Consts.TAG, "updateControlsState: pRect=$pRect, cRect=$cRect, fab=$shouldShowFab, nav=$showNav, likes=$showLikes, standout=$isStandoutCandidate, commentInfo=${commentInfo != null}, sections=${detectedSections.size}, containerVis=${if (shouldShowContainer) "VISIBLE" else "GONE"}")
-
         if (shouldShowContainer) {
-            updateControlsPosition(container, activity, pRect, cRect)
+            updateControlsPosition(container, activity, pRect, prefs)
         }
     }
 
@@ -781,14 +695,13 @@ object HostAppAiFab {
         container: View,
         activity: Activity,
         passRect: Rect? = null,
-        chatInputRect: Rect? = null,
+        prefs: PreferencesManager? = null,
     ) {
         val density = activity.resources.displayMetrics.density
         val (screenWidth, screenHeight) = getWindowDimensions(activity)
         val containerWidth = container.width.takeIf { it > 0 } ?: screenWidth
 
         val pRect = passRect ?: findPassButtonBounds(container.rootView)
-        val cRect = if (pRect == null) (chatInputRect ?: findChatInputBounds(container.rootView)) else null
 
         val loc = IntArray(2)
         container.getLocationOnScreen(loc)
@@ -799,16 +712,18 @@ object HostAppAiFab {
         val targetX: Float
         val targetY: Float
 
-        if (pRect != null && pRect.width() > 0 && pRect.height() > 0) {
+        val commentInfo = currentCommentCardInfo ?: findCommentCardInfo(container.rootView)
+
+        if (commentInfo != null && !commentInfo.commentInputRect.isEmpty) {
+            fabSize = (48 * density).toInt()
+            val commentRect = commentInfo.commentInputRect
+            targetX = (commentRect.right - containerScreenX - fabSize).toFloat()
+            targetY = (commentRect.top - containerScreenY - fabSize - (8 * density))
+        } else if (pRect != null && pRect.width() > 0 && pRect.height() > 0) {
             fabSize = pRect.width()
             val leftMargin = pRect.left - containerScreenX
             targetX = (containerWidth - leftMargin - fabSize).toFloat()
             targetY = (pRect.top - containerScreenY).toFloat()
-        } else if (cRect != null && cRect.width() > 0 && cRect.height() > 0) {
-            fabSize = (48 * density).toInt()
-            val margin = (16 * density).toInt()
-            targetX = (containerWidth - margin - fabSize).toFloat()
-            targetY = (cRect.top - containerScreenY) - (8 * density) - fabSize
         } else {
             fabSize = (60 * density).toInt()
             val margin = (20 * density).toInt()
@@ -820,112 +735,69 @@ object HostAppAiFab {
 
         val fab = container.findViewWithTag<View>(TAG_FAB_BUTTON)
         if (fab != null) {
-            fab.layoutParams.width = fabSize
-            fab.layoutParams.height = fabSize
-            fab.x = targetX
-            fab.y = targetY
+            if (fab.layoutParams.width != fabSize || fab.layoutParams.height != fabSize) {
+                fab.layoutParams.width = fabSize
+                fab.layoutParams.height = fabSize
+                fab.requestLayout()
+            }
+            if (fab.x != targetX) fab.x = targetX
+            if (fab.y != targetY) fab.y = targetY
         }
 
         val likesPill = container.findViewWithTag<View>(TAG_AVAILABLE_LIKES)
         if (likesPill != null && likesPill.visibility == View.VISIBLE) {
             val pillHeight = (26 * density).toInt()
-            likesPill.measure(
-                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
-                View.MeasureSpec.makeMeasureSpec(pillHeight, View.MeasureSpec.EXACTLY)
-            )
-            val pillW = maxOf(likesPill.measuredWidth, (36 * density).toInt())
-            if (fab != null && fab.visibility == View.VISIBLE) {
-                likesPill.x = targetX + (fabSize - pillW) / 2f
-                likesPill.y = targetY - pillHeight - (6 * density)
+            val pillW = if (likesPill.width > 0) {
+                likesPill.width
             } else {
-                likesPill.x = containerWidth - (20 * density) - pillW
-                likesPill.y = targetY + (fabSize - pillHeight) / 2f
+                if (likesPill.measuredWidth <= 0) {
+                    likesPill.measure(
+                        View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+                        View.MeasureSpec.makeMeasureSpec(pillHeight, View.MeasureSpec.EXACTLY)
+                    )
+                }
+                maxOf(likesPill.measuredWidth, (36 * density).toInt())
             }
+            val pillX = targetX + (fabSize - pillW) / 2f
+            val pillY = targetY - pillHeight - (6 * density)
+            if (likesPill.x != pillX) likesPill.x = pillX
+            if (likesPill.y != pillY) likesPill.y = pillY
         }
 
         val navCapsule = container.findViewWithTag<View>(TAG_NAV_CONTAINER)
         if (navCapsule != null && navCapsule.visibility == View.VISIBLE) {
             val navHeight = (36 * density).toInt()
-            navCapsule.measure(
-                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
-                View.MeasureSpec.makeMeasureSpec(navHeight, View.MeasureSpec.EXACTLY)
-            )
-            val navW = navCapsule.measuredWidth
-            navCapsule.x = (containerWidth - navW) / 2f
-            navCapsule.y = targetY + (fabSize - navHeight) / 2f
-        }
-
-        val commentInfo = currentCommentCardInfo ?: findCommentCardInfo(container.rootView)
-        val inlineCard = container.findViewWithTag<View>(TAG_INLINE_OPENER_CARD)
-        if (inlineCard != null && inlineCard.visibility == View.VISIBLE) {
-            if (commentInfo != null) {
-                val commentRect = commentInfo.commentInputRect
-                val targetWidth = commentRect.width().coerceAtLeast((200 * density).toInt())
-                inlineCard.layoutParams.width = targetWidth
-                inlineCard.layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
-                inlineCard.measure(
-                    View.MeasureSpec.makeMeasureSpec(targetWidth, View.MeasureSpec.EXACTLY),
-                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
-                )
-
-                val cardX = (commentRect.left - containerScreenX).toFloat()
-                val cardY = (commentRect.top - containerScreenY).toFloat()
-                val minY = getStatusBarHeight(activity) + (8 * density)
-
-                inlineCard.x = cardX
-                inlineCard.y = maxOf(cardY, minY)
+            val navW = if (navCapsule.width > 0) {
+                navCapsule.width
             } else {
-                val horizontalMargin = (12 * density).toInt()
-                val cardWidth = (containerWidth - (horizontalMargin * 2)).coerceAtLeast((200 * density).toInt())
-                inlineCard.measure(
-                    View.MeasureSpec.makeMeasureSpec(cardWidth, View.MeasureSpec.EXACTLY),
-                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
-                )
-                val cardHeight = inlineCard.measuredHeight
-
-                val bottomAnchor = when {
-                    pRect != null && pRect.top > 0 -> pRect.top - containerScreenY - (10 * density).toInt()
-                    cRect != null && cRect.top > 0 -> cRect.top - containerScreenY - (10 * density).toInt()
-                    else -> {
-                        val bottomNavTop = findBottomNavTop(container.rootView, screenHeight)
-                            ?: (screenHeight - (76 * density).toInt())
-                        bottomNavTop - containerScreenY - (10 * density).toInt()
-                    }
+                if (navCapsule.measuredWidth <= 0) {
+                    navCapsule.measure(
+                        View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+                        View.MeasureSpec.makeMeasureSpec(navHeight, View.MeasureSpec.EXACTLY)
+                    )
                 }
-
-                inlineCard.layoutParams.width = cardWidth
-                inlineCard.layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
-                inlineCard.x = horizontalMargin.toFloat()
-                inlineCard.y = (bottomAnchor - cardHeight).coerceAtLeast((40 * density).toInt()).toFloat()
+                navCapsule.measuredWidth
             }
-        }
-
-        if (commentInfo == null && currentPromptSections.isNotEmpty()) {
-            val horizontalMargin = (16 * density).toInt()
-            val cardWidth = (containerWidth - (horizontalMargin * 2)).coerceAtLeast((200 * density).toInt())
-            for (section in currentPromptSections) {
-                val cardTag = "$TAG_PROMPT_SECTION_CARD_PREFIX${section.promptIndex}"
-                val card = container.findViewWithTag<View>(cardTag) ?: continue
-                val promptRect = section.bounds
-
-                card.layoutParams.width = cardWidth
-                card.layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
-                card.measure(
-                    View.MeasureSpec.makeMeasureSpec(cardWidth, View.MeasureSpec.EXACTLY),
-                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
-                )
-
-                card.x = horizontalMargin.toFloat()
-                card.y = promptRect.bottom - containerScreenY + (8 * density)
-
-                val isVisible = promptRect.bottom > 0 && promptRect.top < screenHeight
-                card.visibility = if (isVisible) View.VISIBLE else View.GONE
-            }
+            val navX = (containerWidth - navW) / 2f
+            val navY = targetY + (fabSize - navHeight) / 2f
+            if (navCapsule.x != navX) navCapsule.x = navX
+            if (navCapsule.y != navY) navCapsule.y = navY
         }
     }
 
     internal fun findPassButtonBounds(rootView: View?): Rect? {
-        if (rootView == null) return null
+        if (rootView == null || rootView.visibility != View.VISIBLE) return null
+        val desc = rootView.contentDescription?.toString()?.trim()
+        if (desc != null && (desc.startsWith("Skip", ignoreCase = true) || desc.startsWith("Pass", ignoreCase = true))) {
+            val rect = Rect()
+            rootView.getGlobalVisibleRect(rect)
+            val displayMetrics = android.content.res.Resources.getSystem().displayMetrics
+            val maxLeft = displayMetrics.widthPixels * 0.45f
+            val minTop = displayMetrics.heightPixels * 0.45f
+            if (rect.width() > 0 && rect.height() > 0 && rect.left < maxLeft && rect.top > minTop) {
+                return rect
+            }
+        }
         val provider = rootView.accessibilityNodeProvider
         if (provider != null) {
             val found = searchForPassButtonNode(provider, AccessibilityNodeProvider.HOST_VIEW_ID)
@@ -953,8 +825,8 @@ object HostAppAiFab {
 
         val desc = node.contentDescription?.toString()?.trim()
         val text = node.text?.toString()?.trim()
-        val isPassLabel = (desc != null && (desc.startsWith("Skip", ignoreCase = true) || desc.equals("Skip", ignoreCase = true) || desc.equals("Pass", ignoreCase = true))) ||
-                (text != null && (text.startsWith("Skip", ignoreCase = true) || text.equals("Skip", ignoreCase = true) || text.equals("Pass", ignoreCase = true)))
+        val isPassLabel = (desc != null && (desc.startsWith("Skip", ignoreCase = true) || desc.startsWith("Pass", ignoreCase = true) || desc.equals("Skip", ignoreCase = true) || desc.equals("Pass", ignoreCase = true))) ||
+                (text != null && (text.startsWith("Skip", ignoreCase = true) || text.startsWith("Pass", ignoreCase = true) || text.equals("Skip", ignoreCase = true) || text.equals("Pass", ignoreCase = true)))
 
         if (isPassLabel) {
             val rect = Rect()
@@ -1207,24 +1079,31 @@ object HostAppAiFab {
 
         if (targetPrompt == null) {
             val promptRegex = Regex("""Prompt:\s*(.+?)\.\s*Answer:\s*(.+)""", RegexOption.DOT_MATCHES_ALL)
-            val promptNode = nodesAbove.maxByOrNull { it.rect.bottom }
-            if (promptNode != null && promptNode.text.isNotBlank()) {
-                foundPromptText = promptNode.text
-                val match = promptRegex.find(promptNode.text)
-                targetPrompt = if (match != null) {
-                    val q = match.groupValues[1].trim()
-                    val a = match.groupValues[2].trim()
-                    val matchedFromCandidate = activeCandidate?.prompts?.find { cp ->
-                        a.contains(cp.answer, ignoreCase = true) || cp.answer.contains(a, ignoreCase = true) ||
-                        q.contains(cp.question, ignoreCase = true)
-                    }
-                    if (matchedFromCandidate != null) {
-                        PromptEntry(text = "${matchedFromCandidate.question}: ${matchedFromCandidate.answer}")
+            val matchingNode = nodesAbove.find {
+                val content = it.desc.ifBlank { it.text }
+                content.contains("Prompt:", ignoreCase = true)
+            } ?: nodesAbove.maxByOrNull { it.rect.bottom }
+
+            if (matchingNode != null) {
+                val rawContent = matchingNode.desc.ifBlank { matchingNode.text }
+                if (rawContent.isNotBlank()) {
+                    foundPromptText = rawContent
+                    val match = promptRegex.find(rawContent)
+                    targetPrompt = if (match != null) {
+                        val q = match.groupValues[1].trim()
+                        val a = match.groupValues[2].trim()
+                        val matchedFromCandidate = activeCandidate?.prompts?.find { cp ->
+                            a.contains(cp.answer, ignoreCase = true) || cp.answer.contains(a, ignoreCase = true) ||
+                            q.contains(cp.question, ignoreCase = true)
+                        }
+                        if (matchedFromCandidate != null) {
+                            PromptEntry(text = "${matchedFromCandidate.question}: ${matchedFromCandidate.answer}")
+                        } else {
+                            PromptEntry(text = "$q: $a")
+                        }
                     } else {
-                        PromptEntry(text = "$q: $a")
+                        PromptEntry(text = rawContent)
                     }
-                } else {
-                    PromptEntry(text = promptNode.text)
                 }
             }
         }
@@ -1278,164 +1157,6 @@ object HostAppAiFab {
         return maxScore
     }
 
-    internal fun findPromptSections(
-        rootView: View?,
-        candidate: CachedCandidateProfile?,
-        entries: List<PromptEntry>,
-    ): List<PromptSectionInfo> {
-        if (rootView == null) return emptyList()
-        val provider = rootView.accessibilityNodeProvider
-        if (provider != null) {
-            val found = searchPromptSectionsInProvider(provider, rootView, candidate, entries)
-            if (found.isNotEmpty()) return found
-        }
-        if (rootView is ViewGroup) {
-            for (i in 0 until rootView.childCount) {
-                val found = findPromptSections(rootView.getChildAt(i), candidate, entries)
-                if (found.isNotEmpty()) return found
-            }
-        }
-        return emptyList()
-    }
-
-    private fun searchPromptSectionsInProvider(
-        provider: AccessibilityNodeProvider,
-        hostView: View,
-        candidate: CachedCandidateProfile?,
-        entries: List<PromptEntry>,
-    ): List<PromptSectionInfo> {
-        val density = hostView.resources.displayMetrics.density
-        val scanned = mutableListOf<ScannedNode>()
-
-        fun traverse(virtualId: Int, visited: MutableSet<Int>, depth: Int) {
-            if (depth > 40 || !visited.add(virtualId)) return
-            val node = try {
-                provider.createAccessibilityNodeInfo(virtualId)
-            } catch (_: Throwable) { null } ?: return
-
-            val desc = node.contentDescription?.toString()?.trim().orEmpty()
-            val text = node.text?.toString()?.trim().orEmpty()
-            val rect = Rect()
-            node.getBoundsInScreen(rect)
-
-            if (rect.width() > 0 && rect.height() > 0 && (text.isNotBlank() || desc.isNotBlank() || node.isClickable)) {
-                scanned.add(ScannedNode(virtualId, text, desc, rect, node.isEditable))
-            }
-
-            val count = node.childCount
-            for (i in 0 until count) {
-                val childId = getChildVirtualId(node, i) ?: continue
-                traverse(childId, visited, depth + 1)
-            }
-        }
-
-        traverse(AccessibilityNodeProvider.HOST_VIEW_ID, mutableSetOf(), 0)
-
-        val matchedSections = mutableListOf<PromptSectionInfo>()
-        val candidatePrompts = candidate?.prompts.orEmpty()
-
-        if (candidatePrompts.isNotEmpty()) {
-            for (idx in 0 until minOf(candidatePrompts.size, MAX_SECTION_CARDS)) {
-                val cp = candidatePrompts[idx]
-                val cleanA = cp.answer.trim().lowercase()
-                val cleanQ = cp.question.trim().lowercase()
-
-                var bestNode: ScannedNode? = null
-                var highestScore = 0f
-
-                for (sNode in scanned) {
-                    val t = sNode.text.lowercase()
-                    val d = sNode.desc.lowercase()
-                    val combined = "$t $d"
-                    var score = 0f
-
-                    if (cleanA.isNotBlank() && (combined.contains(cleanA) || (cleanA.length >= 10 && combined.contains(cleanA.take(20))))) {
-                        score += 100f
-                    } else if (cleanA.isNotBlank() && t.length >= 6 && cleanA.contains(t)) {
-                        score += 50f
-                    }
-
-                    if (cleanQ.isNotBlank() && (combined.contains(cleanQ) || (cleanQ.length >= 10 && combined.contains(cleanQ.take(20))))) {
-                        score += 60f
-                    } else if (cleanQ.isNotBlank() && t.length >= 6 && cleanQ.contains(t)) {
-                        score += 30f
-                    }
-
-                    if (combined.contains("prompt:") && (combined.contains(cleanQ.take(15)) || (cleanA.isNotBlank() && combined.contains(cleanA.take(15))))) {
-                        score += 80f
-                    }
-
-                    if (score > highestScore && sNode.rect.width() > (100 * density) && sNode.rect.height() > 0) {
-                        highestScore = score
-                        bestNode = sNode
-                    }
-                }
-
-                if (bestNode != null && highestScore > 0f) {
-                    val nearbyLikeButton = scanned.find { other ->
-                        val isLikeBtn = other.desc.contains("like", ignoreCase = true) || other.desc.contains("rose", ignoreCase = true)
-                        isLikeBtn && other.rect.left >= bestNode.rect.left &&
-                            other.rect.top >= bestNode.rect.top - (20 * density) &&
-                            other.rect.bottom <= bestNode.rect.bottom + (80 * density)
-                    }
-                    val finalRect = Rect(bestNode.rect)
-                    if (nearbyLikeButton != null) {
-                        finalRect.bottom = maxOf(finalRect.bottom, nearbyLikeButton.rect.bottom)
-                        finalRect.right = maxOf(finalRect.right, nearbyLikeButton.rect.right)
-                    }
-
-                    val nearbyQuestionNode = scanned.find { other ->
-                        cleanQ.isNotBlank() && other.text.lowercase().contains(cleanQ) &&
-                            other.rect.bottom <= bestNode.rect.top + (20 * density) &&
-                            other.rect.top >= bestNode.rect.top - (120 * density)
-                    }
-                    if (nearbyQuestionNode != null) {
-                        finalRect.top = minOf(finalRect.top, nearbyQuestionNode.rect.top)
-                    }
-
-                    val targetPrompt = entries.getOrNull(idx) ?: PromptEntry(text = "${cp.question}: ${cp.answer}")
-                    matchedSections.add(
-                        PromptSectionInfo(
-                            promptIndex = idx,
-                            targetPrompt = targetPrompt,
-                            bounds = finalRect,
-                            virtualId = bestNode.virtualId,
-                            provider = provider,
-                        )
-                    )
-                }
-            }
-        }
-
-        if (matchedSections.isEmpty()) {
-            val promptRegex = Regex("""Prompt:\s*(.+?)\.\s*Answer:\s*(.+)""", RegexOption.DOT_MATCHES_ALL)
-            val promptNodes = scanned.filter {
-                promptRegex.containsMatchIn(it.text) || promptRegex.containsMatchIn(it.desc)
-            }.distinctBy { it.rect.top }
-
-            promptNodes.take(MAX_SECTION_CARDS).forEachIndexed { idx, pNode ->
-                val text = pNode.text.ifBlank { pNode.desc }
-                val match = promptRegex.find(text)
-                val entryText = if (match != null) {
-                    "${match.groupValues[1].trim()}: ${match.groupValues[2].trim()}"
-                } else text
-
-                val targetPrompt = entries.getOrNull(idx) ?: PromptEntry(text = entryText)
-                matchedSections.add(
-                    PromptSectionInfo(
-                        promptIndex = idx,
-                        targetPrompt = targetPrompt,
-                        bounds = Rect(pNode.rect),
-                        virtualId = pNode.virtualId,
-                        provider = provider,
-                    )
-                )
-            }
-        }
-
-        return matchedSections
-    }
-
     fun insertTextIntoComment(activity: Activity, info: CommentCardInfo, text: String): Boolean {
         val cm = activity.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
         cm?.setPrimaryClip(ClipData.newPlainText("Unhinge Opener", text))
@@ -1446,7 +1167,11 @@ object HostAppAiFab {
                 val args = Bundle().apply {
                     putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
                 }
-                val res = info.provider.performAction(info.virtualId, AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+                var res = info.provider.performAction(info.virtualId, AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+                if (!res) {
+                    info.provider.performAction(info.virtualId, AccessibilityNodeInfo.ACTION_FOCUS, null)
+                    res = info.provider.performAction(info.virtualId, AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+                }
                 if (res) {
                     injected = true
                     Log.i(Consts.TAG, "insertTextIntoComment: ACTION_SET_TEXT succeeded on virtualId=${info.virtualId}")
@@ -1536,16 +1261,7 @@ object HostAppAiFab {
 
     fun notifyNavUpdated(activity: Activity? = null) {
         val act = activity ?: currentActivityRef?.get() ?: return
-        act.runOnUiThread {
-            val container = findAttachedContainer(act) ?: return@runOnUiThread
-            val prefs = currentPrefsRef?.get() ?: return@runOnUiThread
-            updateNavCounter(container)
-            val screenClues = extractScreenClues(act)
-            val passRect = findPassButtonBounds(act.window?.decorView)
-            val chatInputRect = if (passRect == null) findChatInputBounds(act.window?.decorView) else null
-            val commentInfo = findCommentCardInfo(act.window?.decorView)
-            updateControlsState(container, act, prefs, passRect, chatInputRect, commentInfo)
-        }
+        scheduleUpdate(act, 0)
     }
 
     fun ensureUnlimitedUndos(context: Context) {
@@ -1662,7 +1378,12 @@ object HostAppAiFab {
             collectVisibleTexts(scanRoot, visibleTexts, depth = 0)
         }
 
-        val isStandoutsScreen = visibleTexts.any {
+        val isCommentSheet = visibleTexts.any {
+            it.contains("Send Like", ignoreCase = true) ||
+            it.contains("Add a comment", ignoreCase = true) ||
+            it.contains("Edit comment", ignoreCase = true)
+        }
+        val isStandoutsScreen = !isCommentSheet && visibleTexts.any {
             it.startsWith("Roses (", ignoreCase = true) ||
             it.contains("Send a Rose", ignoreCase = true) ||
             it.contains("Roses remaining", ignoreCase = true) ||
@@ -1673,12 +1394,17 @@ object HostAppAiFab {
             (it.contains("Likes you", ignoreCase = true) && !it.equals("Likes You", ignoreCase = true))
         }
         val isMatchesScreen = visibleTexts.any {
-            it.contains("No matches right now", ignoreCase = true)
+            it.contains("No matches right now", ignoreCase = true) ||
+            it.contains("Boost your profile", ignoreCase = true) ||
+            it.contains("Upgrade to HingeX", ignoreCase = true) ||
+            it.contains("Conversations", ignoreCase = true) ||
+            it.contains("Your turn", ignoreCase = true) ||
+            it.contains("Their turn", ignoreCase = true)
         }
         val isProfileScreen = visibleTexts.any {
             it.contains("Check your Signals", ignoreCase = true) ||
-            it.contains("HingeX", ignoreCase = true) ||
-            (it.contains("Get more", ignoreCase = true) && it.contains("Safety", ignoreCase = true))
+            it.contains("My Hinge", ignoreCase = true) ||
+            it.contains("Edit Profile", ignoreCase = true)
         }
 
         val isChatScreen = visibleTexts.any {
@@ -1686,7 +1412,16 @@ object HostAppAiFab {
             it.equals("Type a message", ignoreCase = true) ||
             it.equals("Record voice note", ignoreCase = true) ||
             it.contains("messageComposition", ignoreCase = true)
-        } || (visibleTexts.any { it.equals("Chat", ignoreCase = true) } && visibleTexts.any { it.equals("Profile", ignoreCase = true) })
+        }
+
+        val isEmptyFeed = visibleTexts.any {
+            it.contains("You've seen everyone", ignoreCase = true) ||
+            it.contains("Out of people", ignoreCase = true) ||
+            it.contains("You're all caught up", ignoreCase = true) ||
+            it.contains("Expand your preferences", ignoreCase = true)
+        }
+
+        val isNonCandidate = isMatchesScreen || isProfileScreen || isChatScreen || isEmptyFeed
 
         val activeContext = when {
             isChatScreen -> HostCandidateReader.ScreenContext.MATCH_CHAT
@@ -1696,10 +1431,15 @@ object HostAppAiFab {
             else -> HostCandidateReader.ScreenContext.DISCOVER
         }
 
-        Log.d(Consts.TAG, "extractScreenClues: activeContext=$activeContext, textsCount=${visibleTexts.size}")
+        if (lastLoggedContext != activeContext || lastLoggedNonCandidate != isNonCandidate) {
+            lastLoggedContext = activeContext
+            lastLoggedNonCandidate = isNonCandidate
+            Log.d(Consts.TAG, "extractScreenClues: activeContext=$activeContext, isNonCandidate=$isNonCandidate, textsCount=${visibleTexts.size}")
+        }
         return HostCandidateReader.ScreenClues(
             visibleTexts = visibleTexts,
-            activeContext = activeContext
+            activeContext = activeContext,
+            isNonCandidate = isNonCandidate,
         )
     }
 
@@ -1760,77 +1500,121 @@ object HostAppAiFab {
         }
     }
 
-    fun toggleInlineOpenerCard(activity: Activity, prefs: PreferencesManager, isChatMode: Boolean = false) {
+    fun openAiSheet(activity: Activity, prefs: PreferencesManager) {
         activity.runOnUiThread {
             val container = findAttachedContainer(activity) ?: return@runOnUiThread
-            val inlineCard = container.findViewWithTag<ComposeView>(TAG_INLINE_OPENER_CARD) ?: return@runOnUiThread
-            if (inlineCard.visibility == View.VISIBLE) {
-                inlineCard.visibility = View.GONE
-                isInlineOpenerManuallyToggled = false
-                isCommentCardDismissed = true
-                lastCommentTargetKey = null
-            } else {
-                isInlineOpenerManuallyToggled = true
-                isCommentCardDismissed = false
-                val owner = overlayLifecycleOwners[inlineCard] ?: ComposeDialogLifecycleOwner().also {
-                    overlayLifecycleOwners[inlineCard] = it
+            val sheetView = container.findViewWithTag<ComposeView>(TAG_AI_SHEET) ?: return@runOnUiThread
+            val owner = overlayLifecycleOwners.getOrPut(sheetView) {
+                ComposeDialogLifecycleOwner()
+            }
+            owner.handleStart()
+
+            val decor = activity.window?.decorView
+            val lifecycleOwner = (activity as? LifecycleOwner) ?: owner
+            val viewModelStoreOwner = (activity as? ViewModelStoreOwner) ?: owner
+            val savedStateRegistryOwner = (activity as? SavedStateRegistryOwner) ?: owner
+
+            if (decor != null) {
+                decor.setViewTreeLifecycleOwner(lifecycleOwner)
+                decor.setViewTreeViewModelStoreOwner(viewModelStoreOwner)
+                decor.setViewTreeSavedStateRegistryOwner(savedStateRegistryOwner)
+            }
+            container.setViewTreeLifecycleOwner(lifecycleOwner)
+            container.setViewTreeViewModelStoreOwner(viewModelStoreOwner)
+            container.setViewTreeSavedStateRegistryOwner(savedStateRegistryOwner)
+            sheetView.setViewTreeLifecycleOwner(lifecycleOwner)
+            sheetView.setViewTreeViewModelStoreOwner(viewModelStoreOwner)
+            sheetView.setViewTreeSavedStateRegistryOwner(savedStateRegistryOwner)
+
+            val screenClues = extractScreenClues(activity)
+            val isChat = screenClues.activeContext == HostCandidateReader.ScreenContext.MATCH_CHAT
+            val candidate = currentTargetCandidate ?: if (!isChat) HostCandidateReader.readTargetCandidateSync(activity, screenClues) else null
+            val commentInfo = currentCommentCardInfo ?: findCommentCardInfo(container.rootView, candidate)
+
+            sheetView.setContent {
+                val isDark = when (prefs.themeMode) {
+                    ThemeMode.DARK -> true
+                    ThemeMode.LIGHT -> false
+                    ThemeMode.SYSTEM -> isSystemInDarkTheme()
                 }
-                owner.handleStart()
-                container.setViewTreeLifecycleOwner(owner)
-                container.setViewTreeViewModelStoreOwner(owner)
-                container.setViewTreeSavedStateRegistryOwner(owner)
-                inlineCard.setViewTreeLifecycleOwner(owner)
-                inlineCard.setViewTreeViewModelStoreOwner(owner)
-                inlineCard.setViewTreeSavedStateRegistryOwner(owner)
+                val sheetSurfaceColor = if (isDark) androidx.compose.ui.graphics.Color(0xFF1E1E20) else androidx.compose.ui.graphics.Color(0xFFFFFFFF)
+                val sheetBorderColor = if (isDark) androidx.compose.ui.graphics.Color(0xFF2C2C2E) else androidx.compose.ui.graphics.Color(0xFFE5E7EB)
 
-                val screenClues = extractScreenClues(activity)
-                val activeCandidate = if (!isChatMode) HostCandidateReader.readTargetCandidateSync(activity, screenClues) else null
-                val commentInfo = findCommentCardInfo(container.rootView, activeCandidate)
-                currentCommentCardInfo = commentInfo
-
-                inlineCard.setContent {
-                    Theme(
-                        themeMode = prefs.themeMode,
-                        pureBlack = prefs.pureBlack,
-                        themeColor = androidx.compose.ui.graphics.Color(prefs.themeColor),
-                        setSystemBars = false,
+                Theme(
+                    themeMode = prefs.themeMode,
+                    pureBlack = prefs.pureBlack,
+                    themeColor = androidx.compose.ui.graphics.Color(prefs.themeColor),
+                    setSystemBars = false,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.45f))
+                            .clickable { closeAiSheet(activity) }
                     ) {
-                        InlineAiOpenerCard(
-                            prefs = prefs,
-                            targetPrompt = commentInfo?.targetPrompt,
-                            isCommentMode = commentInfo != null,
-                            candidate = activeCandidate,
-                            screenClues = screenClues,
-                            isChatMode = isChatMode,
-                            hostActivity = activity,
-                            onDismiss = {
-                                activity.runOnUiThread {
-                                    inlineCard.visibility = View.GONE
-                                    isInlineOpenerManuallyToggled = false
-                                    isCommentCardDismissed = true
-                                    lastCommentTargetKey = null
+                        Surface(
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .fillMaxWidth()
+                                .wrapContentHeight()
+                                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { },
+                            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+                            color = sheetSurfaceColor,
+                            border = BorderStroke(1.dp, sheetBorderColor),
+                            shadowElevation = 16.dp,
+                        ) {
+                            InlineAiOpenerCard(
+                                prefs = prefs,
+                                candidate = candidate,
+                                screenClues = screenClues,
+                                isChatMode = isChat,
+                                targetPrompt = commentInfo?.targetPrompt,
+                                isCommentMode = commentInfo != null,
+                                hostActivity = activity,
+                                showDragHandle = true,
+                                onDismiss = { closeAiSheet(activity) },
+                                onInsert = { text ->
+                                    if (commentInfo != null) {
+                                        insertTextIntoComment(activity, commentInfo, text)
+                                    } else if (isChat) {
+                                        insertReplyIntoChatInput(activity, text)
+                                    } else {
+                                        copyOpenerFallback(activity, text)
+                                    }
+                                    closeAiSheet(activity)
                                 }
-                            },
-                            onInsert = { text ->
-                                if (commentInfo != null) {
-                                    insertTextIntoComment(activity, commentInfo, text)
-                                } else if (isChatMode) {
-                                    insertReplyIntoChatInput(activity, text)
-                                } else {
-                                    copyOpenerFallback(activity, text)
-                                }
-                            },
-                        )
+                            )
+                        }
                     }
                 }
-                inlineCard.visibility = View.VISIBLE
-                updateControlsPosition(container, activity)
+            }
+            sheetView.visibility = View.VISIBLE
+            container.findViewWithTag<View>(TAG_FAB_BUTTON)?.visibility = View.GONE
+            container.findViewWithTag<View>(TAG_NAV_CONTAINER)?.visibility = View.GONE
+            container.findViewWithTag<View>(TAG_AVAILABLE_LIKES)?.visibility = View.GONE
+        }
+    }
+
+    fun closeAiSheet(activity: Activity) {
+        activity.runOnUiThread {
+            val container = findAttachedContainer(activity) ?: return@runOnUiThread
+            val sheetView = container.findViewWithTag<ComposeView>(TAG_AI_SHEET) ?: return@runOnUiThread
+            sheetView.visibility = View.GONE
+            val prefs = currentPrefsRef?.get()
+            if (prefs != null) {
+                updateControlsState(container, activity, prefs)
             }
         }
     }
 
-    fun showAiSheet(activity: Activity, prefs: PreferencesManager, isChatMode: Boolean = false) {
-        toggleInlineOpenerCard(activity, prefs, isChatMode)
+    private fun onFabClicked(activity: Activity, prefs: PreferencesManager) {
+        val container = findAttachedContainer(activity)
+        val sheetView = container?.findViewWithTag<ComposeView>(TAG_AI_SHEET)
+        if (sheetView != null && sheetView.visibility == View.VISIBLE) {
+            closeAiSheet(activity)
+        } else {
+            openAiSheet(activity, prefs)
+        }
     }
 }
 
@@ -1885,10 +1669,14 @@ private fun updateNavCounter(container: View) {
     val canGoBack = FeedNavigator.currentOffset > 0
     val canGoForward = (total < 0) || (total > 1 && FeedNavigator.currentOffset < total - 1)
 
-    backBtn?.alpha = if (canGoBack) 1.0f else 0.35f
-    backBtn?.isEnabled = canGoBack
-    forwardBtn?.alpha = if (canGoForward) 1.0f else 0.35f
-    forwardBtn?.isEnabled = canGoForward
+    if (backBtn?.isEnabled != canGoBack) {
+        backBtn?.isEnabled = canGoBack
+        backBtn?.alpha = if (canGoBack) 1.0f else 0.35f
+    }
+    if (forwardBtn?.isEnabled != canGoForward) {
+        forwardBtn?.isEnabled = canGoForward
+        forwardBtn?.alpha = if (canGoForward) 1.0f else 0.35f
+    }
 }
 
 private fun updateLikesPill(container: View, state: HostLikesReader.LikesState) {
@@ -1901,6 +1689,13 @@ private fun updateLikesPill(container: View, state: HostLikesReader.LikesState) 
         state.availableLikes in 1..2 -> Color.parseColor("#FFA000")
         else -> Color.parseColor("#ED5564")
     }
+
+    if (HostAppAiFab.lastRenderedLikesState == state && HostAppAiFab.lastHeartColor == heartColor) {
+        return
+    }
+    HostAppAiFab.lastRenderedLikesState = state
+    HostAppAiFab.lastHeartColor = heartColor
+
     val roseColor = Color.parseColor("#F06292")
 
     val heartIcon = likesPill.findViewWithTag<ImageView>("unhinge_likes_heart")
@@ -1937,11 +1732,13 @@ private fun updateLikesPill(container: View, state: HostLikesReader.LikesState) 
     }
 
     val pillHeight = (26 * density).toInt()
-    likesPill.measure(
-        View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
-        View.MeasureSpec.makeMeasureSpec(pillHeight, View.MeasureSpec.EXACTLY)
-    )
-    val pillW = maxOf(likesPill.measuredWidth, (36 * density).toInt())
+    if (likesPill.width <= 0) {
+        likesPill.measure(
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+            View.MeasureSpec.makeMeasureSpec(pillHeight, View.MeasureSpec.EXACTLY)
+        )
+    }
+    val pillW = if (likesPill.width > 0) likesPill.width else maxOf(likesPill.measuredWidth, (36 * density).toInt())
     val fab = (likesPill.parent as? ViewGroup)?.findViewWithTag<View>(HostAppAiFab.TAG_FAB_BUTTON)
     if (fab != null && fab.visibility == View.VISIBLE) {
         val fabCenterX = fab.x + fab.width / 2f

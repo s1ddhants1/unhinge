@@ -30,6 +30,7 @@ fun HostAppAiSheetContent(
         isChatMode = isChatMode,
         hostActivity = hostActivity,
         initialChatContext = initialChatContext,
+        showDragHandle = showDragHandle,
         onInsert = hostActivity?.let { act ->
             { text ->
                 HostAppAiFab.insertReplyIntoChatInput(act, text)
