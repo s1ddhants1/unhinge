@@ -151,7 +151,7 @@ object HostAppAiFab {
         activity.runOnUiThread {
             try {
                 ensureAccessibilityEnabled(activity)
-                ensureUnlimitedUndos(activity)
+                ensureGatedPermissions(activity)
                 prefs.ensureBackupPrefs(activity)
                 activity.window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
 
@@ -1264,16 +1264,16 @@ object HostAppAiFab {
         scheduleUpdate(act, 0)
     }
 
-    fun ensureUnlimitedUndos(context: Context) {
-        attempt("ensure unlimited undos in default prefs", silent = true) {
+    fun ensureGatedPermissions(context: Context) {
+        attempt("ensure gated permissions in default prefs", silent = true) {
             val prefs = context.getSharedPreferences("default", Context.MODE_PRIVATE)
             val current = prefs.getStringSet("USER_PERMISSIONS", null) ?: emptySet()
-            if (!current.contains("undo_skip_replenish_unlimited")) {
+            if (!current.containsAll(HostGatedFeaturesHook.UNLOCKED_PERMISSIONS)) {
                 val updated = current.toMutableSet().apply {
-                    add("undo_skip_replenish_unlimited")
+                    addAll(HostGatedFeaturesHook.UNLOCKED_PERMISSIONS)
                 }
                 prefs.edit().putStringSet("USER_PERMISSIONS", updated).apply()
-                Log.i(Consts.TAG, "HostAppAiFab: granted undo_skip_replenish_unlimited in default prefs")
+                Log.i(Consts.TAG, "HostAppAiFab: granted unlocked permissions in default prefs")
             }
         }
     }

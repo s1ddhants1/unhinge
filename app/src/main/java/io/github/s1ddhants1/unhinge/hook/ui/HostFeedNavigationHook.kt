@@ -31,7 +31,7 @@ object HostFeedNavigationHook : HookHandler {
         classLoader: ClassLoader,
         prefs: PreferencesManager
     ) {
-        if (!prefs.enableFeedNavigation) return
+        if (!prefs.enableFeedNavigation && !prefs.unlockGatedFeatures) return
 
         val rawQueryMethods = attempt("find rawQueryWithFactory methods", silent = true) {
             SQLiteDatabase::class.java.declaredMethods.filter {
@@ -53,17 +53,28 @@ object HostFeedNavigationHook : HookHandler {
                     val db = chain.thisObject as? SQLiteDatabase
                     if (db != null && isHingeDatabase(db)) {
                         FeedNavigator.setDbReference(db)
+                        if (prefs.unlockGatedFeatures) {
+                            attempt("clear hidden likes profiles", silent = true) {
+                                db.delete("sorted_hidden_likes_profiles", null, null)
+                            }
+                        }
                     }
 
                     val sql = chain.args.getOrNull(1) as? String
-                    if (sql != null && isTargetQuery(sql)) {
-                        val offset = FeedNavigator.currentOffset
-                        if (offset > 0) {
-                            val modified = injectOffset(sql, offset)
-                            if (modified != sql) {
-                                chain.args[1] = modified
-                                Log.d(Consts.TAG, "FeedNav: OFFSET $offset injected into discover_subject query")
+                    if (sql != null) {
+                        if (prefs.enableFeedNavigation && isTargetQuery(sql)) {
+                            val offset = FeedNavigator.currentOffset
+                            if (offset > 0) {
+                                val modified = injectOffset(sql, offset)
+                                if (modified != sql) {
+                                    chain.args[1] = modified
+                                    Log.d(Consts.TAG, "FeedNav: OFFSET $offset injected into discover_subject query")
+                                }
                             }
+                        } else if (prefs.unlockGatedFeatures && isLikesYouSortQuery(sql)) {
+                            chain.args[1] = unlockLikesYouSort(sql)
+                        } else if (prefs.unlockGatedFeatures && isDiscoverFilterQuery(sql)) {
+                            chain.args[1] = unlockDiscoverFilter(sql)
                         }
                     }
 
@@ -284,5 +295,33 @@ object HostFeedNavigationHook : HookHandler {
         }
 
         return if (hasTrailingSemicolon) "$resultSql;" else resultSql
+    }
+
+    fun isLikesYouSortQuery(sql: String): Boolean {
+        return sql.contains("likes_you_sort", ignoreCase = true)
+    }
+
+    fun unlockLikesYouSort(sql: String): String {
+        return if (sql.contains("SELECT * FROM likes_you_sort", ignoreCase = true)) {
+            sql.replace(Regex("""SELECT\s+\*\s+FROM\s+likes_you_sort""", RegexOption.IGNORE_CASE), "SELECT id, displayName, 0 AS isLocked FROM likes_you_sort")
+        } else if (sql.contains("isLocked", ignoreCase = true)) {
+            sql.replace(Regex("""\bisLocked\b""", RegexOption.IGNORE_CASE), "0 AS isLocked")
+        } else {
+            sql
+        }
+    }
+
+    fun isDiscoverFilterQuery(sql: String): Boolean {
+        return sql.contains("discover_filter", ignoreCase = true)
+    }
+
+    fun unlockDiscoverFilter(sql: String): String {
+        return if (sql.contains("SELECT * FROM discover_filter", ignoreCase = true)) {
+            sql.replace(Regex("""SELECT\s+\*\s+FROM\s+discover_filter""", RegexOption.IGNORE_CASE), "SELECT id, filterId, pillType, '' AS permission FROM discover_filter")
+        } else if (sql.contains("permission", ignoreCase = true)) {
+            sql.replace(Regex("""\bpermission\b""", RegexOption.IGNORE_CASE), "'' AS permission")
+        } else {
+            sql
+        }
     }
 }

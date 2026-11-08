@@ -214,9 +214,11 @@
     <string name="appearance_theme_light">Light</string>
     <string name="appearance_theme_dark">Dark</string>
     <string name="appearance_pure_black">Pure Black (AMOLED)</string>
-    <string name="feednav_section">Feed Navigation &amp; Likes</string>
+    <string name="feednav_section">Feed Navigation &amp; Gated Features</string>
     <string name="feednav_likes_counter">Available Likes Counter</string>
     <string name="feednav_controls">Feed Navigation Controls</string>
+    <string name="feednav_unlock_gated">Unlock Gated UI Features</string>
+    <string name="feednav_allow_screenshots">Allow Screenshots &amp; Recording</string>
     <string name="backup_section_export">Export Data</string>
     <string name="backup_export_full">Export Complete Backup</string>
     <string name="backup_export_settings">Export Settings</string>

@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.LockOpen
+import androidx.compose.material.icons.outlined.Screenshot
 import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -46,6 +48,24 @@ fun FeedNavigationSettingsPage(
                 icon = Icons.Outlined.SwapHoriz,
                 checked = prefs.enableFeedNavigation,
                 onCheckedChange = { prefs.enableFeedNavigation = it }
+            )
+
+            SettingsDivider()
+
+            SettingsSwitchRow(
+                title = stringResource(R.string.feednav_unlock_gated),
+                icon = Icons.Outlined.LockOpen,
+                checked = prefs.unlockGatedFeatures,
+                onCheckedChange = { prefs.unlockGatedFeatures = it }
+            )
+
+            SettingsDivider()
+
+            SettingsSwitchRow(
+                title = stringResource(R.string.feednav_allow_screenshots),
+                icon = Icons.Outlined.Screenshot,
+                checked = prefs.allowScreenshots,
+                onCheckedChange = { prefs.allowScreenshots = it }
             )
         }
 

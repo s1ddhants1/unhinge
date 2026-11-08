@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.os.Bundle
 import android.util.Log
+import android.view.WindowManager
 import androidx.annotation.Keep
 import io.github.libxposed.api.XposedInterface
 import io.github.libxposed.api.XposedModule
@@ -155,7 +156,7 @@ class Module : XposedModule() {
         PrivacyDataTransportHook.apply(this, null, cl, prefs)
 
         HostFeedNavigationHook.apply(this, null, cl, prefs)
-        io.github.s1ddhants1.unhinge.hook.ui.HostUndoHook.apply(this, null, cl, prefs)
+        io.github.s1ddhants1.unhinge.hook.ui.HostGatedFeaturesHook.apply(this, null, cl, prefs)
 
         attempt<Unit>("hook AccessibilityManager.isEnabled", silent = true) {
             hookFirst(
@@ -180,9 +181,16 @@ class Module : XposedModule() {
         val app = ctx as? android.app.Application ?: ctx.applicationContext as? android.app.Application
         if (app != null) {
             app.registerActivityLifecycleCallbacks(object : android.app.Application.ActivityLifecycleCallbacks {
-                override fun onActivityCreated(activity: android.app.Activity, savedInstanceState: Bundle?) {}
+                override fun onActivityCreated(activity: android.app.Activity, savedInstanceState: Bundle?) {
+                    if (prefs.allowScreenshots) {
+                        activity.window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                    }
+                }
                 override fun onActivityStarted(activity: android.app.Activity) {}
                 override fun onActivityResumed(activity: android.app.Activity) {
+                    if (prefs.allowScreenshots) {
+                        activity.window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                    }
                     val name = activity.javaClass.name
                     if (name.contains("AppActivity") || name.contains("hinge")) {
                         io.github.s1ddhants1.unhinge.hook.ui.HostAppAiFab.attach(activity, prefs)
