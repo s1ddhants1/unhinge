@@ -130,10 +130,10 @@ object HostGatedFeaturesHook : HookHandler {
                     val flags = chain.args.getOrNull(0) as? Int ?: 0
                     val mask = chain.args.getOrNull(1) as? Int ?: 0
                     if ((mask and flagSecure) != 0) {
-                        chain.args[0] = flags and flagSecure.inv()
-                        chain.args[1] = mask and flagSecure.inv()
+                        chain.proceed(arrayOf(flags and flagSecure.inv(), mask and flagSecure.inv()))
+                    } else {
+                        chain.proceed()
                     }
-                    chain.proceed()
                 }
 
             val addFlagsMethod = windowClass.getDeclaredMethod("addFlags", Int::class.javaPrimitiveType)
@@ -141,9 +141,10 @@ object HostGatedFeaturesHook : HookHandler {
                 .intercept { chain ->
                     val flags = chain.args.getOrNull(0) as? Int ?: 0
                     if ((flags and flagSecure) != 0) {
-                        chain.args[0] = flags and flagSecure.inv()
+                        chain.proceed(arrayOf(flags and flagSecure.inv()))
+                    } else {
+                        chain.proceed()
                     }
-                    chain.proceed()
                 }
 
             Log.i(Consts.TAG, "HostGatedFeaturesHook: installed Window screenshot hooks")

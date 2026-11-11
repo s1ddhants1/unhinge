@@ -3,16 +3,14 @@ package io.github.s1ddhants1.unhinge.hook.ui
 import android.app.Activity
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
-import android.os.Bundle
-import android.os.SystemClock
 import android.util.Log
-import android.view.MotionEvent
-import android.view.accessibility.AccessibilityNodeInfo
-import android.view.accessibility.AccessibilityNodeProvider
+import android.view.View
+import android.view.ViewGroup
 import io.github.s1ddhants1.unhinge.Consts
 import io.github.s1ddhants1.unhinge.util.attempt
 import java.io.File
 import java.lang.ref.WeakReference
+import java.lang.reflect.Modifier
 import java.util.concurrent.atomic.AtomicInteger
 
 object FeedNavigator {
@@ -22,6 +20,8 @@ object FeedNavigator {
     @Volatile private var dbRef: WeakReference<SQLiteDatabase>? = null
     @Volatile private var roomDbRef: WeakReference<Any>? = null
     @Volatile private var invalidationTrackerRef: WeakReference<Any>? = null
+    @Volatile private var trackerInstance: Any? = null
+    @Volatile private var roomDbInstance: Any? = null
 
     val isInternalQuery: ThreadLocal<Boolean> = ThreadLocal.withInitial { false }
 
@@ -39,15 +39,30 @@ object FeedNavigator {
     }
 
     fun setRoomDatabase(db: Any) {
-        if (roomDbRef?.get() === db) return
+        if (roomDbInstance === db && trackerInstance != null) return
+        roomDbInstance = db
         roomDbRef = WeakReference(db)
         try {
+            var tracker: Any? = null
             val trackerMethod = db.javaClass.methods.firstOrNull { it.name == "getInvalidationTracker" }
-            val tracker = trackerMethod?.invoke(db)
-                ?: db.javaClass.declaredFields.firstOrNull { it.name == "mInvalidationTracker" }?.apply { isAccessible = true }?.get(db)
+            if (trackerMethod != null) {
+                tracker = trackerMethod.invoke(db)
+            }
+            if (tracker == null) {
+                var c: Class<*>? = db.javaClass
+                while (c != null && tracker == null) {
+                    val f = c.declaredFields.firstOrNull { it.name == "internalTracker" || it.name == "mInvalidationTracker" }
+                    if (f != null) {
+                        f.isAccessible = true
+                        tracker = f.get(db)
+                    }
+                    c = c.superclass
+                }
+            }
             if (tracker != null) {
+                trackerInstance = tracker
                 invalidationTrackerRef = WeakReference(tracker)
-                Log.i(Consts.TAG, "FeedNavigator: captured Room InvalidationTracker successfully")
+                Log.i(Consts.TAG, "FeedNavigator: captured Room InvalidationTracker successfully (${tracker.javaClass.name})")
             }
         } catch (e: Exception) {
             Log.w(Consts.TAG, "FeedNavigator: failed to extract InvalidationTracker: ${e.message}")
@@ -207,21 +222,10 @@ object FeedNavigator {
     fun triggerHingeRefresh(activity: Activity? = null) {
         val act = activity ?: HostAppAiFab.currentActivityRef?.get()
 
-        val tracker = invalidationTrackerRef?.get()
+        val tracker = getOrFindTracker(act)
         if (tracker != null) {
-            try {
-                val notifyMethod = tracker.javaClass.methods.firstOrNull {
-                    it.name == "notifyObserversByTableNames" &&
-                    it.parameterTypes.size == 1 &&
-                    it.parameterTypes[0] == Array<String>::class.java
-                }
-                notifyMethod?.invoke(tracker, arrayOf("discover_subject", "discover_batch", "profiles", "subject_media", "pending_ratings"))
-
-                val refreshAsync = tracker.javaClass.methods.firstOrNull { it.name == "refreshVersionsAsync" }
-                refreshAsync?.invoke(tracker)
-                Log.i(Consts.TAG, "FeedNavigator: Room InvalidationTracker notified across discover tables")
-            } catch (e: Exception) {
-                Log.w(Consts.TAG, "FeedNavigator: InvalidationTracker trigger failed: ${e.message}")
+            attempt("notify Room InvalidationTracker", silent = false) {
+                notifyTableInvalidation(tracker)
             }
         }
 
@@ -230,7 +234,7 @@ object FeedNavigator {
             isInternalQuery.set(true)
             try {
                 db.execSQL("UPDATE discover_subject SET batchId = batchId WHERE rowid = (SELECT MIN(rowid) FROM discover_subject)")
-            } catch (_: Exception) {}
+            } catch (_: Throwable) {}
             finally {
                 isInternalQuery.set(false)
             }
@@ -238,17 +242,255 @@ object FeedNavigator {
 
         if (act != null) {
             act.runOnUiThread {
-                attempt("trigger Hinge native feed refresh", silent = false) {
-                    val discoverFragment = findDiscoverFragment(act)
-                    if (discoverFragment != null) {
-                        attempt("capture Room from DiscoverFragment", silent = true) {
-                            captureRoomFromFragment(discoverFragment)
-                        }
-                        reAttachDiscoverFragment(discoverFragment)
+                attempt("request ComposeView invalidation", silent = true) {
+                    val decor = act.window?.decorView ?: return@attempt
+                    decor.post {
+                        requestComposeInvalidation(decor)
                     }
-                    triggerDiscoverTabReselect(act)
                 }
             }
+        }
+    }
+
+    private fun bumpStateFlowVersions(obj: Any, visited: MutableSet<Int> = mutableSetOf(), depth: Int = 0): Boolean {
+        if (depth > 4) return false
+        val id = System.identityHashCode(obj)
+        if (!visited.add(id)) return false
+
+        for (field in obj.javaClass.declaredFields) {
+            if (Modifier.isStatic(field.modifiers)) continue
+            try {
+                field.isAccessible = true
+                val value = field.get(obj) ?: continue
+                val getValueMethod = value.javaClass.methods.firstOrNull { it.name == "getValue" && it.parameterTypes.isEmpty() }
+                if (getValueMethod != null) {
+                    val current = getValueMethod.invoke(value)
+                    if (current is IntArray) {
+                        val bumped = current.clone()
+                        for (i in bumped.indices) {
+                            bumped[i]++
+                        }
+                        val setValueMethod = value.javaClass.methods.firstOrNull {
+                            it.parameterTypes.size == 1 && it.parameterTypes[0].isAssignableFrom(IntArray::class.java)
+                        } ?: value.javaClass.declaredMethods.firstOrNull {
+                            it.parameterTypes.size == 1 && it.parameterTypes[0].isAssignableFrom(IntArray::class.java)
+                        }
+                        if (setValueMethod != null) {
+                            setValueMethod.isAccessible = true
+                            setValueMethod.invoke(value, bumped)
+                            Log.i(Consts.TAG, "FeedNavigator: bumped Room StateFlow table versions (${bumped.size} tables)")
+                            return true
+                        }
+                    }
+                }
+                if (depth < 3 && !value.javaClass.name.startsWith("java.") && !value.javaClass.name.startsWith("android.")) {
+                    if (bumpStateFlowVersions(value, visited, depth + 1)) {
+                        return true
+                    }
+                }
+            } catch (_: Throwable) {}
+        }
+        return false
+    }
+
+    private fun notifyTableInvalidation(tracker: Any) {
+        val tableNames = arrayOf("discover_subject", "discover_batch", "profiles", "subject_media", "pending_ratings")
+        val tableSet = tableNames.toSet()
+        val intSet = (0..256).toSet()
+
+        bumpStateFlowVersions(tracker)
+
+        for (m in tracker.javaClass.methods + tracker.javaClass.declaredMethods) {
+            if (m.name in setOf("equals", "hashCode", "toString", "wait", "notify", "notifyAll")) continue
+            if (m.parameterTypes.size == 1) {
+                val p = m.parameterTypes[0]
+                try {
+                    if (p == Array<String>::class.java) {
+                        m.isAccessible = true
+                        m.invoke(tracker, tableNames)
+                        Log.i(Consts.TAG, "FeedNavigator: notified via ${m.name}(Array<String>)")
+                    } else if (p == Set::class.java || p == Collection::class.java) {
+                        m.isAccessible = true
+                        m.invoke(tracker, tableSet)
+                        m.invoke(tracker, intSet)
+                        Log.i(Consts.TAG, "FeedNavigator: notified via ${m.name}(Set)")
+                    }
+                } catch (_: Throwable) {}
+            } else if (m.parameterTypes.size == 2 &&
+                Function0::class.java.isAssignableFrom(m.parameterTypes[0]) &&
+                Function0::class.java.isAssignableFrom(m.parameterTypes[1])) {
+                try {
+                    m.isAccessible = true
+                    m.invoke(tracker, { }, { })
+                    Log.i(Consts.TAG, "FeedNavigator: invoked tracker 2-arg refresh (${m.name})")
+                } catch (_: Throwable) {}
+            }
+        }
+
+        for (field in tracker.javaClass.declaredFields) {
+            try {
+                field.isAccessible = true
+                val value = field.get(tracker) ?: continue
+                when (value) {
+                    is Function1<*, *> -> {
+                        try {
+                            @Suppress("UNCHECKED_CAST")
+                            val fn = value as ((Any) -> Any?)
+                            fn.invoke(tableSet)
+                            fn.invoke(intSet)
+                            Log.i(Consts.TAG, "FeedNavigator: notified via tracker field ${field.name} (Function1)")
+                        } catch (_: Throwable) {}
+                    }
+                    is Function0<*> -> {
+                        try {
+                            value.invoke()
+                            Log.i(Consts.TAG, "FeedNavigator: ran tracker field ${field.name} (Function0)")
+                        } catch (_: Throwable) {}
+                    }
+                    is Runnable -> {
+                        try {
+                            value.run()
+                            Log.i(Consts.TAG, "FeedNavigator: ran tracker field ${field.name} (Runnable)")
+                        } catch (_: Throwable) {}
+                    }
+                    is Map<*, *> -> {
+                        notifyWrappers(value, tableSet, intSet)
+                    }
+                    else -> {
+                        for (m in value.javaClass.methods + value.javaClass.declaredMethods) {
+                            if (m.name in setOf("equals", "hashCode", "toString", "wait", "notify", "notifyAll")) continue
+                            if (m.parameterTypes.size == 2 &&
+                                Function0::class.java.isAssignableFrom(m.parameterTypes[0]) &&
+                                Function0::class.java.isAssignableFrom(m.parameterTypes[1])) {
+                                try {
+                                    m.isAccessible = true
+                                    m.invoke(value, { }, { })
+                                    Log.i(Consts.TAG, "FeedNavigator: invoked subField ${field.name} refresh (${m.name})")
+                                } catch (_: Throwable) {}
+                            }
+                        }
+                        for (subField in value.javaClass.declaredFields) {
+                            try {
+                                subField.isAccessible = true
+                                val subValue = subField.get(value) ?: continue
+                                when (subValue) {
+                                    is Function1<*, *> -> {
+                                        try {
+                                            @Suppress("UNCHECKED_CAST")
+                                            val fn = subValue as ((Any) -> Any?)
+                                            fn.invoke(tableSet)
+                                            fn.invoke(intSet)
+                                            Log.i(Consts.TAG, "FeedNavigator: notified via subField ${field.name}.${subField.name} (Function1)")
+                                        } catch (_: Throwable) {}
+                                    }
+                                    is Function0<*> -> {
+                                        try {
+                                            subValue.invoke()
+                                            Log.i(Consts.TAG, "FeedNavigator: notified via subField ${field.name}.${subField.name} (Function0)")
+                                        } catch (_: Throwable) {}
+                                    }
+                                    is Map<*, *> -> {
+                                        notifyWrappers(subValue, tableSet, intSet)
+                                    }
+                                }
+                            } catch (_: Throwable) {}
+                        }
+                    }
+                }
+            } catch (_: Throwable) {}
+        }
+    }
+
+    private fun notifyWrappers(map: Map<*, *>, tableSet: Set<String>, intSet: Set<Int>) {
+        val wrappers = map.values.toList()
+        for (wrapper in wrappers) {
+            if (wrapper == null) continue
+            for (wm in wrapper.javaClass.methods + wrapper.javaClass.declaredMethods) {
+                if (wm.name in setOf("equals", "hashCode", "toString", "wait", "notify", "notifyAll")) continue
+                if (wm.parameterTypes.size == 1 &&
+                    (wm.parameterTypes[0] == Set::class.java || wm.parameterTypes[0] == Collection::class.java)) {
+                    try {
+                        wm.isAccessible = true
+                        wm.invoke(wrapper, intSet)
+                        wm.invoke(wrapper, tableSet)
+                        Log.i(Consts.TAG, "FeedNavigator: notified wrapper ${wrapper.javaClass.simpleName}#${wm.name}")
+                    } catch (_: Throwable) {}
+                }
+            }
+            for (wf in wrapper.javaClass.declaredFields) {
+                try {
+                    wf.isAccessible = true
+                    val target = wf.get(wrapper) ?: continue
+                    for (tm in target.javaClass.methods + target.javaClass.declaredMethods) {
+                        if (tm.name in setOf("equals", "hashCode", "toString", "wait", "notify", "notifyAll")) continue
+                        if (tm.parameterTypes.size == 1 &&
+                            (tm.parameterTypes[0] == Set::class.java || tm.parameterTypes[0] == Collection::class.java)) {
+                            tm.isAccessible = true
+                            tm.invoke(target, tableSet)
+                            tm.invoke(target, intSet)
+                        }
+                    }
+                } catch (_: Throwable) {}
+            }
+        }
+    }
+
+    private fun requestComposeInvalidation(view: View) {
+        if (view.javaClass.name.contains("ComposeView")) {
+            view.invalidate()
+            view.requestLayout()
+        }
+        if (view is ViewGroup) {
+            for (i in 0 until view.childCount) {
+                requestComposeInvalidation(view.getChildAt(i))
+            }
+        }
+    }
+
+    fun getOrFindTracker(activity: Activity? = null): Any? {
+        val existing = invalidationTrackerRef?.get()
+        if (existing != null) return existing
+
+        val roomDb = roomDbRef?.get()
+        if (roomDb != null) {
+            setRoomDatabase(roomDb)
+            val resolved = invalidationTrackerRef?.get()
+            if (resolved != null) return resolved
+        }
+
+        val act = activity ?: HostAppAiFab.currentActivityRef?.get() ?: return null
+        val fragment = findDiscoverFragment(act)
+        if (fragment != null) {
+            searchAndCaptureRoom(fragment, mutableSetOf(), 0, 3)
+        }
+        if (invalidationTrackerRef?.get() == null) {
+            searchAndCaptureRoom(act, mutableSetOf(), 0, 2)
+        }
+        return invalidationTrackerRef?.get()
+    }
+
+    private fun searchAndCaptureRoom(obj: Any, visited: MutableSet<Int>, depth: Int, maxDepth: Int) {
+        if (depth > maxDepth || invalidationTrackerRef?.get() != null) return
+        val id = System.identityHashCode(obj)
+        if (!visited.add(id)) return
+        val cls = obj.javaClass
+        if (cls.name == "co.hinge.common.storage.db.Database_Impl" || cls.name.endsWith(".Database_Impl")) {
+            setRoomDatabase(obj)
+            return
+        }
+        for (field in cls.declaredFields) {
+            if (Modifier.isStatic(field.modifiers)) continue
+            val type = field.type
+            if (type.isPrimitive || type == String::class.java) continue
+            try {
+                field.isAccessible = true
+                val child = field.get(obj) ?: continue
+                if (child.javaClass.name.contains("Database_Impl")) {
+                    setRoomDatabase(child)
+                    return
+                }
+                searchAndCaptureRoom(child, visited, depth + 1, maxDepth)
+            } catch (_: Throwable) {}
         }
     }
 
@@ -280,122 +522,5 @@ object FeedNavigator {
             }
         } catch (_: Throwable) {}
         return null
-    }
-
-    fun reAttachDiscoverFragment(fragment: Any) {
-        attempt("reAttach DiscoverFragment", silent = true) {
-            val isAddedMethod = fragment.javaClass.methods.firstOrNull { it.name == "isAdded" }
-            val isAdded = isAddedMethod?.invoke(fragment) as? Boolean ?: false
-            if (isAdded) {
-                val getArgsMethod = fragment.javaClass.methods.firstOrNull { it.name == "getArguments" }
-                var args = getArgsMethod?.invoke(fragment) as? Bundle
-                if (args == null) {
-                    args = Bundle()
-                    val setArgsMethod = fragment.javaClass.methods.firstOrNull {
-                        it.name == "setArguments" && it.parameterTypes.size == 1 && it.parameterTypes[0] == Bundle::class.java
-                    }
-                    setArgsMethod?.invoke(fragment, args)
-                }
-                args.putString("action", "refresh")
-
-                val getParentFm = fragment.javaClass.methods.firstOrNull { it.name == "getParentFragmentManager" }
-                    ?: fragment.javaClass.methods.firstOrNull { it.name == "getFragmentManager" }
-                val parentFm = getParentFm?.invoke(fragment)
-                if (parentFm != null) {
-                    val beginTx = parentFm.javaClass.methods.firstOrNull { it.name == "beginTransaction" }
-                    val tx = beginTx?.invoke(parentFm)
-                    if (tx != null) {
-                        val detachMethod = tx.javaClass.methods.firstOrNull { it.name == "detach" && it.parameterTypes.size == 1 }
-                        val attachMethod = tx.javaClass.methods.firstOrNull { it.name == "attach" && it.parameterTypes.size == 1 }
-                        val commitMethod = tx.javaClass.methods.firstOrNull { it.name == "commitAllowingStateLoss" }
-                            ?: tx.javaClass.methods.firstOrNull { it.name == "commit" }
-                        detachMethod?.invoke(tx, fragment)
-                        attachMethod?.invoke(tx, fragment)
-                        commitMethod?.invoke(tx)
-                        Log.i(Consts.TAG, "FeedNavigator: DiscoverFragment re-attached cleanly with action=refresh")
-                    }
-                }
-            }
-        }
-    }
-
-    private fun captureRoomFromFragment(fragment: Any) {
-        if (invalidationTrackerRef?.get() != null) return
-        for (field in fragment.javaClass.declaredFields) {
-            try {
-                field.isAccessible = true
-                val obj = field.get(fragment) ?: continue
-                val trackerMethod = obj.javaClass.methods.firstOrNull { it.name == "getInvalidationTracker" }
-                val tracker = trackerMethod?.invoke(obj)
-                    ?: obj.javaClass.declaredFields.firstOrNull { it.name == "mInvalidationTracker" }?.apply { isAccessible = true }?.get(obj)
-                if (tracker != null) {
-                    invalidationTrackerRef = WeakReference(tracker)
-                    roomDbRef = WeakReference(obj)
-                    Log.i(Consts.TAG, "FeedNavigator: Captured Room InvalidationTracker from fragment")
-                    return
-                }
-            } catch (_: Throwable) {}
-        }
-    }
-
-    fun triggerDiscoverTabReselect(activity: Activity) {
-        attempt("trigger Discover tab reselect", silent = true) {
-            val decor = activity.window?.decorView ?: return@attempt
-            val screenHeight = activity.resources.displayMetrics.heightPixels
-            val screenWidth = activity.resources.displayMetrics.widthPixels
-
-            val provider = decor.accessibilityNodeProvider
-            if (provider != null) {
-                val clicked = clickTabNode(provider, AccessibilityNodeProvider.HOST_VIEW_ID, "Discover")
-                if (clicked) {
-                    Log.i(Consts.TAG, "FeedNavigator: Discover tab clicked via accessibility provider")
-                    return@attempt
-                }
-            }
-
-            val bottomNavTop = HostAppAiFab.findBottomNavTop(decor, screenHeight)
-            if (bottomNavTop != null) {
-                val targetX = screenWidth * 0.10f
-                val targetY = (bottomNavTop + screenHeight) / 2f
-                val downTime = SystemClock.uptimeMillis()
-                val down = MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, targetX, targetY, 0)
-                val up = MotionEvent.obtain(downTime, downTime + 30, MotionEvent.ACTION_UP, targetX, targetY, 0)
-                decor.dispatchTouchEvent(down)
-                decor.dispatchTouchEvent(up)
-                down.recycle()
-                up.recycle()
-                Log.i(Consts.TAG, "FeedNavigator: Dispatched tap to Discover tab coordinates ($targetX, $targetY)")
-            }
-        }
-    }
-
-    private fun clickTabNode(
-        provider: AccessibilityNodeProvider,
-        virtualId: Int,
-        tabLabel: String,
-        visited: MutableSet<Int> = mutableSetOf(),
-        depth: Int = 0
-    ): Boolean {
-        if (depth > 30 || !visited.add(virtualId)) return false
-        val node = try {
-            provider.createAccessibilityNodeInfo(virtualId)
-        } catch (_: Throwable) { null } ?: return false
-
-        val desc = node.contentDescription?.toString()?.trim()
-        val text = node.text?.toString()?.trim()
-        if ((desc != null && desc.equals(tabLabel, ignoreCase = true)) ||
-            (text != null && text.equals(tabLabel, ignoreCase = true))) {
-            val clicked = node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-            if (clicked) return true
-        }
-
-        val childCount = node.childCount
-        for (i in 0 until childCount) {
-            val childId = HostAppAiFab.getChildVirtualId(node, i) ?: continue
-            if (clickTabNode(provider, childId, tabLabel, visited, depth + 1)) {
-                return true
-            }
-        }
-        return false
     }
 }

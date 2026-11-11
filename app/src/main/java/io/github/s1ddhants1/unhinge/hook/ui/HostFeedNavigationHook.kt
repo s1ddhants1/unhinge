@@ -25,6 +25,8 @@ object HostFeedNavigationHook : HookHandler {
         RegexOption.IGNORE_CASE
     )
 
+    private val isReentrant = ThreadLocal<Boolean>()
+
     override fun apply(
         module: XposedModule,
         context: Context?,
@@ -33,52 +35,70 @@ object HostFeedNavigationHook : HookHandler {
     ) {
         if (!prefs.enableFeedNavigation && !prefs.unlockGatedFeatures) return
 
-        val rawQueryMethods = attempt("find rawQueryWithFactory methods", silent = true) {
+        val rawQueryMethods = attempt("find rawQuery methods", silent = true) {
             SQLiteDatabase::class.java.declaredMethods.filter {
-                it.name == "rawQueryWithFactory"
+                it.name == "rawQueryWithFactory" || it.name == "rawQuery"
             }
         } ?: emptyList()
 
         if (rawQueryMethods.isEmpty()) {
-            Log.w(Consts.TAG, "HostFeedNavigationHook: no rawQueryWithFactory methods found")
+            Log.w(Consts.TAG, "HostFeedNavigationHook: no rawQuery methods found")
         }
 
         rawQueryMethods.forEachIndexed { index, method ->
-            module.hookTracked(method, idPrefix = "feed-nav-rawquery-$index", deoptimize = false)
+            val sqlIndex = method.parameterTypes.indexOfFirst { it == String::class.java }
+            if (sqlIndex < 0) return@forEachIndexed
+
+            module.hookTracked(method, idPrefix = "feed-nav-rawquery-$index", deoptimize = true)
                 .intercept { chain ->
                     if (FeedNavigator.isInternalQuery.get() == true) {
                         return@intercept chain.proceed()
                     }
-
-                    val db = chain.thisObject as? SQLiteDatabase
-                    if (db != null && isHingeDatabase(db)) {
-                        FeedNavigator.setDbReference(db)
-                        if (prefs.unlockGatedFeatures) {
-                            attempt("clear hidden likes profiles", silent = true) {
-                                db.delete("sorted_hidden_likes_profiles", null, null)
-                            }
-                        }
+                    if (isReentrant.get() == true) {
+                        return@intercept chain.proceed()
                     }
 
-                    val sql = chain.args.getOrNull(1) as? String
-                    if (sql != null) {
-                        if (prefs.enableFeedNavigation && isTargetQuery(sql)) {
-                            val offset = FeedNavigator.currentOffset
-                            if (offset > 0) {
-                                val modified = injectOffset(sql, offset)
-                                if (modified != sql) {
-                                    chain.args[1] = modified
-                                    Log.d(Consts.TAG, "FeedNav: OFFSET $offset injected into discover_subject query")
+                    isReentrant.set(true)
+                    try {
+                        val db = chain.thisObject as? SQLiteDatabase
+                        if (db != null && isHingeDatabase(db)) {
+                            FeedNavigator.setDbReference(db)
+                            if (prefs.unlockGatedFeatures) {
+                                attempt("clear hidden likes profiles", silent = true) {
+                                    db.delete("sorted_hidden_likes_profiles", null, null)
                                 }
                             }
-                        } else if (prefs.unlockGatedFeatures && isLikesYouSortQuery(sql)) {
-                            chain.args[1] = unlockLikesYouSort(sql)
-                        } else if (prefs.unlockGatedFeatures && isDiscoverFilterQuery(sql)) {
-                            chain.args[1] = unlockDiscoverFilter(sql)
                         }
-                    }
 
-                    chain.proceed()
+                        val sql = chain.args.getOrNull(sqlIndex) as? String
+                        var modifiedSql = sql
+                        if (sql != null) {
+                            if (prefs.enableFeedNavigation && isTargetQuery(sql)) {
+                                val offset = FeedNavigator.currentOffset
+                                if (offset > 0) {
+                                    val modified = injectOffset(sql, offset)
+                                    if (modified != sql) {
+                                        modifiedSql = modified
+                                        Log.i(Consts.TAG, "FeedNav: OFFSET $offset injected into discover query (${method.name})")
+                                    }
+                                }
+                            } else if (prefs.unlockGatedFeatures && isLikesYouSortQuery(sql)) {
+                                modifiedSql = unlockLikesYouSort(sql)
+                            } else if (prefs.unlockGatedFeatures && isDiscoverFilterQuery(sql)) {
+                                modifiedSql = unlockDiscoverFilter(sql)
+                            }
+                        }
+
+                        if (modifiedSql != null && modifiedSql != sql) {
+                            val newArgs = chain.args.toTypedArray()
+                            newArgs[sqlIndex] = modifiedSql
+                            chain.proceed(newArgs)
+                        } else {
+                            chain.proceed()
+                        }
+                    } finally {
+                        isReentrant.set(false)
+                    }
                 }
         }
 
@@ -95,32 +115,91 @@ object HostFeedNavigationHook : HookHandler {
                 }
         }
 
-        attempt<Unit>("hook RoomDatabase.init", silent = true) {
-            val roomDbClass = Class.forName("androidx.room.RoomDatabase", false, classLoader)
-            val configClass = Class.forName("androidx.room.DatabaseConfiguration", false, classLoader)
-            val initMethod = roomDbClass.getDeclaredMethod("init", configClass)
-            module.hookTracked(initMethod, idPrefix = "feed-nav-room-init", deoptimize = true)
-                .intercept { chain ->
-                    val result = chain.proceed()
-                    val roomDb = chain.thisObject
-                    if (roomDb != null) {
-                        FeedNavigator.setRoomDatabase(roomDb)
-                    }
-                    result
-                }
-        }
-
-        attempt<Unit>("hook RoomDatabase.query for capture", silent = true) {
-            val roomDbClass = Class.forName("androidx.room.RoomDatabase", false, classLoader)
-            val queryMethods = roomDbClass.declaredMethods.filter { it.name == "query" }
-            queryMethods.forEachIndexed { i, m ->
-                module.hookTracked(m, idPrefix = "feed-nav-room-query-$i", deoptimize = false)
+        attempt<Unit>("hook Database_Impl for capture and query proxy", silent = true) {
+            val dbImplClass = classLoader.loadClass("co.hinge.common.storage.db.Database_Impl")
+            dbImplClass.declaredConstructors.forEachIndexed { i, ctor ->
+                module.hookTracked(ctor, idPrefix = "feed-nav-dbimpl-ctor-$i", deoptimize = true)
                     .intercept { chain ->
-                        val roomDb = chain.thisObject
-                        if (roomDb != null) {
-                            FeedNavigator.setRoomDatabase(roomDb)
+                        val result = chain.proceed()
+                        chain.thisObject?.let { FeedNavigator.setRoomDatabase(it) }
+                        result
+                    }
+            }
+
+            val queryMethods = (dbImplClass.methods + (dbImplClass.superclass?.methods ?: emptyArray())).filter {
+                it.name == "query"
+            }.distinct()
+
+            queryMethods.forEachIndexed { i, m ->
+                module.hookTracked(m, idPrefix = "feed-nav-dbimpl-query-$i", deoptimize = true)
+                    .intercept { chain ->
+                        chain.thisObject?.let { FeedNavigator.setRoomDatabase(it) }
+                        if (FeedNavigator.isInternalQuery.get() == true) {
+                            return@intercept chain.proceed()
                         }
+
+                        val queryArg = chain.args.getOrNull(0)
+                        if (queryArg is String) {
+                            var modifiedSql = queryArg
+                            if (prefs.enableFeedNavigation && isTargetQuery(queryArg)) {
+                                val offset = FeedNavigator.currentOffset
+                                if (offset > 0) {
+                                    val modified = injectOffset(queryArg, offset)
+                                    if (modified != queryArg) {
+                                        modifiedSql = modified
+                                        Log.i(Consts.TAG, "FeedNav: OFFSET $offset injected via RoomDatabase.query(String)")
+                                    }
+                                }
+                            }
+                            if (modifiedSql != queryArg) {
+                                val newArgs = chain.args.toTypedArray()
+                                newArgs[0] = modifiedSql
+                                return@intercept chain.proceed(newArgs)
+                            }
+                        } else if (queryArg != null) {
+                            val getSqlMethod = queryArg.javaClass.methods.firstOrNull {
+                                it.returnType == String::class.java && it.parameterTypes.isEmpty()
+                            }
+                            val sql = getSqlMethod?.invoke(queryArg) as? String
+                            if (sql != null && prefs.enableFeedNavigation && isTargetQuery(sql)) {
+                                val offset = FeedNavigator.currentOffset
+                                if (offset > 0) {
+                                    val modifiedSql = injectOffset(sql, offset)
+                                    if (modifiedSql != sql && queryArg.javaClass.interfaces.isNotEmpty()) {
+                                        val proxy = java.lang.reflect.Proxy.newProxyInstance(
+                                            queryArg.javaClass.classLoader,
+                                            queryArg.javaClass.interfaces
+                                        ) { _, proxyMethod, methodArgs ->
+                                            if (proxyMethod.returnType == String::class.java && (methodArgs == null || methodArgs.isEmpty())) {
+                                                modifiedSql
+                                            } else {
+                                                proxyMethod.invoke(queryArg, *(methodArgs ?: emptyArray()))
+                                            }
+                                        }
+                                        Log.i(Consts.TAG, "FeedNav: OFFSET $offset injected via RoomDatabase.query proxy")
+                                        val newArgs = chain.args.toTypedArray()
+                                        newArgs[0] = proxy
+                                        return@intercept chain.proceed(newArgs)
+                                    }
+                                }
+                            }
+                        }
+
                         chain.proceed()
+                    }
+            }
+
+            val targetMethods = (dbImplClass.methods.filter {
+                it.name == "init" || it.name == "clearAllTables"
+            } + dbImplClass.declaredMethods.filter {
+                it.parameterTypes.isEmpty() && it.returnType != Void.TYPE
+            }).distinct()
+            targetMethods.forEachIndexed { i, m ->
+                module.hookTracked(m, idPrefix = "feed-nav-dbimpl-m-$i", deoptimize = false)
+                    .intercept { chain ->
+                        val result = chain.proceed()
+                        chain.thisObject?.let { FeedNavigator.setRoomDatabase(it) }
+                        result
                     }
             }
         }
@@ -302,6 +381,9 @@ object HostFeedNavigationHook : HookHandler {
     }
 
     fun unlockLikesYouSort(sql: String): String {
+        if (sql.contains("0 AS isLocked", ignoreCase = true)) {
+            return sql
+        }
         return if (sql.contains("SELECT * FROM likes_you_sort", ignoreCase = true)) {
             sql.replace(Regex("""SELECT\s+\*\s+FROM\s+likes_you_sort""", RegexOption.IGNORE_CASE), "SELECT id, displayName, 0 AS isLocked FROM likes_you_sort")
         } else if (sql.contains("isLocked", ignoreCase = true)) {
@@ -316,6 +398,9 @@ object HostFeedNavigationHook : HookHandler {
     }
 
     fun unlockDiscoverFilter(sql: String): String {
+        if (sql.contains("'' AS permission", ignoreCase = true)) {
+            return sql
+        }
         return if (sql.contains("SELECT * FROM discover_filter", ignoreCase = true)) {
             sql.replace(Regex("""SELECT\s+\*\s+FROM\s+discover_filter""", RegexOption.IGNORE_CASE), "SELECT id, filterId, pillType, '' AS permission FROM discover_filter")
         } else if (sql.contains("permission", ignoreCase = true)) {
