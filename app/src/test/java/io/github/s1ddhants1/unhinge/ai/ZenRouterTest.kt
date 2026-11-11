@@ -10,21 +10,19 @@ import org.junit.Test
 class ZenRouterTest {
     @Test
     fun freeModelsRecognizedAsFree() {
-        assertTrue(ZenRouter.isFreeModel("space-bunny-free"))
-        assertTrue(ZenRouter.isFreeModel("muse-spark-1.3-contributor-free"))
-        assertTrue(ZenRouter.isFreeModel("muse-spark-1.3-free"))
-        assertTrue(ZenRouter.isFreeModel("big-pickle"))
-        assertTrue(ZenRouter.isFreeModel("fledge-alpha-free"))
-        assertTrue(ZenRouter.isFreeModel("ling-3.1-flash-free"))
-        assertTrue(ZenRouter.isFreeModel("longcat-2.5-preview-free"))
-        assertTrue(ZenRouter.isFreeModel("mimo-v2.6-flash-free"))
-        assertTrue(ZenRouter.isFreeModel("mimo-v2.5-free"))
-        assertTrue(ZenRouter.isFreeModel("nemotron-3-ultra-free"))
-        assertTrue(ZenRouter.isFreeModel("nemotron-3.5-lightning-free"))
-        assertTrue(ZenRouter.isFreeModel("cat-jam-free"))
         assertTrue(ZenRouter.isFreeModel("deepseek-v4.1-flash-free"))
-        assertTrue(ZenRouter.isFreeModel("step-5-preview-free"))
-        assertTrue(ZenRouter.isFreeModel("grok-code"))
+        assertTrue(ZenRouter.isFreeModel("big-pickle"))
+        assertTrue(ZenRouter.isFreeModel("beam-free"))
+        assertTrue(ZenRouter.isFreeModel("flint-40b-free"))
+        assertTrue(ZenRouter.isFreeModel("glm-5.3-flash-free"))
+        assertTrue(ZenRouter.isFreeModel("iceman-free"))
+        assertTrue(ZenRouter.isFreeModel("inkling-2-small-free"))
+        assertTrue(ZenRouter.isFreeModel("longcat-2.5-free"))
+        assertTrue(ZenRouter.isFreeModel("mimo-v2.6-flash-free"))
+        assertTrue(ZenRouter.isFreeModel("minimax-m3.1-flash-free"))
+        assertTrue(ZenRouter.isFreeModel("nemotron-3.5-lightning-free"))
+        assertTrue(ZenRouter.isFreeModel("nemotron-3.5-super-vl-free"))
+        assertTrue(ZenRouter.isFreeModel("space-bunny-free"))
         assertTrue(ZenRouter.isFreeModel(""))
         assertTrue(ZenRouter.isFreeModel("custom-free-model"))
     }
@@ -37,7 +35,7 @@ class ZenRouterTest {
         assertFalse(ZenRouter.isFreeModel("gemini-3.8-flash"))
         assertFalse(ZenRouter.isFreeModel("qwen3.8-max"))
         assertFalse(ZenRouter.isFreeModel("deepseek-v4-pro"))
-        assertFalse(ZenRouter.isFreeModel("deepseek-v4-flash"))
+        assertFalse(ZenRouter.isFreeModel("deepseek-v4.1-flash"))
         assertFalse(ZenRouter.isFreeModel("glm-5.3-flash"))
     }
 
@@ -49,17 +47,17 @@ class ZenRouterTest {
 
     @Test
     fun zenFreeModelsDoNotRequireApiKey() {
-        assertTrue(!AiWingmanHelper.isApiKeyRequired("Zen", "space-bunny-free"))
+        assertTrue(!AiWingmanHelper.isApiKeyRequired("Zen", "deepseek-v4.1-flash-free"))
         assertTrue(!AiWingmanHelper.isApiKeyRequired("Zen", "big-pickle"))
-        assertTrue(!AiWingmanHelper.isApiKeyRequired("Zen", "fledge-alpha-free"))
-        assertTrue(!AiWingmanHelper.isApiKeyRequired("Zen", "ling-3.1-flash-free"))
-        assertTrue(!AiWingmanHelper.isApiKeyRequired("Zen", "longcat-2.5-preview-free"))
+        assertTrue(!AiWingmanHelper.isApiKeyRequired("Zen", "beam-free"))
+        assertTrue(!AiWingmanHelper.isApiKeyRequired("Zen", "flint-40b-free"))
+        assertTrue(!AiWingmanHelper.isApiKeyRequired("Zen", "longcat-2.5-free"))
         assertTrue(!AiWingmanHelper.isApiKeyRequired("Zen", "mimo-v2.6-flash-free"))
-        assertTrue(!AiWingmanHelper.isApiKeyRequired("Zen", "mimo-v2.5-free"))
-        assertTrue(!AiWingmanHelper.isApiKeyRequired("Zen", "nemotron-3-ultra-free"))
+        assertTrue(!AiWingmanHelper.isApiKeyRequired("Zen", "minimax-m3.1-flash-free"))
         assertTrue(!AiWingmanHelper.isApiKeyRequired("Zen", "nemotron-3.5-lightning-free"))
+        assertTrue(!AiWingmanHelper.isApiKeyRequired("Zen", "nemotron-3.5-super-vl-free"))
         assertFalse(AiWingmanHelper.isApiKeyRequired("Zen", ""))
-        assertFalse(AiWingmanHelper.isApiKeyRequired("zen", "space-bunny-free"))
+        assertFalse(AiWingmanHelper.isApiKeyRequired("zen", "deepseek-v4.1-flash-free"))
     }
 
     @Test
@@ -86,24 +84,24 @@ class ZenRouterTest {
     }
 
     @Test
-    fun resolvesFreeResponsesModel() {
-        val (proto, url, model) = ZenRouter.resolve("muse-spark-1.3-contributor-free")
+    fun resolvesResponsesModels() {
+        val (proto, url, model) = ZenRouter.resolve("muse-spark-1.3")
         assertEquals(LlmProtocol.OpenAiResponses, proto)
         assertEquals(ZenResponsesDefaultBaseUrl, url)
-        assertEquals("muse-spark-1.3-contributor-free", model)
+        assertEquals("muse-spark-1.3", model)
     }
 
     @Test
-    fun resolvesMuseSparkFreeAliases() {
-        val (proto1, url1, model1) = ZenRouter.resolve("muse-spark-1.3-free")
-        assertEquals(LlmProtocol.OpenAiResponses, proto1)
-        assertEquals(ZenResponsesDefaultBaseUrl, url1)
-        assertEquals("muse-spark-1.3-contributor-free", model1)
+    fun migratesDeprecatedFreeModels() {
+        val (proto1, url1, model1) = ZenRouter.resolve("space-bunny-free")
+        assertEquals(LlmProtocol.OpenAiChatCompletions, proto1)
+        assertEquals(ZenChatBaseUrl, url1)
+        assertEquals(Consts.ZEN_DEFAULT_MODEL, model1)
 
-        val (proto2, url2, model2) = ZenRouter.resolve("muse-spark-1.2-free")
-        assertEquals(LlmProtocol.OpenAiResponses, proto2)
-        assertEquals(ZenResponsesDefaultBaseUrl, url2)
-        assertEquals("muse-spark-1.2-contributor-free", model2)
+        val (proto2, url2, model2) = ZenRouter.resolve("longcat-2.5-preview-free")
+        assertEquals(LlmProtocol.OpenAiChatCompletions, proto2)
+        assertEquals(ZenChatBaseUrl, url2)
+        assertEquals("longcat-2.5-free", model2)
     }
 
     @Test
@@ -118,15 +116,20 @@ class ZenRouterTest {
 
     @Test
     fun resolvesFreeChatModels() {
-        val (proto1, url1, model1) = ZenRouter.resolve("space-bunny-free")
+        val (proto1, url1, model1) = ZenRouter.resolve("deepseek-v4.1-flash-free")
         assertEquals(LlmProtocol.OpenAiChatCompletions, proto1)
         assertEquals(ZenChatBaseUrl, url1)
-        assertEquals("space-bunny-free", model1)
+        assertEquals("deepseek-v4.1-flash-free", model1)
 
         val (proto2, url2, model2) = ZenRouter.resolve("big-pickle")
         assertEquals(LlmProtocol.OpenAiChatCompletions, proto2)
         assertEquals(ZenChatBaseUrl, url2)
         assertEquals("big-pickle", model2)
+
+        val (proto3, url3, model3) = ZenRouter.resolve("minimax-m3")
+        assertEquals(LlmProtocol.OpenAiChatCompletions, proto3)
+        assertEquals(ZenChatBaseUrl, url3)
+        assertEquals("minimax-m3", model3)
     }
 
     @Test
@@ -156,11 +159,11 @@ class ZenRouterTest {
             provider = "Zen",
             apiKey = "",
             baseUrl = "",
-            model = "space-bunny-free"
+            model = "deepseek-v4.1-flash-free"
         )
         assertEquals(LlmProtocol.OpenAiChatCompletions, proto)
         assertEquals(ZenChatBaseUrl, url)
-        assertEquals("space-bunny-free", model)
+        assertEquals("deepseek-v4.1-flash-free", model)
     }
 
     @Test
@@ -207,17 +210,14 @@ class ZenRouterTest {
         val body = buildResponsesRequest(
             instructions = "Be concise",
             input = "Say hello",
-            model = "muse-spark-1.3-contributor-free",
+            model = "muse-spark-1.3",
             stream = false,
         )
-        assertEquals("muse-spark-1.3-contributor-free", body["model"]?.jsonPrimitive?.content)
-        assertEquals("Be concise", body["instructions"]?.jsonPrimitive?.content)
+        assertEquals("muse-spark-1.3", body["model"]?.jsonPrimitive?.content)
+        assertTrue(body["instructions"]?.jsonPrimitive?.content?.startsWith("Be concise") == true)
+        assertTrue(body["instructions"]?.jsonPrimitive?.content?.contains("<env>") == true)
         assertEquals("Say hello", body["input"]?.jsonPrimitive?.content)
-        assertEquals("true", body["stream"]?.jsonPrimitive?.content)
-        assertFalse(body.containsKey("max_output_tokens"))
-        assertTrue(body.containsKey("tools"))
-        assertTrue(body.containsKey("prompt_cache_key"))
-        assertTrue(body.containsKey("include"))
+        assertEquals("false", body["store"]?.jsonPrimitive?.content)
 
         val sampleJson = """
             {
@@ -257,7 +257,8 @@ class ZenRouterTest {
             stream = false,
         )
         assertEquals("claude-sonnet-5", body["model"]?.jsonPrimitive?.content)
-        assertEquals("System prompt", body["system"]?.jsonPrimitive?.content)
+        assertTrue(body["system"]?.jsonPrimitive?.content?.startsWith("System prompt") == true)
+        assertTrue(body["system"]?.jsonPrimitive?.content?.contains("<env>") == true)
 
         val sampleJson = """
             {
@@ -334,16 +335,24 @@ class ZenRouterTest {
     @Test
     fun normalizeBaseUrlConvertsLegacyZenEndpoints() {
         assertEquals(
-            "https://opencode.ai/inference/v1/chat/completions",
+            "https://opencode.ai/inference/openai/v1/chat/completions",
             ZenRouter.normalizeBaseUrl("https://opencode.ai/zen/v1/chat/completions")
         )
         assertEquals(
-            "https://opencode.ai/inference/v1/responses",
+            "https://opencode.ai/inference/openai/v1/chat/completions",
+            ZenRouter.normalizeBaseUrl("https://opencode.ai/inference/v1/chat/completions")
+        )
+        assertEquals(
+            "https://opencode.ai/inference/openai/v1/responses",
             ZenRouter.normalizeBaseUrl("https://opencode.ai/zen/v1/responses")
         )
         assertEquals(
-            "https://opencode.ai/inference/v1/messages",
+            "https://opencode.ai/inference/anthropic/v1/messages",
             ZenRouter.normalizeBaseUrl("https://opencode.ai/zen/v1/messages")
+        )
+        assertEquals(
+            "https://opencode.ai/inference/google/v1beta/models/gemini-3.8-flash:generateContent",
+            ZenRouter.normalizeBaseUrl("https://opencode.ai/inference/v1/models/gemini-3.8-flash:generateContent")
         )
         assertEquals(
             "https://openrouter.ai/api/v1/chat/completions",
@@ -439,7 +448,7 @@ class ZenRouterTest {
     fun modelReasoningCatalogResolvesCorrectSupportTypes() {
         assertEquals(
             ModelReasoningCatalog.ReasoningSupport.Effort(listOf("low", "medium", "high", "xhigh", "max")),
-            ModelReasoningCatalog.getReasoningSupport("space-bunny-free")
+            ModelReasoningCatalog.getReasoningSupport("beam-free")
         )
         assertEquals(
             ModelReasoningCatalog.ReasoningSupport.Fixed,
@@ -447,19 +456,15 @@ class ZenRouterTest {
         )
         assertEquals(
             ModelReasoningCatalog.ReasoningSupport.Effort(listOf("minimal", "low", "medium", "high", "xhigh")),
-            ModelReasoningCatalog.getReasoningSupport("muse-spark-1.3-contributor-free")
-        )
-        assertEquals(
-            ModelReasoningCatalog.ReasoningSupport.Effort(listOf("minimal", "low", "medium", "high", "xhigh")),
-            ModelReasoningCatalog.getReasoningSupport("muse-spark-1.3-free")
+            ModelReasoningCatalog.getReasoningSupport("muse-spark-1.3")
         )
         assertEquals(
             ModelReasoningCatalog.ReasoningSupport.Effort(listOf("low", "high", "max")),
-            ModelReasoningCatalog.getReasoningSupport("fledge-alpha-free")
+            ModelReasoningCatalog.getReasoningSupport("deepseek-v4.1-flash-free")
         )
         assertEquals(
             ModelReasoningCatalog.ReasoningSupport.Toggle,
-            ModelReasoningCatalog.getReasoningSupport("ling-3.1-flash-free")
+            ModelReasoningCatalog.getReasoningSupport("longcat-2.5-free")
         )
         assertEquals(
             ModelReasoningCatalog.ReasoningSupport.Effort(listOf("low", "medium", "high")),
@@ -482,33 +487,33 @@ class ZenRouterTest {
         assertEquals("high", ModelReasoningCatalog.sanitizeReasoningEffort("max", "gemini-3.8-flash"))
         assertEquals("high", ModelReasoningCatalog.sanitizeReasoningEffort("xhigh", "gemini-3.8-flash"))
 
-        assertEquals("low", ModelReasoningCatalog.sanitizeReasoningEffort("medium", "fledge-alpha-free"))
+        assertEquals("low", ModelReasoningCatalog.sanitizeReasoningEffort("medium", "deepseek-v4.1-flash-free"))
 
-        assertEquals("high", ModelReasoningCatalog.sanitizeReasoningEffort("high", "fledge-alpha-free"))
-        assertEquals("max", ModelReasoningCatalog.sanitizeReasoningEffort("max", "fledge-alpha-free"))
-        assertEquals("low", ModelReasoningCatalog.sanitizeReasoningEffort("low", "fledge-alpha-free"))
+        assertEquals("high", ModelReasoningCatalog.sanitizeReasoningEffort("high", "deepseek-v4.1-flash-free"))
+        assertEquals("max", ModelReasoningCatalog.sanitizeReasoningEffort("max", "deepseek-v4.1-flash-free"))
+        assertEquals("low", ModelReasoningCatalog.sanitizeReasoningEffort("low", "deepseek-v4.1-flash-free"))
 
-        assertEquals("on", ModelReasoningCatalog.sanitizeReasoningEffort("on", "ling-3.1-flash-free"))
-        assertEquals("on", ModelReasoningCatalog.sanitizeReasoningEffort("low", "ling-3.1-flash-free"))
-        assertEquals("off", ModelReasoningCatalog.sanitizeReasoningEffort("off", "ling-3.1-flash-free"))
-        assertEquals("off", ModelReasoningCatalog.sanitizeReasoningEffort("none", "ling-3.1-flash-free"))
+        assertEquals("on", ModelReasoningCatalog.sanitizeReasoningEffort("on", "longcat-2.5-free"))
+        assertEquals("on", ModelReasoningCatalog.sanitizeReasoningEffort("low", "longcat-2.5-free"))
+        assertEquals("off", ModelReasoningCatalog.sanitizeReasoningEffort("off", "longcat-2.5-free"))
+        assertEquals("off", ModelReasoningCatalog.sanitizeReasoningEffort("none", "longcat-2.5-free"))
 
-        assertEquals(null, ModelReasoningCatalog.sanitizeReasoningEffort("default", "space-bunny-free"))
+        assertEquals(null, ModelReasoningCatalog.sanitizeReasoningEffort("default", "beam-free"))
         assertEquals(null, ModelReasoningCatalog.sanitizeReasoningEffort("low", "big-pickle"))
         assertEquals(null, ModelReasoningCatalog.sanitizeReasoningEffort("low", "sonar"))
     }
 
     @Test
     fun modelReasoningCatalogUiOptions() {
-        val fledgeOptions = ModelReasoningCatalog.getAvailableOptions("fledge-alpha-free").map { it.first }
-        assertTrue("fledge options must have default", fledgeOptions.contains("default"))
-        assertTrue("fledge options must have low", fledgeOptions.contains("low"))
-        assertTrue("fledge options must have high", fledgeOptions.contains("high"))
-        assertTrue("fledge options must have max", fledgeOptions.contains("max"))
-        assertFalse("fledge options must NOT have medium", fledgeOptions.contains("medium"))
+        val deepseekOptions = ModelReasoningCatalog.getAvailableOptions("deepseek-v4.1-flash-free").map { it.first }
+        assertTrue("deepseek options must have default", deepseekOptions.contains("default"))
+        assertTrue("deepseek options must have low", deepseekOptions.contains("low"))
+        assertTrue("deepseek options must have high", deepseekOptions.contains("high"))
+        assertTrue("deepseek options must have max", deepseekOptions.contains("max"))
+        assertFalse("deepseek options must NOT have medium", deepseekOptions.contains("medium"))
 
-        val lingOptions = ModelReasoningCatalog.getAvailableOptions("ling-3.1-flash-free").map { it.first }
-        assertEquals(listOf("default", "on", "off"), lingOptions)
+        val longcatOptions = ModelReasoningCatalog.getAvailableOptions("longcat-2.5-free").map { it.first }
+        assertEquals(listOf("default", "on", "off"), longcatOptions)
 
         val pickleOptions = ModelReasoningCatalog.getAvailableOptions("big-pickle")
         assertTrue(pickleOptions.isEmpty())

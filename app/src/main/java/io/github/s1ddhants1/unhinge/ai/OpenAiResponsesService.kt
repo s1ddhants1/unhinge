@@ -8,7 +8,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
@@ -19,16 +18,12 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import java.util.concurrent.TimeUnit
 
 private val responsesJson = AiHttpClient.json
 
 object OpenAiResponsesService : LlmClient {
-    private val client = AiHttpClient.client
     private val jsonMediaType = AiHttpClient.jsonMediaType
 
     override suspend fun generate(request: WingmanLlmRequest): Result<List<String>> =
@@ -126,7 +121,7 @@ object OpenAiResponsesService : LlmClient {
                             sessionId = sessionId,
                         )
                     val request = buildPost(effectiveBaseUrl, apiKey, body.toString(), safeModel, sessionId)
-                    client.newCall(request).execute().use { response ->
+                    AiHttpClient.clientFor(effectiveBaseUrl).newCall(request).execute().use { response ->
                         if (!response.isSuccessful) {
                             ZenRouter.onGatewayResponse(response.code, effectiveBaseUrl)
                             val responseBody = response.body.string()
@@ -227,7 +222,7 @@ object OpenAiResponsesService : LlmClient {
                         )
                     val request = buildPost(effectiveBaseUrl, apiKey, body.toString(), safeModel, sessionId)
                     var httpFailed = false
-                    client.newCall(request).execute().use { response ->
+                    AiHttpClient.clientFor(effectiveBaseUrl).newCall(request).execute().use { response ->
                         if (!response.isSuccessful) {
                             ZenRouter.onGatewayResponse(response.code, effectiveBaseUrl)
                             val rawBody = response.body.string()
@@ -327,7 +322,7 @@ object OpenAiResponsesService : LlmClient {
                         )
                     val request = buildPost(effectiveBaseUrl, apiKey, body.toString(), effectiveModel, sessionId)
                     var httpFailed = false
-                    client.newCall(request).execute().use { response ->
+                    AiHttpClient.clientFor(effectiveBaseUrl).newCall(request).execute().use { response ->
                         if (!response.isSuccessful) {
                             ZenRouter.onGatewayResponse(response.code, effectiveBaseUrl)
                             val rawBody = response.body.string()
@@ -419,10 +414,11 @@ internal fun buildResponsesRequest(
     val effectiveBaseUrl = baseUrl.ifBlank { ZenResponsesDefaultBaseUrl }
     val isZen = ZenRouter.isZenUrl(effectiveBaseUrl)
     val isFree = isZen && ZenRouter.isFreeModel(safeModel)
+    val effectiveInstructions = if (isZen) ZenRouter.withZenEnvironment(instructions) else instructions
 
     return buildJsonObject {
         if (safeModel.isNotBlank()) put("model", safeModel)
-        if (instructions.isNotBlank()) put("instructions", instructions)
+        if (effectiveInstructions.isNotBlank()) put("instructions", effectiveInstructions)
         put("input", input)
         put("temperature", temperature.toDouble())
         put("top_p", topP.toDouble())

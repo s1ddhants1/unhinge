@@ -45,7 +45,9 @@ internal fun buildGenerationRequest(
         directionalStimulus = directionalStimulus,
         promptCount = lineCount,
     )
-    val safeModel = sanitizeModelId(model)
+    val isZen = ZenRouter.isZenUrl(baseUrl)
+    val safeModel = if (isZen) ZenRouter.normalizeModelId(model) else sanitizeModelId(model)
+    val effectiveSystem = if (isZen) ZenRouter.withZenEnvironment(systemPrompt) else systemPrompt
 
     return buildJsonObject {
         put(
@@ -54,7 +56,7 @@ internal fun buildGenerationRequest(
                 add(
                     buildJsonObject {
                         put("role", "system")
-                        put("content", systemPrompt)
+                        put("content", effectiveSystem)
                     },
                 )
                 add(
@@ -66,7 +68,6 @@ internal fun buildGenerationRequest(
             },
         )
         if (safeModel.isNotBlank()) put("model", safeModel)
-        val isZen = ZenRouter.isZenUrl(baseUrl)
         val sanitizedEffort = ModelReasoningCatalog.sanitizeReasoningEffort(reasoningEffort, safeModel, if (isZen) "Zen" else "")
         if (sanitizedEffort != null) {
             if (sanitizedEffort == "on" || sanitizedEffort == "off") {
@@ -129,13 +130,14 @@ internal fun buildGenerationRequest(
                 },
             )
         }
-        if (ZenRouter.isZenUrl(baseUrl) && ZenRouter.isFreeModel(safeModel)) {
+        val isFreeZen = isZen && ZenRouter.isFreeModel(safeModel)
+        if (isFreeZen) {
             put("tools", ZenRouter.DefaultZenChatTools)
         }
 
-        if (stream) {
+        if (stream || isFreeZen) {
             put("stream", true)
-            if (ZenRouter.isZenUrl(baseUrl)) {
+            if (isZen) {
                 put("stream_options", buildJsonObject { put("include_usage", true) })
             }
         }
@@ -177,19 +179,19 @@ internal fun friendlyGenerationError(
         return when (code) {
             401 -> when {
                 detail.contains("ModelError", ignoreCase = true) || detail.contains("not supported", ignoreCase = true) ->
-                    "Zen model error ($detail). The selected model may not be supported on the free tier; try switching to space-bunny-free in Settings."
+                    "Zen model error ($detail). The selected model may not be supported on the free tier; try switching to ${Consts.ZEN_DEFAULT_MODEL} in Settings."
                 isFree ->
-                    "Zen free-tier authorization failed ($detail). No API key is needed for free models; check your connection or try space-bunny-free."
+                    "Zen free-tier authorization failed ($detail). No API key is needed for free models; check your connection or try ${Consts.ZEN_DEFAULT_MODEL}."
                 else ->
                     "Invalid Zen API key ($detail). Check your API key in Settings (opencode.ai/auth)."
             }
-            402 -> "Insufficient Zen credits ($detail). Switch to a free model (space-bunny-free) or add credits at opencode.ai/auth."
+            402 -> "Insufficient Zen credits ($detail). Switch to a free model (${Consts.ZEN_DEFAULT_MODEL}) or add credits at opencode.ai/auth."
             403 -> when {
                 detail.contains("FreeTierError", ignoreCase = true) || detail.contains("within OpenCode", ignoreCase = true) ->
-                    "Zen free-tier restriction ($detail). Try switching to space-bunny-free or configure a Zen API key."
+                    "Zen free-tier restriction ($detail). Try switching to ${Consts.ZEN_DEFAULT_MODEL} or configure a Zen API key."
                 else -> "Zen request forbidden ($detail)."
             }
-            404 -> "Zen model not found ($detail). Pick another model in Settings (e.g. space-bunny-free)."
+            404 -> "Zen model not found ($detail). Pick another model in Settings (e.g. ${Consts.ZEN_DEFAULT_MODEL})."
             429 -> "Zen rate limited ($detail). Wait a minute and retry, or switch to another model."
             500, 502, 503, 529 -> "Zen model temporarily unavailable (HTTP $code: $detail). Retry or switch model in Settings."
             else -> "Zen generation failed: $detail"

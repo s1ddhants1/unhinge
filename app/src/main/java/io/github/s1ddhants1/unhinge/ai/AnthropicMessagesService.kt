@@ -8,7 +8,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
@@ -16,16 +15,12 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import java.util.concurrent.TimeUnit
 
 private val anthropicJson = AiHttpClient.json
 
 object AnthropicMessagesService : LlmClient {
-    private val client = AiHttpClient.client
     private val jsonMediaType = AiHttpClient.jsonMediaType
 
     override suspend fun generate(request: WingmanLlmRequest): Result<List<String>> =
@@ -96,7 +91,9 @@ object AnthropicMessagesService : LlmClient {
         withContext(Dispatchers.IO) {
             if (text.isBlank()) return@withContext Result.failure(Exception("Input text is empty"))
             val expectedCount = promptCount ?: text.lines().size
-            val safeModel = sanitizeModelId(model)
+            val targetUrl = ZenRouter.normalizeBaseUrl(baseUrl.ifBlank { ZenMessagesBaseUrl })
+            val isZen = ZenRouter.isZenUrl(targetUrl)
+            val safeModel = if (isZen) ZenRouter.normalizeModelId(model) else sanitizeModelId(model)
             repeat(maxRetries) { attempt ->
                 try {
                     val body =
@@ -115,14 +112,14 @@ object AnthropicMessagesService : LlmClient {
                             topP = topP,
                             stream = false,
                             reasoningEffort = reasoningEffort,
+                            baseUrl = targetUrl,
                         )
-                    val targetUrl = baseUrl.ifBlank { ZenMessagesBaseUrl }
                     val request = buildPost(targetUrl, apiKey, body.toString(), safeModel)
-                    client.newCall(request).execute().use { response ->
+                    AiHttpClient.clientFor(targetUrl).newCall(request).execute().use { response ->
                         val responseBody = response.body.string()
                         if (!response.isSuccessful) {
                             ZenRouter.onGatewayResponse(response.code, targetUrl)
-                            val error = friendlyGenerationError(responseBody, response.code, response.message, baseUrl = baseUrl, model = safeModel)
+                            val error = friendlyGenerationError(responseBody, response.code, response.message, baseUrl = targetUrl, model = safeModel)
                             if (isTransientHttpCode(response.code) && attempt < maxRetries - 1) throw Exception(error)
                             return@withContext Result.failure(Exception(error))
                         }
@@ -161,7 +158,9 @@ object AnthropicMessagesService : LlmClient {
                 return@flow
             }
             val expectedCount = promptCount ?: text.lines().size
-            val safeModel = sanitizeModelId(model)
+            val targetUrl = ZenRouter.normalizeBaseUrl(baseUrl.ifBlank { ZenMessagesBaseUrl })
+            val isZen = ZenRouter.isZenUrl(targetUrl)
+            val safeModel = if (isZen) ZenRouter.normalizeModelId(model) else sanitizeModelId(model)
             var lastError = "Max retries exceeded"
             for (attempt in 0 until maxRetries) {
                 try {
@@ -181,15 +180,15 @@ object AnthropicMessagesService : LlmClient {
                             topP = topP,
                             stream = true,
                             reasoningEffort = reasoningEffort,
+                            baseUrl = targetUrl,
                         )
-                    val targetUrl = baseUrl.ifBlank { ZenMessagesBaseUrl }
                     val request = buildPost(targetUrl, apiKey, body.toString(), safeModel)
                     var httpFailed = false
-                    client.newCall(request).execute().use { response ->
+                    AiHttpClient.clientFor(targetUrl).newCall(request).execute().use { response ->
                         if (!response.isSuccessful) {
                             ZenRouter.onGatewayResponse(response.code, targetUrl)
                             val rawBody = response.body.string()
-                            lastError = friendlyGenerationError(rawBody, response.code, response.message, baseUrl = baseUrl, model = safeModel)
+                            lastError = friendlyGenerationError(rawBody, response.code, response.message, baseUrl = targetUrl, model = safeModel)
                             if (isTransientHttpCode(response.code) && attempt < maxRetries - 1) {
                                 httpFailed = true
                                 return@use
@@ -251,6 +250,9 @@ object AnthropicMessagesService : LlmClient {
                 emit(OpenRouterStreamingService.ChatStreamChunk.Error("Input prompt is empty"))
                 return@flow
             }
+            val targetUrl = ZenRouter.normalizeBaseUrl(baseUrl.ifBlank { ZenMessagesBaseUrl })
+            val isZen = ZenRouter.isZenUrl(targetUrl)
+            val effectiveModel = (if (isZen) ZenRouter.normalizeModelId(model) else sanitizeModelId(model)).ifBlank { Consts.ZEN_DEFAULT_MODEL }
             var lastError = "Max retries exceeded"
             for (attempt in 0 until maxRetries) {
                 try {
@@ -258,20 +260,20 @@ object AnthropicMessagesService : LlmClient {
                         buildMessagesRequest(
                             system = systemPrompt,
                             user = userPrompt,
-                            model = sanitizeModelId(model).ifBlank { Consts.ZEN_DEFAULT_MODEL },
+                            model = effectiveModel,
                             temperature = temperature,
                             topP = topP,
                             stream = true,
                             reasoningEffort = reasoningEffort,
+                            baseUrl = targetUrl,
                         )
-                    val targetUrl = baseUrl.ifBlank { ZenMessagesBaseUrl }
-                    val request = buildPost(targetUrl, apiKey, body.toString(), sanitizeModelId(model).ifBlank { Consts.ZEN_DEFAULT_MODEL })
+                    val request = buildPost(targetUrl, apiKey, body.toString(), effectiveModel)
                     var httpFailed = false
-                    client.newCall(request).execute().use { response ->
+                    AiHttpClient.clientFor(targetUrl).newCall(request).execute().use { response ->
                         if (!response.isSuccessful) {
                             ZenRouter.onGatewayResponse(response.code, targetUrl)
                             val rawBody = response.body.string()
-                            lastError = friendlyGenerationError(rawBody, response.code, response.message, baseUrl = baseUrl, model = sanitizeModelId(model))
+                            lastError = friendlyGenerationError(rawBody, response.code, response.message, baseUrl = targetUrl, model = effectiveModel)
                             if (isTransientHttpCode(response.code) && attempt < maxRetries - 1) {
                                 httpFailed = true
                                 return@use
@@ -349,11 +351,14 @@ internal fun buildMessagesRequest(
     topP: Float = Consts.DEFAULT_AI_TOP_P,
     stream: Boolean = false,
     reasoningEffort: String = Consts.DEFAULT_AI_REASONING_EFFORT,
+    baseUrl: String = ZenMessagesBaseUrl,
 ): JsonObject =
     buildJsonObject {
-        val safeModel = sanitizeModelId(model)
+        val isZen = ZenRouter.isZenUrl(baseUrl)
+        val safeModel = if (isZen) ZenRouter.normalizeModelId(model) else sanitizeModelId(model)
+        val effectiveSystem = if (isZen) ZenRouter.withZenEnvironment(system) else system
         if (safeModel.isNotBlank()) put("model", safeModel)
-        if (system.isNotBlank()) put("system", system)
+        if (effectiveSystem.isNotBlank()) put("system", effectiveSystem)
         put("messages", buildJsonArray {
             add(buildJsonObject {
                 put("role", "user")

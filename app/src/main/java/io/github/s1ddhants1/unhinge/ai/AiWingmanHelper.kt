@@ -316,7 +316,7 @@ object AiWingmanHelper {
                     if (hasError) {
                         val isFreeTierRestriction = isFreeTierError(errorMessage) && effectiveModel != Consts.ZEN_DEFAULT_MODEL
                         if (isFreeTierRestriction) {
-                            fallbackToSpaceBunny(context, prefs)
+                            fallbackToDefaultFreeModel(context, prefs)
                             val fallbackReq = llmRequest.copy(
                                 baseUrl = Consts.ZEN_DEFAULT_BASE_URL,
                                 model = Consts.ZEN_DEFAULT_MODEL,
@@ -339,7 +339,7 @@ object AiWingmanHelper {
                     if (initialResult.isFailure) {
                         val errMsg = initialResult.exceptionOrNull()?.message.orEmpty()
                         if (isFreeTierError(errMsg) && effectiveModel != Consts.ZEN_DEFAULT_MODEL) {
-                            fallbackToSpaceBunny(context, prefs)
+                            fallbackToDefaultFreeModel(context, prefs)
                             val fallbackReq = llmRequest.copy(
                                 baseUrl = Consts.ZEN_DEFAULT_BASE_URL,
                                 model = Consts.ZEN_DEFAULT_MODEL,
@@ -571,8 +571,8 @@ object AiWingmanHelper {
             msg.contains("within OpenCode", ignoreCase = true) ||
             msg.contains("free-tier restriction", ignoreCase = true)
 
-    private fun fallbackToSpaceBunny(context: Context, prefs: PreferencesManager?) {
-        Timber.d("Model restricted on free tier, falling back to space-bunny-free")
+    private fun fallbackToDefaultFreeModel(context: Context, prefs: PreferencesManager?) {
+        Timber.d("Model restricted on free tier, falling back to ${Consts.ZEN_DEFAULT_MODEL}")
         runCatching {
             prefs?.let { p ->
                 p.openRouterModel = Consts.ZEN_DEFAULT_MODEL

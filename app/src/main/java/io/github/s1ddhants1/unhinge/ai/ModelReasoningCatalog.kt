@@ -1,6 +1,7 @@
 package io.github.s1ddhants1.unhinge.ai
 
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 
 object ModelReasoningCatalog {
 
@@ -17,53 +18,114 @@ object ModelReasoningCatalog {
         object Unsupported : ReasoningSupport()
     }
 
+    private val dynamicCapabilities = ConcurrentHashMap<String, ReasoningSupport>()
+
+    fun updateDynamicCapabilities(capabilities: Map<String, ReasoningSupport>) {
+        if (capabilities.isEmpty()) return
+        dynamicCapabilities.clear()
+        for ((key, value) in capabilities) {
+            dynamicCapabilities[normalizeModelId(key)] = value
+        }
+    }
+
     private val MODEL_CAPABILITIES: Map<String, ReasoningSupport> = mapOf(
-
-        "space-bunny-free" to ReasoningSupport.Effort(listOf("low", "medium", "high", "xhigh", "max")),
-        "muse-spark-1.3-contributor-free" to ReasoningSupport.Effort(listOf("minimal", "low", "medium", "high", "xhigh")),
-        "muse-spark-1.3-free" to ReasoningSupport.Effort(listOf("minimal", "low", "medium", "high", "xhigh")),
-        "muse-spark-1.2-contributor-free" to ReasoningSupport.Effort(listOf("minimal", "low", "medium", "high", "xhigh")),
-        "muse-spark-1.2-free" to ReasoningSupport.Effort(listOf("minimal", "low", "medium", "high", "xhigh")),
+        "beam-free" to ReasoningSupport.Effort(listOf("low", "medium", "high", "xhigh", "max")),
         "big-pickle" to ReasoningSupport.Fixed,
-        "fledge-alpha-free" to ReasoningSupport.Effort(listOf("low", "high", "max")),
-        "ling-3.1-flash-free" to ReasoningSupport.Toggle,
-        "longcat-2.5-preview-free" to ReasoningSupport.Toggle,
+        "deepseek-v4.1-flash-free" to ReasoningSupport.Effort(listOf("low", "high", "max")),
+        "flint-40b-free" to ReasoningSupport.Effort(listOf("low", "medium", "high", "xhigh", "max")),
+        "glm-5.3-flash-free" to ReasoningSupport.Effort(listOf("low", "high", "max")),
+        "iceman-free" to ReasoningSupport.Fixed,
+        "inkling-2-small-free" to ReasoningSupport.Effort(listOf("none", "minimal", "low", "medium", "high", "max")),
+        "longcat-2.5-free" to ReasoningSupport.Toggle,
         "mimo-v2.6-flash-free" to ReasoningSupport.Fixed,
-        "mimo-v2.5-free" to ReasoningSupport.Fixed,
-        "nemotron-3-ultra-free" to ReasoningSupport.Fixed,
+        "minimax-m3.1-flash-free" to ReasoningSupport.Effort(listOf("low", "medium", "high", "xhigh", "max")),
         "nemotron-3.5-lightning-free" to ReasoningSupport.Fixed,
+        "nemotron-3.5-super-vl-free" to ReasoningSupport.Effort(listOf("none", "minimal", "low", "medium", "high", "xhigh")),
 
-        "muse-spark-1.3" to ReasoningSupport.Effort(listOf("minimal", "low", "medium", "high", "xhigh")),
-        "muse-spark-1.2" to ReasoningSupport.Effort(listOf("minimal", "low", "medium", "high", "xhigh")),
-        "claude-sonnet-5" to ReasoningSupport.Effort(listOf("none", "low", "medium", "high", "xhigh", "max")),
-        "claude-opus-5" to ReasoningSupport.Effort(listOf("low", "medium", "high", "xhigh", "max")),
-        "claude-fable-5-1" to ReasoningSupport.Effort(listOf("low", "medium", "high", "xhigh", "max")),
         "claude-fable-5" to ReasoningSupport.Effort(listOf("low", "medium", "high", "xhigh", "max")),
+        "claude-fable-5-1" to ReasoningSupport.Effort(listOf("low", "medium", "high", "xhigh", "max")),
+        "claude-fable-5-2" to ReasoningSupport.Effort(listOf("low", "medium", "high", "xhigh", "max")),
         "claude-haiku-4-5" to ReasoningSupport.BudgetTokens(minTokens = 1024),
+        "claude-haiku-5-5" to ReasoningSupport.Effort(listOf("low", "medium", "high", "xhigh", "max")),
+        "claude-opus-4-5" to ReasoningSupport.Effort(listOf("low", "medium", "high")),
+        "claude-opus-4-6" to ReasoningSupport.Effort(listOf("low", "medium", "high", "max")),
+        "claude-opus-4-7" to ReasoningSupport.Effort(listOf("low", "medium", "high", "xhigh", "max")),
+        "claude-opus-4-8" to ReasoningSupport.Effort(listOf("low", "medium", "high", "xhigh", "max")),
+        "claude-opus-5" to ReasoningSupport.Effort(listOf("low", "medium", "high", "xhigh", "max")),
+        "claude-opus-5-5" to ReasoningSupport.Effort(listOf("low", "medium", "high", "xhigh", "max")),
+        "claude-sonnet-4-5" to ReasoningSupport.BudgetTokens(minTokens = 1024),
+        "claude-sonnet-4-6" to ReasoningSupport.Effort(listOf("low", "medium", "high", "max")),
+        "claude-sonnet-5" to ReasoningSupport.Effort(listOf("low", "medium", "high", "xhigh", "max")),
+        "claude-sonnet-5-5" to ReasoningSupport.Effort(listOf("low", "medium", "high", "xhigh", "max")),
+
+        "deepseek-v4-pro" to ReasoningSupport.Effort(listOf("high", "max")),
+        "deepseek-v4.1-flash" to ReasoningSupport.Effort(listOf("low", "high", "max")),
+
+        "gemini-3.5-flash" to ReasoningSupport.Effort(listOf("minimal", "low", "medium", "high")),
+        "gemini-3.5-flash-lite" to ReasoningSupport.Effort(listOf("minimal", "low", "medium", "high")),
+        "gemini-3.6-flash" to ReasoningSupport.Effort(listOf("minimal", "low", "medium", "high")),
+        "gemini-3.7-flash" to ReasoningSupport.Effort(listOf("low", "medium", "high")),
+        "gemini-3.8-flash" to ReasoningSupport.Effort(listOf("low", "medium", "high")),
+        "gemini-4-argon" to ReasoningSupport.Effort(listOf("low", "medium", "high")),
+        "gemini-4-carbon" to ReasoningSupport.Effort(listOf("low", "medium", "high")),
+
+        "glm-5" to ReasoningSupport.Toggle,
+        "glm-5.1" to ReasoningSupport.Toggle,
+        "glm-5.2" to ReasoningSupport.Effort(listOf("high", "max")),
+        "glm-5.3" to ReasoningSupport.Effort(listOf("low", "high", "max")),
+        "glm-5.3-flash" to ReasoningSupport.Effort(listOf("low", "high", "max")),
+
+        "gpt-5" to ReasoningSupport.Effort(listOf("minimal", "low", "medium", "high")),
+        "gpt-5-codex" to ReasoningSupport.Effort(listOf("low", "medium", "high")),
+        "gpt-5-nano" to ReasoningSupport.Effort(listOf("minimal", "low", "medium", "high")),
+        "gpt-5.1" to ReasoningSupport.Effort(listOf("none", "low", "medium", "high")),
+        "gpt-5.1-codex" to ReasoningSupport.Effort(listOf("low", "medium", "high")),
+        "gpt-5.1-codex-max" to ReasoningSupport.Effort(listOf("low", "medium", "high", "xhigh")),
+        "gpt-5.1-codex-mini" to ReasoningSupport.Effort(listOf("low", "medium", "high")),
+        "gpt-5.2" to ReasoningSupport.Effort(listOf("none", "low", "medium", "high", "xhigh")),
+        "gpt-5.2-codex" to ReasoningSupport.Effort(listOf("low", "medium", "high", "xhigh")),
+        "gpt-5.3-codex" to ReasoningSupport.Effort(listOf("none", "low", "medium", "high", "xhigh")),
+        "gpt-5.3-codex-spark" to ReasoningSupport.Effort(listOf("low", "medium", "high", "xhigh")),
+        "gpt-5.4" to ReasoningSupport.Effort(listOf("none", "low", "medium", "high", "xhigh")),
+        "gpt-5.4-mini" to ReasoningSupport.Effort(listOf("none", "low", "medium", "high", "xhigh")),
+        "gpt-5.4-nano" to ReasoningSupport.Effort(listOf("none", "low", "medium", "high", "xhigh")),
+        "gpt-5.4-pro" to ReasoningSupport.Effort(listOf("medium", "high", "xhigh")),
+        "gpt-5.5" to ReasoningSupport.Effort(listOf("none", "low", "medium", "high", "xhigh")),
+        "gpt-5.5-pro" to ReasoningSupport.Effort(listOf("medium", "high", "xhigh")),
+        "gpt-5.6-luna" to ReasoningSupport.Effort(listOf("none", "low", "medium", "high", "xhigh", "max")),
         "gpt-5.6-sol" to ReasoningSupport.Effort(listOf("none", "low", "medium", "high", "xhigh", "max")),
         "gpt-5.6-terra" to ReasoningSupport.Effort(listOf("none", "low", "medium", "high", "xhigh", "max")),
-        "gpt-5.6-luna" to ReasoningSupport.Effort(listOf("none", "low", "medium", "high", "xhigh", "max")),
-        "gpt-6-sol" to ReasoningSupport.Effort(listOf("none", "low", "medium", "high", "xhigh", "max")),
-        "gpt-6-luna" to ReasoningSupport.Effort(listOf("none", "low", "medium", "high", "xhigh", "max")),
         "gpt-6-astra" to ReasoningSupport.Effort(listOf("low", "medium", "high", "xhigh", "max")),
+        "gpt-6-luna" to ReasoningSupport.Effort(listOf("none", "low", "medium", "high", "xhigh", "max")),
+        "gpt-6-sol" to ReasoningSupport.Effort(listOf("none", "low", "medium", "high", "xhigh", "max")),
         "gpt-6.1-sol" to ReasoningSupport.Effort(listOf("low", "medium", "high", "xhigh", "max")),
-        "gpt-5.5" to ReasoningSupport.Effort(listOf("none", "low", "medium", "high", "xhigh")),
-        "gpt-5.4" to ReasoningSupport.Effort(listOf("none", "low", "medium", "high", "xhigh")),
-        "gpt-5" to ReasoningSupport.Effort(listOf("minimal", "low", "medium", "high")),
-        "gemini-3.8-flash" to ReasoningSupport.Effort(listOf("low", "medium", "high")),
-        "gemini-3.7-flash" to ReasoningSupport.Effort(listOf("low", "medium", "high")),
-        "gemini-3.6-flash" to ReasoningSupport.Effort(listOf("minimal", "low", "medium", "high")),
-        "gemini-3.5-flash" to ReasoningSupport.Effort(listOf("minimal", "low", "medium", "high")),
-        "gemini-3.1-pro" to ReasoningSupport.Effort(listOf("low", "medium", "high")),
-        "gemini-3-pro" to ReasoningSupport.Effort(listOf("low", "high")),
-        "deepseek-v4-flash" to ReasoningSupport.Effort(listOf("none", "low", "high", "max")),
-        "deepseek-v4-pro" to ReasoningSupport.Effort(listOf("none", "high", "max")),
-        "glm-5.3-flash" to ReasoningSupport.Effort(listOf("low", "high", "max")),
-        "glm-5.2" to ReasoningSupport.Effort(listOf("high", "max")),
-        "qwen3.8-flash" to ReasoningSupport.Effort(listOf("low", "medium", "xhigh")),
+
+        "grok-4.3" to ReasoningSupport.Effort(listOf("none", "low", "medium", "high")),
+        "grok-4.5" to ReasoningSupport.Effort(listOf("low", "medium", "high")),
+        "grok-4.6" to ReasoningSupport.Effort(listOf("low", "medium", "high", "xhigh")),
+        "grok-4.7" to ReasoningSupport.Effort(listOf("low", "medium", "high", "xhigh")),
+        "grok-build-0.1" to ReasoningSupport.Fixed,
+        "grok-4.1-fast" to ReasoningSupport.Unsupported,
+
         "kimi-k2.5" to ReasoningSupport.Toggle,
-        "kimi-k3" to ReasoningSupport.Effort(listOf("max")),
-        "minimax-m3" to ReasoningSupport.Fixed,
+        "kimi-k2.6" to ReasoningSupport.Toggle,
+        "kimi-k2.7-code" to ReasoningSupport.Fixed,
+        "kimi-k3" to ReasoningSupport.Effort(listOf("low", "high", "max")),
+
+        "minimax-m2.5" to ReasoningSupport.Fixed,
+        "minimax-m2.7" to ReasoningSupport.Fixed,
+        "minimax-m3" to ReasoningSupport.Toggle,
+
+        "mistral-large-4" to ReasoningSupport.Effort(listOf("none", "high")),
+        "muse-ember-1.0" to ReasoningSupport.Effort(listOf("minimal", "low", "medium", "high", "xhigh", "max")),
+        "muse-spark-1.2" to ReasoningSupport.Effort(listOf("minimal", "low", "medium", "high", "xhigh")),
+        "muse-spark-1.3" to ReasoningSupport.Effort(listOf("minimal", "low", "medium", "high", "xhigh")),
+        "muse-wonder-1.0" to ReasoningSupport.Effort(listOf("minimal", "low", "medium", "high", "xhigh", "max")),
+
+        "qwen3.5-plus" to ReasoningSupport.Toggle,
+        "qwen3.6-plus" to ReasoningSupport.Toggle,
+        "qwen3.8-flash" to ReasoningSupport.Effort(listOf("low", "medium", "xhigh")),
+        "qwen3.8-max" to ReasoningSupport.Effort(listOf("low", "medium", "xhigh")),
 
         "gpt-5.6-sol-pro" to ReasoningSupport.Effort(listOf("none", "low", "medium", "high", "xhigh", "max")),
         "gpt-5.5-2026-04-23" to ReasoningSupport.Effort(listOf("none", "low", "medium", "high", "xhigh")),
@@ -75,8 +137,6 @@ object ModelReasoningCatalog {
         "o3-mini" to ReasoningSupport.Effort(listOf("low", "medium", "high")),
         "o4-mini" to ReasoningSupport.Effort(listOf("low", "medium", "high")),
 
-        "claude-opus-5-5" to ReasoningSupport.Effort(listOf("low", "medium", "high", "xhigh", "max")),
-        "claude-sonnet-5-5" to ReasoningSupport.Effort(listOf("low", "medium", "high", "xhigh", "max")),
         "claude-haiku-4-5-20251001" to ReasoningSupport.BudgetTokens(minTokens = 1024),
         "claude-3-7-sonnet" to ReasoningSupport.Effort(listOf("none", "low", "medium", "high", "xhigh", "max")),
         "claude-3-5-haiku" to ReasoningSupport.Unsupported,
@@ -90,12 +150,6 @@ object ModelReasoningCatalog {
         "sonar" to ReasoningSupport.Unsupported,
         "sonar-pro" to ReasoningSupport.Unsupported,
         "sonar-reasoning-pro" to ReasoningSupport.Effort(listOf("minimal", "low", "medium", "high")),
-
-        "grok-4.3" to ReasoningSupport.Effort(listOf("none", "low", "medium", "high")),
-        "grok-4.5" to ReasoningSupport.Effort(listOf("low", "medium", "high")),
-        "grok-4.6" to ReasoningSupport.Effort(listOf("low", "medium", "high", "xhigh")),
-        "grok-4.7" to ReasoningSupport.Effort(listOf("low", "medium", "high", "xhigh")),
-        "grok-4.1-fast" to ReasoningSupport.Unsupported,
 
         "mistral-large-latest" to ReasoningSupport.Unsupported,
         "mistral-tiny-latest" to ReasoningSupport.Unsupported,
@@ -120,24 +174,32 @@ object ModelReasoningCatalog {
     fun getReasoningSupport(model: String, provider: String = ""): ReasoningSupport {
         val normalized = normalizeModelId(model)
         if (normalized.isBlank()) {
-            return ReasoningSupport.Effort(listOf("low", "medium", "high", "max"))
+            return ReasoningSupport.Effort(listOf("low", "high", "max"))
         }
 
-        MODEL_CAPABILITIES[normalized]?.let { return it }
+        val effective = if (provider.equals("Zen", ignoreCase = true) || ZenRouter.isFreeModel(normalized)) {
+            normalizeModelId(ZenRouter.normalizeModelId(normalized))
+        } else {
+            normalized
+        }
 
-        val bareModel = if (normalized.contains('/')) normalized.substringAfterLast('/') else normalized
+        dynamicCapabilities[effective]?.let { return it }
+        MODEL_CAPABILITIES[effective]?.let { return it }
+
+        val bareModel = if (effective.contains('/')) effective.substringAfterLast('/') else effective
+        dynamicCapabilities[bareModel]?.let { return it }
         MODEL_CAPABILITIES[bareModel]?.let { return it }
 
         val strippedDate = bareModel.replace(Regex("-\\d{4}-?\\d{2}-?\\d{2}$"), "")
+        dynamicCapabilities[strippedDate]?.let { return it }
         MODEL_CAPABILITIES[strippedDate]?.let { return it }
 
-        if (provider.equals("Zen", ignoreCase = true) || ZenRouter.isFreeModel(normalized)) {
-            if (normalized.contains("free")) {
+        if (provider.equals("Zen", ignoreCase = true) || ZenRouter.isFreeModel(effective)) {
+            if (effective.contains("free")) {
                 return when {
-                    normalized.contains("bunny") -> ReasoningSupport.Effort(listOf("low", "medium", "high", "xhigh", "max"))
-                    normalized.contains("fledge") -> ReasoningSupport.Effort(listOf("low", "high", "max"))
-                    normalized.contains("ling") || normalized.contains("longcat") -> ReasoningSupport.Toggle
-                    normalized.contains("pickle") || normalized.contains("mimo") || normalized.contains("nemotron") -> ReasoningSupport.Fixed
+                    effective.contains("longcat") -> ReasoningSupport.Toggle
+                    effective.contains("pickle") || effective.contains("mimo") || effective.contains("iceman") || effective.contains("nemotron-3.5-lightning") -> ReasoningSupport.Fixed
+                    effective.contains("deepseek") || effective.contains("glm-5.3") -> ReasoningSupport.Effort(listOf("low", "high", "max"))
                     else -> ReasoningSupport.Effort(listOf("low", "medium", "high"))
                 }
             }

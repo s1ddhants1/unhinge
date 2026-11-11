@@ -68,12 +68,13 @@ object Consts {
     const val OPENROUTER_DEFAULT_MODEL = "inception/mercury-2.5-preview"
 
     const val LEGACY_OPENROUTER_DEFAULT_MODEL = "google/gemini-2.5-flash-lite"
-    const val ZEN_DEFAULT_BASE_URL = "https://opencode.ai/inference/v1/chat/completions"
-    const val ZEN_DEFAULT_MODEL = "space-bunny-free"
-    const val DEFAULT_ZEN_OPENCODE_VERSION = "2.0.30"
+    const val ZEN_DEFAULT_BASE_URL = "https://opencode.ai/inference/openai/v1/chat/completions"
+    const val ZEN_DEFAULT_MODEL = "deepseek-v4.1-flash-free"
+    const val DEFAULT_ZEN_OPENCODE_VERSION = "2.2.6"
+    const val ZEN_UPDATE_API_URL = "https://opencode.ai/update/api/latest/cli/npm"
     const val ZEN_NPM_REGISTRY_URL = "https://registry.npmjs.org/@opencode/cli/latest"
     const val ZEN_BREW_FORMULA_URL = "https://formulae.brew.sh/api/formula/opencode.json"
-    const val ZEN_MODELS_URL = "https://opencode.ai/inference/v1/models"
+    const val ZEN_MODELS_URL = "https://opencode.ai/inference/openai/v1/models"
 
     const val DEFAULT_THEME_COLOR = 0xFFED5564L
     const val DEFAULT_AI_TEMPERATURE = 0.85f

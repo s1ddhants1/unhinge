@@ -122,29 +122,7 @@ fun AiWingmanSettingsPage(
 
     val modelsByProvider =
         mapOf(
-            "Zen" to
-                listOf(
-                    "space-bunny-free",
-                    "muse-spark-1.3-contributor-free",
-                    "big-pickle",
-                    "fledge-alpha-free",
-                    "ling-3.1-flash-free",
-                    "longcat-2.5-preview-free",
-                    "mimo-v2.6-flash-free",
-                    "mimo-v2.5-free",
-                    "nemotron-3-ultra-free",
-                    "nemotron-3.5-lightning-free",
-                    "claude-sonnet-5",
-                    "claude-haiku-4-5",
-                    "gpt-5.6-sol",
-                    "gemini-3.8-flash",
-                    "deepseek-v4-flash",
-                    "deepseek-v4-pro",
-                    "glm-5.3-flash",
-                    "qwen3.8-flash",
-                    "kimi-k2.5",
-                    "minimax-m3",
-                ),
+            "Zen" to (ZenRouter.FreeModels + ZenRouter.DefaultPaidModels).distinct(),
             "OpenRouter" to
                 listOf(
                     "inception/mercury-2.5-preview",

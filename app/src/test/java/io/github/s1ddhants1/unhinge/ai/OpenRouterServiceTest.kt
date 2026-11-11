@@ -104,7 +104,7 @@ class OpenRouterServiceTest {
             model = "glm-5-free",
         )
         assertTrue(zenModelError.contains("Zen model error"))
-        assertTrue(zenModelError.contains("space-bunny-free"))
+        assertTrue(zenModelError.contains("deepseek-v4.1-flash-free"))
         assertFalse(zenModelError.contains("openrouter"))
 
         val zenFree401 = friendlyGenerationError(
@@ -112,7 +112,7 @@ class OpenRouterServiceTest {
             401,
             "Unauthorized",
             baseUrl = "https://opencode.ai/zen/v1/chat/completions",
-            model = "space-bunny-free",
+            model = "deepseek-v4.1-flash-free",
         )
         assertTrue(zenFree401.contains("Zen free-tier authorization failed"))
         assertTrue(zenFree401.contains("No API key is needed"))
@@ -137,7 +137,7 @@ class OpenRouterServiceTest {
             model = "big-pickle",
         )
         assertTrue(zen403.contains("Zen free-tier restriction"))
-        assertTrue(zen403.contains("space-bunny-free"))
+        assertTrue(zen403.contains("deepseek-v4.1-flash-free"))
         assertFalse(zen403.contains("guardrail"))
 
         val claude401 = friendlyGenerationError(null, 401, "Unauthorized", provider = "Claude")

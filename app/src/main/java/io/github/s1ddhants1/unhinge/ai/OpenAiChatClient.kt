@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -20,15 +21,76 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
 
 object OpenAiChatClient : LlmClient {
+
+    private fun buildPost(
+        targetUrl: String,
+        apiKey: String,
+        model: String,
+        bodyJson: String,
+    ): Request =
+        Request.Builder()
+            .url(targetUrl)
+            .apply {
+                if (ZenRouter.isZenUrl(targetUrl)) {
+                    ZenRouter.injectZenHeaders(this, apiKey, model)
+                } else {
+                    if (apiKey.isNotBlank()) {
+                        addHeader("Authorization", "Bearer ${apiKey.trim()}")
+                    }
+                    addHeader("HTTP-Referer", "https://github.com/s1ddhants1/unhinge")
+                    addHeader("X-Title", "Unhinge")
+                }
+            }
+            .addHeader("Content-Type", "application/json")
+            .post(bodyJson.toRequestBody(AiHttpClient.jsonMediaType))
+            .build()
+
+    private fun extractChatDelta(data: String): String? =
+        runCatching {
+            AiHttpClient.json
+                .parseToJsonElement(data)
+                .jsonObject["choices"]
+                ?.jsonArray
+                ?.getOrNull(0)
+                ?.jsonObject
+                ?.get("delta")
+                ?.jsonObject
+                ?.get("content")
+                ?.jsonPrimitive
+                ?.contentOrNull
+        }.getOrNull()
+
+    private inline fun readChatSseDeltas(
+        response: Response,
+        onDelta: (String) -> Unit,
+    ): String {
+        val source = response.body.source()
+        val content = StringBuilder()
+        while (!source.exhausted()) {
+            val line = source.readUtf8Line() ?: break
+            if (!line.startsWith("data: ")) continue
+            val data = line.removePrefix("data: ").trim()
+            if (data == "[DONE]") break
+            val delta = extractChatDelta(data)
+            if (!delta.isNullOrEmpty()) {
+                content.append(delta)
+                onDelta(delta)
+            }
+        }
+        return content.toString()
+    }
 
     override suspend fun generate(request: WingmanLlmRequest): Result<List<String>> =
         withContext(Dispatchers.IO) {
             if (request.text.isBlank()) return@withContext Result.failure(Exception("Input text is empty"))
 
             val expectedCount = request.effectivePromptCount
-            val safeModel = sanitizeModelId(request.model)
+            val targetUrl = ZenRouter.normalizeBaseUrl(request.baseUrl.ifBlank { OpenRouterDefaultBaseUrl })
+            val isZen = ZenRouter.isZenUrl(targetUrl)
+            val safeModel = if (isZen) ZenRouter.normalizeModelId(request.model) else sanitizeModelId(request.model)
             var useStructured = request.structured
 
             repeat(request.maxRetries) { attempt ->
@@ -38,7 +100,8 @@ object OpenAiChatClient : LlmClient {
                         model = safeModel,
                         customSystemPrompt = request.customSystemPrompt,
                         profileBlock = request.profileBlock,
-                        baseUrl = request.baseUrl.ifBlank { OpenRouterDefaultBaseUrl },
+                        baseUrl = targetUrl,
+                        stream = isZen && ZenRouter.isFreeModel(safeModel),
                         avoidReplies = request.avoidReplies,
                         temperature = request.temperature,
                         topP = request.topP,
@@ -48,27 +111,11 @@ object OpenAiChatClient : LlmClient {
                         directionalStimulus = request.directionalStimulus,
                         promptCount = expectedCount,
                     )
-                    val targetUrl = ZenRouter.normalizeBaseUrl(request.baseUrl.ifBlank { OpenRouterDefaultBaseUrl })
-                    val req = Request.Builder()
-                        .url(targetUrl)
-                        .apply {
-                            if (ZenRouter.isZenUrl(targetUrl)) {
-                                ZenRouter.injectZenHeaders(this, request.apiKey, safeModel)
-                            } else {
-                                if (request.apiKey.isNotBlank()) {
-                                    addHeader("Authorization", "Bearer ${request.apiKey.trim()}")
-                                }
-                                addHeader("HTTP-Referer", "https://github.com/s1ddhants1/unhinge")
-                                addHeader("X-Title", "Unhinge")
-                            }
-                        }
-                        .addHeader("Content-Type", "application/json")
-                        .post(body.toString().toRequestBody(AiHttpClient.jsonMediaType))
-                        .build()
+                    val req = buildPost(targetUrl, request.apiKey, safeModel, body.toString())
 
-                    AiHttpClient.client.newCall(req).execute().use { response ->
-                        val responseBody = response.body.string()
+                    AiHttpClient.clientFor(targetUrl).newCall(req).execute().use { response ->
                         if (!response.isSuccessful) {
+                            val responseBody = response.body.string()
                             ZenRouter.onGatewayResponse(response.code, targetUrl)
                             val structuredRejection = isStructuredOutputError(responseBody, response.code)
                             if (useStructured && structuredRejection) {
@@ -87,18 +134,25 @@ object OpenAiChatClient : LlmClient {
                             return@withContext Result.failure(Exception(error))
                         }
 
-                        val content = AiHttpClient.json
-                            .parseToJsonElement(responseBody)
-                            .jsonObject["choices"]
-                            ?.jsonArray
-                            ?.getOrNull(0)
-                            ?.jsonObject
-                            ?.get("message")
-                            ?.jsonObject
-                            ?.get("content")
-                            ?.jsonPrimitive
-                            ?.contentOrNull
-                            .orEmpty()
+                        val isStreamResponse = body["stream"]?.jsonPrimitive?.booleanOrNull == true ||
+                            response.header("Content-Type")?.contains("text/event-stream", ignoreCase = true) == true
+                        val content = if (isStreamResponse) {
+                            readChatSseDeltas(response) {}
+                        } else {
+                            val responseBody = response.body.string()
+                            AiHttpClient.json
+                                .parseToJsonElement(responseBody)
+                                .jsonObject["choices"]
+                                ?.jsonArray
+                                ?.getOrNull(0)
+                                ?.jsonObject
+                                ?.get("message")
+                                ?.jsonObject
+                                ?.get("content")
+                                ?.jsonPrimitive
+                                ?.contentOrNull
+                                .orEmpty()
+                        }
                         return@withContext parseGeneratedContent(content, expectedCount)
                     }
                 } catch (cancelled: CancellationException) {
@@ -119,7 +173,9 @@ object OpenAiChatClient : LlmClient {
             }
 
             val expectedCount = request.effectivePromptCount
-            val safeModel = sanitizeModelId(request.model)
+            val targetUrl = ZenRouter.normalizeBaseUrl(request.baseUrl.ifBlank { OpenRouterDefaultBaseUrl })
+            val isZen = ZenRouter.isZenUrl(targetUrl)
+            val safeModel = if (isZen) ZenRouter.normalizeModelId(request.model) else sanitizeModelId(request.model)
             var useStructured = request.structured
             var lastError = "Max retries exceeded"
 
@@ -130,7 +186,7 @@ object OpenAiChatClient : LlmClient {
                         model = safeModel,
                         customSystemPrompt = request.customSystemPrompt,
                         profileBlock = request.profileBlock,
-                        baseUrl = request.baseUrl.ifBlank { OpenRouterDefaultBaseUrl },
+                        baseUrl = targetUrl,
                         stream = true,
                         avoidReplies = request.avoidReplies,
                         temperature = request.temperature,
@@ -141,26 +197,10 @@ object OpenAiChatClient : LlmClient {
                         directionalStimulus = request.directionalStimulus,
                         promptCount = expectedCount,
                     )
-                    val targetUrl = ZenRouter.normalizeBaseUrl(request.baseUrl.ifBlank { OpenRouterDefaultBaseUrl })
-                    val req = Request.Builder()
-                        .url(targetUrl)
-                        .apply {
-                            if (ZenRouter.isZenUrl(targetUrl)) {
-                                ZenRouter.injectZenHeaders(this, request.apiKey, safeModel)
-                            } else {
-                                if (request.apiKey.isNotBlank()) {
-                                    addHeader("Authorization", "Bearer ${request.apiKey.trim()}")
-                                }
-                                addHeader("HTTP-Referer", "https://github.com/s1ddhants1/unhinge")
-                                addHeader("X-Title", "Unhinge")
-                            }
-                        }
-                        .addHeader("Content-Type", "application/json")
-                        .post(body.toString().toRequestBody(AiHttpClient.jsonMediaType))
-                        .build()
+                    val req = buildPost(targetUrl, request.apiKey, safeModel, body.toString())
 
                     var httpFailed = false
-                    AiHttpClient.client.newCall(req).execute().use { response ->
+                    AiHttpClient.clientFor(targetUrl).newCall(req).execute().use { response ->
                         if (!response.isSuccessful) {
                             val errBody = response.body.string()
                             ZenRouter.onGatewayResponse(response.code, targetUrl)
@@ -185,36 +225,11 @@ object OpenAiChatClient : LlmClient {
                             return@flow
                         }
 
-                        val source = response.body.source()
-                        val content = StringBuilder()
-
-                        while (!source.exhausted()) {
-                            val line = source.readUtf8Line() ?: break
-                            if (!line.startsWith("data: ")) continue
-                            val data = line.removePrefix("data: ").trim()
-                            if (data == "[DONE]") break
-
-                            val delta = runCatching {
-                                AiHttpClient.json
-                                    .parseToJsonElement(data)
-                                    .jsonObject["choices"]
-                                    ?.jsonArray
-                                    ?.getOrNull(0)
-                                    ?.jsonObject
-                                    ?.get("delta")
-                                    ?.jsonObject
-                                    ?.get("content")
-                                    ?.jsonPrimitive
-                                    ?.contentOrNull
-                            }.getOrNull()
-
-                            if (!delta.isNullOrEmpty()) {
-                                content.append(delta)
-                                emit(StreamChunk.Content(delta))
-                            }
+                        val content = readChatSseDeltas(response) { delta ->
+                            emit(StreamChunk.Content(delta))
                         }
 
-                        parseGeneratedContent(content.toString(), expectedCount)
+                        parseGeneratedContent(content, expectedCount)
                             .onSuccess { emit(StreamChunk.Complete(it)) }
                             .onFailure { emit(StreamChunk.Error(it.message ?: "Parsing failed")) }
                     }
@@ -246,7 +261,9 @@ object OpenAiChatClient : LlmClient {
                 return@flow
             }
 
-            val safeModel = sanitizeModelId(request.model)
+            val targetUrl = ZenRouter.normalizeBaseUrl(request.baseUrl.ifBlank { OpenRouterDefaultBaseUrl })
+            val isZen = ZenRouter.isZenUrl(targetUrl)
+            val safeModel = if (isZen) ZenRouter.normalizeModelId(request.model) else sanitizeModelId(request.model)
             var lastError = "Max retries exceeded"
 
             for (attempt in 0 until request.maxRetries) {
@@ -255,31 +272,15 @@ object OpenAiChatClient : LlmClient {
                         userPrompt = request.userPrompt,
                         systemPrompt = request.systemPrompt,
                         model = safeModel,
-                        baseUrl = request.baseUrl.ifBlank { OpenRouterDefaultBaseUrl },
+                        baseUrl = targetUrl,
                         temperature = request.temperature,
                         topP = request.topP,
                         reasoningEffort = request.reasoningEffort,
                     )
-                    val targetUrl = ZenRouter.normalizeBaseUrl(request.baseUrl.ifBlank { OpenRouterDefaultBaseUrl })
-                    val req = Request.Builder()
-                        .url(targetUrl)
-                        .apply {
-                            if (ZenRouter.isZenUrl(targetUrl)) {
-                                ZenRouter.injectZenHeaders(this, request.apiKey, safeModel)
-                            } else {
-                                if (request.apiKey.isNotBlank()) {
-                                    addHeader("Authorization", "Bearer ${request.apiKey.trim()}")
-                                }
-                                addHeader("HTTP-Referer", "https://github.com/s1ddhants1/unhinge")
-                                addHeader("X-Title", "Unhinge")
-                            }
-                        }
-                        .addHeader("Content-Type", "application/json")
-                        .post(body.toString().toRequestBody(AiHttpClient.jsonMediaType))
-                        .build()
+                    val req = buildPost(targetUrl, request.apiKey, safeModel, body.toString())
 
                     var httpFailed = false
-                    AiHttpClient.client.newCall(req).execute().use { response ->
+                    AiHttpClient.clientFor(targetUrl).newCall(req).execute().use { response ->
                         if (!response.isSuccessful) {
                             val errBody = response.body.string()
                             ZenRouter.onGatewayResponse(response.code, targetUrl)
@@ -298,36 +299,11 @@ object OpenAiChatClient : LlmClient {
                             return@flow
                         }
 
-                        val source = response.body.source()
-                        val content = StringBuilder()
-
-                        while (!source.exhausted()) {
-                            val line = source.readUtf8Line() ?: break
-                            if (!line.startsWith("data: ")) continue
-                            val data = line.removePrefix("data: ").trim()
-                            if (data == "[DONE]") break
-
-                            val delta = runCatching {
-                                AiHttpClient.json
-                                    .parseToJsonElement(data)
-                                    .jsonObject["choices"]
-                                    ?.jsonArray
-                                    ?.getOrNull(0)
-                                    ?.jsonObject
-                                    ?.get("delta")
-                                    ?.jsonObject
-                                    ?.get("content")
-                                    ?.jsonPrimitive
-                                    ?.contentOrNull
-                            }.getOrNull()
-
-                            if (!delta.isNullOrEmpty()) {
-                                content.append(delta)
-                                emit(ChatStreamChunk.Content(delta))
-                            }
+                        val content = readChatSseDeltas(response) { delta ->
+                            emit(ChatStreamChunk.Content(delta))
                         }
 
-                        emit(ChatStreamChunk.Complete(content.toString()))
+                        emit(ChatStreamChunk.Complete(content))
                     }
                     if (httpFailed) {
                         delay(1000L * (1 shl attempt))
@@ -360,14 +336,17 @@ internal fun buildChatStreamRequest(
     topP: Float,
     reasoningEffort: String = Consts.DEFAULT_AI_REASONING_EFFORT,
 ) = buildJsonObject {
+    val isZen = ZenRouter.isZenUrl(baseUrl)
+    val safeModel = if (isZen) ZenRouter.normalizeModelId(model) else sanitizeModelId(model)
+    val effectiveSystem = if (isZen) ZenRouter.withZenEnvironment(systemPrompt) else systemPrompt
     put(
         "messages",
         buildJsonArray {
-            if (systemPrompt.isNotBlank()) {
+            if (effectiveSystem.isNotBlank()) {
                 add(
                     buildJsonObject {
                         put("role", "system")
-                        put("content", systemPrompt)
+                        put("content", effectiveSystem)
                     },
                 )
             }
@@ -379,9 +358,7 @@ internal fun buildChatStreamRequest(
             )
         },
     )
-    val safeModel = sanitizeModelId(model)
     if (safeModel.isNotBlank()) put("model", safeModel)
-    val isZen = ZenRouter.isZenUrl(baseUrl)
     val sanitizedEffort = ModelReasoningCatalog.sanitizeReasoningEffort(reasoningEffort, safeModel, if (isZen) "Zen" else "")
     if (sanitizedEffort != null) {
         if (sanitizedEffort == "on" || sanitizedEffort == "off") {

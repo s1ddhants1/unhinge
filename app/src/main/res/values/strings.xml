@@ -26,9 +26,9 @@
     <string name="ai_error_generation_failed">Generation failed</string>
     <string name="ai_api_key_placeholder" translatable="false">opencode.ai API key</string>
     <string name="ai_reasoning_unsupported_title">Reasoning Not Supported</string>
-    <string name="ai_reasoning_unsupported_message">The selected model (<xliff:g id="model" example="space-bunny-free">%1$s</xliff:g>) does not support reasoning configuration.</string>
+    <string name="ai_reasoning_unsupported_message">The selected model (<xliff:g id="model" example="deepseek-v4.1-flash-free">%1$s</xliff:g>) does not support reasoning configuration.</string>
     <string name="ai_reasoning_fixed_title">Built-in Reasoning</string>
-    <string name="ai_reasoning_fixed_message">The selected model (<xliff:g id="model" example="space-bunny-free">%1$s</xliff:g>) uses built-in reasoning that cannot be modified or adjusted.</string>
+    <string name="ai_reasoning_fixed_message">The selected model (<xliff:g id="model" example="deepseek-v4.1-flash-free">%1$s</xliff:g>) uses built-in reasoning that cannot be modified or adjusted.</string>
     <string name="ai_reasoning_level_title">Reasoning Level (<xliff:g id="model" example="Model">%1$s</xliff:g>)</string>
     <string name="ai_reasoning_level_fallback">Model</string>
     <string name="ai_system_prompt_title">System prompt</string>
@@ -51,11 +51,11 @@
     <string name="ai_custom_model">Custom</string>
     <string name="ai_system_prompt_default">Default</string>
     <string name="ai_current_model_fallback">current</string>
-    <string name="zen_model_free_format"><xliff:g id="model" example="space-bunny-free">%1$s</xliff:g> (Free)</string>
+    <string name="zen_model_free_format"><xliff:g id="model" example="deepseek-v4.1-flash-free">%1$s</xliff:g> (Free)</string>
     <string name="zen_model_paid_format"><xliff:g id="model" example="claude-sonnet-5">%1$s</xliff:g> (Requires Zen key)</string>
     <string name="zen_sync_title">Sync OpenCode Gateway</string>
-    <string name="zen_sync_desc_format">OpenCode v<xliff:g id="version" example="2.0.30">%1$s</xliff:g> • <xliff:g id="freeCount" example="41">%2$d</xliff:g> free (<xliff:g id="totalCount" example="86">%3$d</xliff:g> total)</string>
-    <string name="zen_sync_success_format">Updated OpenCode v<xliff:g id="version" example="2.0.30">%1$s</xliff:g> (<xliff:g id="freeCount" example="41">%2$d</xliff:g> free, <xliff:g id="totalCount" example="86">%3$d</xliff:g> total)</string>
+    <string name="zen_sync_desc_format">OpenCode v<xliff:g id="version" example="2.2.6">%1$s</xliff:g> • <xliff:g id="freeCount" example="12">%2$d</xliff:g> free (<xliff:g id="totalCount" example="85">%3$d</xliff:g> total)</string>
+    <string name="zen_sync_success_format">Updated OpenCode v<xliff:g id="version" example="2.2.6">%1$s</xliff:g> (<xliff:g id="freeCount" example="12">%2$d</xliff:g> free, <xliff:g id="totalCount" example="85">%3$d</xliff:g> total)</string>
     <string name="zen_sync_in_progress">Updating OpenCode catalog &amp; agent version…</string>
     <string name="zen_sync_failure">Failed to sync OpenCode: <xliff:g id="error" example="Network error">%1$s</xliff:g></string>
     <string name="nav_tab_title_candidates">Candidate Feed</string>

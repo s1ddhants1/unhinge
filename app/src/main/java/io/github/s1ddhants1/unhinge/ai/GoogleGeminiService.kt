@@ -8,7 +8,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
@@ -16,16 +15,12 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import java.util.concurrent.TimeUnit
 
 private val geminiJson = AiHttpClient.json
 
 object GoogleGeminiService : LlmClient {
-    private val client = AiHttpClient.client
     private val jsonMediaType = AiHttpClient.jsonMediaType
 
     override suspend fun generate(request: WingmanLlmRequest): Result<List<String>> =
@@ -96,7 +91,8 @@ object GoogleGeminiService : LlmClient {
         withContext(Dispatchers.IO) {
             if (text.isBlank()) return@withContext Result.failure(Exception("Input text is empty"))
             val expectedCount = promptCount ?: text.lines().size
-            val safeModel = sanitizeModelId(model)
+            val safeModel = if (ZenRouter.isZenUrl(baseUrl) || baseUrl.isBlank()) ZenRouter.normalizeModelId(model) else sanitizeModelId(model)
+            val targetUrl = generateUrl(baseUrl, safeModel)
             repeat(maxRetries) { attempt ->
                 try {
                     val body =
@@ -114,13 +110,14 @@ object GoogleGeminiService : LlmClient {
                             temperature = temperature,
                             topP = topP,
                             reasoningEffort = reasoningEffort,
+                            baseUrl = targetUrl,
                         )
-                    val request = buildPost(generateUrl(baseUrl, safeModel), apiKey, body.toString(), safeModel)
-                    client.newCall(request).execute().use { response ->
+                    val request = buildPost(targetUrl, apiKey, body.toString(), safeModel)
+                    AiHttpClient.clientFor(targetUrl).newCall(request).execute().use { response ->
                         val responseBody = response.body.string()
                         if (!response.isSuccessful) {
-                            ZenRouter.onGatewayResponse(response.code, baseUrl)
-                            val error = friendlyGenerationError(responseBody, response.code, response.message, baseUrl = baseUrl, model = safeModel)
+                            ZenRouter.onGatewayResponse(response.code, targetUrl)
+                            val error = friendlyGenerationError(responseBody, response.code, response.message, baseUrl = targetUrl, model = safeModel)
                             if (isTransientHttpCode(response.code) && attempt < maxRetries - 1) throw Exception(error)
                             return@withContext Result.failure(Exception(error))
                         }
@@ -159,7 +156,8 @@ object GoogleGeminiService : LlmClient {
                 return@flow
             }
             val expectedCount = promptCount ?: text.lines().size
-            val safeModel = sanitizeModelId(model)
+            val safeModel = if (ZenRouter.isZenUrl(baseUrl) || baseUrl.isBlank()) ZenRouter.normalizeModelId(model) else sanitizeModelId(model)
+            val targetUrl = streamUrl(baseUrl, safeModel)
             var lastError = "Max retries exceeded"
             for (attempt in 0 until maxRetries) {
                 try {
@@ -178,14 +176,15 @@ object GoogleGeminiService : LlmClient {
                             temperature = temperature,
                             topP = topP,
                             reasoningEffort = reasoningEffort,
+                            baseUrl = targetUrl,
                         )
-                    val request = buildPost(streamUrl(baseUrl, safeModel), apiKey, body.toString(), safeModel)
+                    val request = buildPost(targetUrl, apiKey, body.toString(), safeModel)
                     var httpFailed = false
-                    client.newCall(request).execute().use { response ->
+                    AiHttpClient.clientFor(targetUrl).newCall(request).execute().use { response ->
                         if (!response.isSuccessful) {
-                            ZenRouter.onGatewayResponse(response.code, baseUrl)
+                            ZenRouter.onGatewayResponse(response.code, targetUrl)
                             val rawBody = response.body.string()
-                            lastError = friendlyGenerationError(rawBody, response.code, response.message, baseUrl = baseUrl, model = safeModel)
+                            lastError = friendlyGenerationError(rawBody, response.code, response.message, baseUrl = targetUrl, model = safeModel)
                             if (isTransientHttpCode(response.code) && attempt < maxRetries - 1) {
                                 httpFailed = true
                                 return@use
@@ -258,9 +257,10 @@ object GoogleGeminiService : LlmClient {
                 return@flow
             }
             var lastError = "Max retries exceeded"
+            val safeModel = if (ZenRouter.isZenUrl(baseUrl) || baseUrl.isBlank()) ZenRouter.normalizeModelId(model) else sanitizeModelId(model)
+            val targetUrl = streamUrl(baseUrl, safeModel)
             for (attempt in 0 until maxRetries) {
                 try {
-                    val safeModel = sanitizeModelId(model)
                     val body = buildGeminiRequest(
                         system = systemPrompt,
                         user = userPrompt,
@@ -268,14 +268,15 @@ object GoogleGeminiService : LlmClient {
                         temperature = temperature,
                         topP = topP,
                         reasoningEffort = reasoningEffort,
+                        baseUrl = targetUrl,
                     )
-                    val request = buildPost(streamUrl(baseUrl, safeModel), apiKey, body.toString(), safeModel)
+                    val request = buildPost(targetUrl, apiKey, body.toString(), safeModel)
                     var httpFailed = false
-                    client.newCall(request).execute().use { response ->
+                    AiHttpClient.clientFor(targetUrl).newCall(request).execute().use { response ->
                         if (!response.isSuccessful) {
-                            ZenRouter.onGatewayResponse(response.code, baseUrl)
+                            ZenRouter.onGatewayResponse(response.code, targetUrl)
                             val rawBody = response.body.string()
-                            lastError = friendlyGenerationError(rawBody, response.code, response.message, baseUrl = baseUrl, model = sanitizeModelId(model))
+                            lastError = friendlyGenerationError(rawBody, response.code, response.message, baseUrl = targetUrl, model = safeModel)
                             if (isTransientHttpCode(response.code) && attempt < maxRetries - 1) {
                                 httpFailed = true
                                 return@use
@@ -325,18 +326,21 @@ object GoogleGeminiService : LlmClient {
         }.flowOn(Dispatchers.IO)
 
     internal fun generateUrl(baseUrl: String, model: String): String {
-        val base = baseUrl.ifBlank { "$ZenGeminiBase/$model" }.trimEnd('/')
-        return if (base.endsWith(":generateContent") || base.endsWith(":streamGenerateContent")) {
-            base.replace(":streamGenerateContent", ":generateContent")
-        } else if (base.matches(Regex(".*/models/[^/]+"))) {
-            "$base:generateContent"
+        val base = ZenRouter.normalizeBaseUrl(baseUrl).ifBlank { "$ZenGeminiBase/$model" }.trimEnd('/')
+        val clean = base.substringBefore("?")
+        return if (clean.endsWith(":generateContent") || clean.endsWith(":streamGenerateContent")) {
+            clean.replace(":streamGenerateContent", ":generateContent")
+        } else if (clean.matches(Regex(".*/models/[^/]+"))) {
+            "$clean:generateContent"
         } else {
-            "$base/$model:generateContent"
+            "$clean/$model:generateContent"
         }
     }
 
-    internal fun streamUrl(baseUrl: String, model: String): String =
-        generateUrl(baseUrl, model).replace(":generateContent", ":streamGenerateContent")
+    internal fun streamUrl(baseUrl: String, model: String): String {
+        val stream = generateUrl(baseUrl, model).replace(":generateContent", ":streamGenerateContent")
+        return if (ZenRouter.isZenUrl(stream)) "$stream?alt=sse" else stream
+    }
 
     private fun buildPost(url: String, apiKey: String, json: String, model: String = ""): Request =
         ZenRouter.normalizeBaseUrl(url).let { targetUrl ->
@@ -366,12 +370,15 @@ internal fun buildGeminiRequest(
     temperature: Float = Consts.DEFAULT_AI_TEMPERATURE,
     topP: Float = Consts.DEFAULT_AI_TOP_P,
     reasoningEffort: String = Consts.DEFAULT_AI_REASONING_EFFORT,
+    baseUrl: String = ZenGeminiBase,
 ): JsonObject =
     buildJsonObject {
-        if (system.isNotBlank()) {
+        val isZen = ZenRouter.isZenUrl(baseUrl)
+        val effectiveSystem = if (isZen) ZenRouter.withZenEnvironment(system) else system
+        if (effectiveSystem.isNotBlank()) {
             put("system_instruction", buildJsonObject {
                 put("parts", buildJsonArray {
-                    add(buildJsonObject { put("text", system) })
+                    add(buildJsonObject { put("text", effectiveSystem) })
                 })
             })
         }
@@ -383,8 +390,8 @@ internal fun buildGeminiRequest(
                 })
             })
         })
-        val safeModel = sanitizeModelId(model)
-        val sanitizedEffort = ModelReasoningCatalog.sanitizeReasoningEffort(reasoningEffort, safeModel, "Google")
+        val safeModel = if (isZen) ZenRouter.normalizeModelId(model) else sanitizeModelId(model)
+        val sanitizedEffort = ModelReasoningCatalog.sanitizeReasoningEffort(reasoningEffort, safeModel, if (isZen) "Zen" else "Google")
         put("generationConfig", buildJsonObject {
             put("temperature", temperature.toDouble())
             put("topP", topP.toDouble())
