@@ -379,9 +379,7 @@ object HostAppAiFab {
             val isCandidate = !screenClues.isNonCandidate && (
                 effectivePassRect != null ||
                 commentInfo != null ||
-                screenClues.activeContext == HostCandidateReader.ScreenContext.DISCOVER ||
-                screenClues.activeContext == HostCandidateReader.ScreenContext.STANDOUTS ||
-                screenClues.activeContext == HostCandidateReader.ScreenContext.LIKES_YOU
+                screenClues.activeContext == HostCandidateReader.ScreenContext.DISCOVER
             )
 
             val attached = findAttachedContainer(activity)
@@ -677,9 +675,7 @@ object HostAppAiFab {
         val isCandidate = !screenClues.isNonCandidate && (
             pRect != null ||
             isCommentMode ||
-            screenClues.activeContext == HostCandidateReader.ScreenContext.DISCOVER ||
-            screenClues.activeContext == HostCandidateReader.ScreenContext.STANDOUTS ||
-            screenClues.activeContext == HostCandidateReader.ScreenContext.LIKES_YOU
+            screenClues.activeContext == HostCandidateReader.ScreenContext.DISCOVER
         )
         val sheetView = container.findViewWithTag<View>(TAG_AI_SHEET)
         val isSheetOpen = sheetView != null && sheetView.visibility == View.VISIBLE
@@ -1458,12 +1454,17 @@ object HostAppAiFab {
             it.contains("Add a comment", ignoreCase = true) ||
             it.contains("Edit comment", ignoreCase = true)
         }
-        val isStandoutsScreen = !isCommentSheet && visibleTexts.any {
+        val isStandoutsPage = !isCommentSheet && visibleTexts.any {
             it.startsWith("Roses (", ignoreCase = true) ||
             it.contains("Send a Rose", ignoreCase = true) ||
             it.contains("Roses remaining", ignoreCase = true) ||
             it.contains("Give a Rose", ignoreCase = true)
-        }
+        } && visibleTexts.none { it.equals("Back", ignoreCase = true) }
+
+        val isStandoutCandidate = !isStandoutsPage && visibleTexts.any { it.equals("Back", ignoreCase = true) } &&
+            (visibleTexts.any { it.equals("Standouts", ignoreCase = true) } ||
+             visibleTexts.any { it.contains("Send a Rose", ignoreCase = true) })
+
         val isLikesYouScreen = visibleTexts.any {
             it.contains("They like you", ignoreCase = true) ||
             (it.contains("Likes you", ignoreCase = true) && !it.equals("Likes You", ignoreCase = true))
@@ -1496,11 +1497,11 @@ object HostAppAiFab {
             it.startsWith("Expand your preferences", ignoreCase = true)
         }
 
-        val isNonCandidate = isMatchesScreen || isProfileScreen || isEmptyFeed
+        val isNonCandidate = isMatchesScreen || isProfileScreen || isEmptyFeed || isStandoutsPage
 
         val activeContext = when {
             isChatScreen -> HostCandidateReader.ScreenContext.MATCH_CHAT
-            isStandoutsScreen -> HostCandidateReader.ScreenContext.STANDOUTS
+            isStandoutsPage || isStandoutCandidate -> HostCandidateReader.ScreenContext.STANDOUTS
             isLikesYouScreen -> HostCandidateReader.ScreenContext.LIKES_YOU
             isMatchesScreen || isProfileScreen -> HostCandidateReader.ScreenContext.UNKNOWN
             else -> HostCandidateReader.ScreenContext.DISCOVER
