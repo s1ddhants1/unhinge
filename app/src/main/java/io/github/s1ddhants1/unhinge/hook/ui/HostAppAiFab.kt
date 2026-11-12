@@ -23,6 +23,36 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.core.graphics.toColorInt
 import androidx.core.view.WindowCompat
+import androidx.activity.OnBackPressedDispatcher
+import androidx.activity.OnBackPressedDispatcherOwner
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
+import androidx.activity.setViewTreeOnBackPressedDispatcherOwner
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.layout.offset
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.os.Bundle
@@ -128,6 +158,7 @@ object HostAppAiFab {
     }
 
     private val layoutListeners = WeakHashMap<View, ViewTreeObserver.OnGlobalLayoutListener>()
+    private var activeDismissAction: (() -> Unit)? = null
     private val focusListeners = WeakHashMap<View, ViewTreeObserver.OnWindowFocusChangeListener>()
     private val overlayLifecycleOwners = WeakHashMap<View, ComposeDialogLifecycleOwner>()
     private val likesObservers = WeakHashMap<Activity, (HostLikesReader.LikesState) -> Unit>()
@@ -135,6 +166,7 @@ object HostAppAiFab {
     private var currentPrefsRef: WeakReference<PreferencesManager>? = null
     private var currentCommentCardInfo: CommentCardInfo? = null
     private var currentTargetCandidate: CachedCandidateProfile? = null
+    private var lastKnownPassRect: Rect? = null
     internal var lastRenderedLikesState: HostLikesReader.LikesState? = null
     internal var lastHeartColor: Int? = null
     private var lastUpdateTime = 0L
@@ -215,6 +247,7 @@ object HostAppAiFab {
         pendingUpdateRunnable = null
         currentCommentCardInfo = null
         currentTargetCandidate = null
+        lastKnownPassRect = null
         lastRenderedLikesState = null
         lastHeartColor = null
         candidatePromptEntriesMap.clear()
@@ -237,6 +270,7 @@ object HostAppAiFab {
                 findAttachedContainer(activity)?.let { container ->
                     val sheetView = container.findViewWithTag<View>(TAG_AI_SHEET)
                     if (sheetView != null) {
+                        (sheetView as? ComposeView)?.disposeComposition()
                         overlayLifecycleOwners.remove(sheetView)?.handleDestroy()
                     }
                     val listener = layoutListeners.remove(container)
@@ -335,10 +369,20 @@ object HostAppAiFab {
             activity.window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
             val decor = activity.window?.decorView ?: return
             val passRect = findPassButtonBounds(decor)
+            if (passRect != null) {
+                lastKnownPassRect = Rect(passRect)
+            }
+            val effectivePassRect = passRect ?: lastKnownPassRect
             val commentInfo = findCommentCardInfo(decor)
 
             val screenClues = extractScreenClues(activity)
-            val isCandidate = !screenClues.isNonCandidate && (passRect != null || commentInfo != null)
+            val isCandidate = !screenClues.isNonCandidate && (
+                effectivePassRect != null ||
+                commentInfo != null ||
+                screenClues.activeContext == HostCandidateReader.ScreenContext.DISCOVER ||
+                screenClues.activeContext == HostCandidateReader.ScreenContext.STANDOUTS ||
+                screenClues.activeContext == HostCandidateReader.ScreenContext.LIKES_YOU
+            )
 
             val attached = findAttachedContainer(activity)
             val rootGroup = (decor as? ViewGroup)
@@ -354,8 +398,10 @@ object HostAppAiFab {
                     bindLayoutListener(newContainer, activity, prefs)
                     newContainer
                 }
-                updateControlsState(container, activity, prefs, passRect, commentInfo, screenClues)
+                updateControlsState(container, activity, prefs, effectivePassRect, commentInfo, screenClues)
             } else {
+                lastKnownPassRect = null
+                currentTargetCandidate = null
                 if (attached != null) {
                     val sheetView = attached.findViewWithTag<View>(TAG_AI_SHEET)
                     if (sheetView != null && sheetView.visibility == View.VISIBLE) {
@@ -620,15 +666,27 @@ object HostAppAiFab {
         if (activity.isFinishing || activity.isDestroyed) return
 
         val screenClues = clues ?: extractScreenClues(activity)
-        val pRect = passRect ?: findPassButtonBounds(container.rootView)
+        val directPassRect = passRect ?: findPassButtonBounds(container.rootView)
+        if (directPassRect != null) {
+            lastKnownPassRect = Rect(directPassRect)
+        }
+        val pRect = directPassRect ?: lastKnownPassRect
         val detectedComment = detectedCommentInfo ?: findCommentCardInfo(container.rootView)
         val isCommentMode = detectedComment != null
 
-        val isCandidate = !screenClues.isNonCandidate && (pRect != null || isCommentMode)
+        val isCandidate = !screenClues.isNonCandidate && (
+            pRect != null ||
+            isCommentMode ||
+            screenClues.activeContext == HostCandidateReader.ScreenContext.DISCOVER ||
+            screenClues.activeContext == HostCandidateReader.ScreenContext.STANDOUTS ||
+            screenClues.activeContext == HostCandidateReader.ScreenContext.LIKES_YOU
+        )
         val sheetView = container.findViewWithTag<View>(TAG_AI_SHEET)
         val isSheetOpen = sheetView != null && sheetView.visibility == View.VISIBLE
 
         if (!isCandidate) {
+            lastKnownPassRect = null
+            currentTargetCandidate = null
             if (isSheetOpen) {
                 closeAiSheet(activity)
             }
@@ -701,7 +759,11 @@ object HostAppAiFab {
         val (screenWidth, screenHeight) = getWindowDimensions(activity)
         val containerWidth = container.width.takeIf { it > 0 } ?: screenWidth
 
-        val pRect = passRect ?: findPassButtonBounds(container.rootView)
+        val directPassRect = passRect ?: findPassButtonBounds(container.rootView)
+        if (directPassRect != null) {
+            lastKnownPassRect = Rect(directPassRect)
+        }
+        val pRect = directPassRect ?: lastKnownPassRect
 
         val loc = IntArray(2)
         container.getLocationOnScreen(loc)
@@ -713,17 +775,23 @@ object HostAppAiFab {
         val targetY: Float
 
         val commentInfo = currentCommentCardInfo ?: findCommentCardInfo(container.rootView)
+        val isValidPassRect = pRect != null &&
+            pRect.width() > 0 &&
+            pRect.height() > 0 &&
+            pRect.top > (screenHeight * 0.55f) &&
+            pRect.top < (screenHeight - (40 * density))
 
         if (commentInfo != null && !commentInfo.commentInputRect.isEmpty) {
             fabSize = (48 * density).toInt()
             val commentRect = commentInfo.commentInputRect
             targetX = (commentRect.right - containerScreenX - fabSize).toFloat()
             targetY = (commentRect.top - containerScreenY - fabSize - (8 * density))
-        } else if (pRect != null && pRect.width() > 0 && pRect.height() > 0) {
-            fabSize = pRect.width()
-            val leftMargin = pRect.left - containerScreenX
+        } else if (isValidPassRect && pRect != null) {
+            val validRect = pRect
+            fabSize = validRect.width()
+            val leftMargin = validRect.left - containerScreenX
             targetX = (containerWidth - leftMargin - fabSize).toFloat()
-            targetY = (pRect.top - containerScreenY).toFloat()
+            targetY = (validRect.top - containerScreenY).toFloat()
         } else {
             fabSize = (60 * density).toInt()
             val margin = (20 * density).toInt()
@@ -1261,6 +1329,13 @@ object HostAppAiFab {
 
     fun notifyNavUpdated(activity: Activity? = null) {
         val act = activity ?: currentActivityRef?.get() ?: return
+        currentTargetCandidate = null
+        val container = findAttachedContainer(act)
+        if (container != null) {
+            act.runOnUiThread {
+                updateNavCounter(container)
+            }
+        }
         scheduleUpdate(act, 0)
     }
 
@@ -1394,17 +1469,17 @@ object HostAppAiFab {
             (it.contains("Likes you", ignoreCase = true) && !it.equals("Likes You", ignoreCase = true))
         }
         val isMatchesScreen = visibleTexts.any {
-            it.contains("No matches right now", ignoreCase = true) ||
-            it.contains("Boost your profile", ignoreCase = true) ||
-            it.contains("Upgrade to HingeX", ignoreCase = true) ||
-            it.contains("Conversations", ignoreCase = true) ||
-            it.contains("Your turn", ignoreCase = true) ||
-            it.contains("Their turn", ignoreCase = true)
+            it.equals("No matches right now", ignoreCase = true) ||
+            it.equals("Boost your profile", ignoreCase = true) ||
+            it.equals("Upgrade to HingeX", ignoreCase = true) ||
+            it.equals("Conversations", ignoreCase = true) ||
+            it.equals("Your turn", ignoreCase = true) ||
+            it.equals("Their turn", ignoreCase = true)
         }
         val isProfileScreen = visibleTexts.any {
-            it.contains("Check your Signals", ignoreCase = true) ||
-            it.contains("My Hinge", ignoreCase = true) ||
-            it.contains("Edit Profile", ignoreCase = true)
+            it.equals("Check your Signals", ignoreCase = true) ||
+            it.equals("My Hinge", ignoreCase = true) ||
+            it.equals("Edit Profile", ignoreCase = true)
         }
 
         val isChatScreen = visibleTexts.any {
@@ -1415,13 +1490,13 @@ object HostAppAiFab {
         }
 
         val isEmptyFeed = visibleTexts.any {
-            it.contains("You've seen everyone", ignoreCase = true) ||
-            it.contains("Out of people", ignoreCase = true) ||
-            it.contains("You're all caught up", ignoreCase = true) ||
-            it.contains("Expand your preferences", ignoreCase = true)
+            it.startsWith("You've seen everyone", ignoreCase = true) ||
+            it.equals("Out of people", ignoreCase = true) ||
+            it.startsWith("You're all caught up", ignoreCase = true) ||
+            it.startsWith("Expand your preferences", ignoreCase = true)
         }
 
-        val isNonCandidate = isMatchesScreen || isProfileScreen || isChatScreen || isEmptyFeed
+        val isNonCandidate = isMatchesScreen || isProfileScreen || isEmptyFeed
 
         val activeContext = when {
             isChatScreen -> HostCandidateReader.ScreenContext.MATCH_CHAT
@@ -1500,12 +1575,27 @@ object HostAppAiFab {
         }
     }
 
+    fun onActivityBackPressed(activity: Activity): Boolean {
+        val container = findAttachedContainer(activity) ?: return false
+        val sheetView = container.findViewWithTag<View>(TAG_AI_SHEET) ?: return false
+        if (sheetView.visibility == View.VISIBLE) {
+            val action = activeDismissAction
+            activity.runOnUiThread {
+                action?.invoke() ?: closeAiSheet(activity)
+            }
+            return true
+        }
+        return false
+    }
+
     fun openAiSheet(activity: Activity, prefs: PreferencesManager) {
         activity.runOnUiThread {
             val container = findAttachedContainer(activity) ?: return@runOnUiThread
             val sheetView = container.findViewWithTag<ComposeView>(TAG_AI_SHEET) ?: return@runOnUiThread
             val owner = overlayLifecycleOwners.getOrPut(sheetView) {
-                ComposeDialogLifecycleOwner()
+                ComposeDialogLifecycleOwner {
+                    activeDismissAction?.invoke() ?: closeAiSheet(activity)
+                }
             }
             owner.handleStart()
 
@@ -1513,18 +1603,32 @@ object HostAppAiFab {
             val lifecycleOwner = (activity as? LifecycleOwner) ?: owner
             val viewModelStoreOwner = (activity as? ViewModelStoreOwner) ?: owner
             val savedStateRegistryOwner = (activity as? SavedStateRegistryOwner) ?: owner
+            val backDispatcherOwner = (activity as? OnBackPressedDispatcherOwner) ?: owner
 
             if (decor != null) {
                 decor.setViewTreeLifecycleOwner(lifecycleOwner)
                 decor.setViewTreeViewModelStoreOwner(viewModelStoreOwner)
                 decor.setViewTreeSavedStateRegistryOwner(savedStateRegistryOwner)
+                decor.setViewTreeOnBackPressedDispatcherOwner(backDispatcherOwner)
             }
             container.setViewTreeLifecycleOwner(lifecycleOwner)
             container.setViewTreeViewModelStoreOwner(viewModelStoreOwner)
             container.setViewTreeSavedStateRegistryOwner(savedStateRegistryOwner)
+            container.setViewTreeOnBackPressedDispatcherOwner(backDispatcherOwner)
             sheetView.setViewTreeLifecycleOwner(lifecycleOwner)
             sheetView.setViewTreeViewModelStoreOwner(viewModelStoreOwner)
             sheetView.setViewTreeSavedStateRegistryOwner(savedStateRegistryOwner)
+            sheetView.setViewTreeOnBackPressedDispatcherOwner(backDispatcherOwner)
+
+            sheetView.isFocusable = true
+            sheetView.isFocusableInTouchMode = true
+            sheetView.requestFocus()
+            sheetView.setOnKeyListener { _, keyCode, event ->
+                if (keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
+                    activeDismissAction?.invoke() ?: closeAiSheet(activity)
+                    true
+                } else false
+            }
 
             val screenClues = extractScreenClues(activity)
             val isChat = screenClues.activeContext == HostCandidateReader.ScreenContext.MATCH_CHAT
@@ -1532,58 +1636,159 @@ object HostAppAiFab {
             val commentInfo = currentCommentCardInfo ?: findCommentCardInfo(container.rootView, candidate)
 
             sheetView.setContent {
-                val isDark = when (prefs.themeMode) {
-                    ThemeMode.DARK -> true
-                    ThemeMode.LIGHT -> false
-                    ThemeMode.SYSTEM -> isSystemInDarkTheme()
-                }
-                val sheetSurfaceColor = if (isDark) androidx.compose.ui.graphics.Color(0xFF1E1E20) else androidx.compose.ui.graphics.Color(0xFFFFFFFF)
-                val sheetBorderColor = if (isDark) androidx.compose.ui.graphics.Color(0xFF2C2C2E) else androidx.compose.ui.graphics.Color(0xFFE5E7EB)
+                val density = activity.resources.displayMetrics.density
+                val (_, screenHeight) = getWindowDimensions(activity)
+                val dismissThresholdPx = 100 * density
+                val coroutineScope = rememberCoroutineScope()
+                var sheetVisible by remember { mutableStateOf(false) }
+                var canDismissByScrim by remember { mutableStateOf(false) }
+                val sheetDragOffset = remember { Animatable(0f) }
+                var isDismissingByDrag by remember { mutableStateOf(false) }
 
-                Theme(
-                    themeMode = prefs.themeMode,
-                    pureBlack = prefs.pureBlack,
-                    themeColor = androidx.compose.ui.graphics.Color(prefs.themeColor),
-                    setSystemBars = false,
+                LaunchedEffect(Unit) {
+                    sheetVisible = true
+                    delay(120)
+                    canDismissByScrim = true
+                }
+
+                val performDismiss = remember {
+                    {
+                        if (sheetVisible && !isDismissingByDrag) {
+                            sheetVisible = false
+                            coroutineScope.launch {
+                                delay(260)
+                                closeAiSheet(activity)
+                            }
+                        }
+                    }
+                }
+
+                val draggableState = rememberDraggableState { delta ->
+                    if (!isDismissingByDrag && sheetVisible) {
+                        val newOffset = (sheetDragOffset.value + delta).coerceAtLeast(0f)
+                        coroutineScope.launch {
+                            sheetDragOffset.snapTo(newOffset)
+                        }
+                    }
+                }
+
+                DisposableEffect(performDismiss) {
+                    activeDismissAction = performDismiss
+                    onDispose {
+                        if (activeDismissAction === performDismiss) {
+                            activeDismissAction = null
+                        }
+                    }
+                }
+
+                CompositionLocalProvider(
+                    LocalOnBackPressedDispatcherOwner provides backDispatcherOwner
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.45f))
-                            .clickable { closeAiSheet(activity) }
+                    BackHandler(enabled = true) {
+                        performDismiss()
+                    }
+
+                    Theme(
+                        themeMode = ThemeMode.LIGHT,
+                        pureBlack = false,
+                        themeColor = androidx.compose.ui.graphics.Color(prefs.themeColor),
+                        setSystemBars = false,
                     ) {
-                        Surface(
-                            modifier = Modifier
-                                .align(Alignment.BottomCenter)
-                                .fillMaxWidth()
-                                .wrapContentHeight()
-                                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { },
-                            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-                            color = sheetSurfaceColor,
-                            border = BorderStroke(1.dp, sheetBorderColor),
-                            shadowElevation = 16.dp,
-                        ) {
-                            InlineAiOpenerCard(
-                                prefs = prefs,
-                                candidate = candidate,
-                                screenClues = screenClues,
-                                isChatMode = isChat,
-                                targetPrompt = commentInfo?.targetPrompt,
-                                isCommentMode = commentInfo != null,
-                                hostActivity = activity,
-                                showDragHandle = true,
-                                onDismiss = { closeAiSheet(activity) },
-                                onInsert = { text ->
-                                    if (commentInfo != null) {
-                                        insertTextIntoComment(activity, commentInfo, text)
-                                    } else if (isChat) {
-                                        insertReplyIntoChatInput(activity, text)
-                                    } else {
-                                        copyOpenerFallback(activity, text)
-                                    }
-                                    closeAiSheet(activity)
+                        val dragFraction = (sheetDragOffset.value / (screenHeight * 0.45f)).coerceIn(0f, 1f)
+                        val baseScrimAlpha = 0.45f * (1f - dragFraction)
+
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            AnimatedVisibility(
+                                visible = sheetVisible,
+                                enter = fadeIn(tween(250)),
+                                exit = fadeOut(tween(200)),
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = baseScrimAlpha))
+                                        .clickable(
+                                            interactionSource = remember { MutableInteractionSource() },
+                                            indication = null,
+                                        ) {
+                                            if (canDismissByScrim && !isDismissingByDrag) {
+                                                performDismiss()
+                                            }
+                                        }
+                                )
+                            }
+
+                            AnimatedVisibility(
+                                visible = sheetVisible,
+                                modifier = Modifier.align(Alignment.BottomCenter),
+                                enter = slideInVertically(
+                                    initialOffsetY = { it },
+                                    animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing),
+                                ),
+                                exit = slideOutVertically(
+                                    targetOffsetY = { it },
+                                    animationSpec = tween(durationMillis = 240, easing = FastOutLinearInEasing),
+                                ),
+                            ) {
+                                Surface(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .wrapContentHeight()
+                                        .offset { IntOffset(0, sheetDragOffset.value.roundToInt().coerceAtLeast(0)) }
+                                        .draggable(
+                                            orientation = Orientation.Vertical,
+                                            state = draggableState,
+                                            onDragStopped = { velocity ->
+                                                coroutineScope.launch {
+                                                    if (!isDismissingByDrag && sheetVisible) {
+                                                        if (sheetDragOffset.value > dismissThresholdPx || velocity > 1000f) {
+                                                            isDismissingByDrag = true
+                                                            sheetDragOffset.animateTo(
+                                                                targetValue = screenHeight.toFloat(),
+                                                                animationSpec = tween(durationMillis = 200, easing = FastOutLinearInEasing)
+                                                            )
+                                                            closeAiSheet(activity)
+                                                        } else {
+                                                            sheetDragOffset.animateTo(
+                                                                targetValue = 0f,
+                                                                animationSpec = spring(
+                                                                    dampingRatio = Spring.DampingRatioLowBouncy,
+                                                                    stiffness = Spring.StiffnessMedium
+                                                                )
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        )
+                                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { },
+                                    shape = RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp),
+                                    color = androidx.compose.ui.graphics.Color.White,
+                                    shadowElevation = 16.dp,
+                                ) {
+                                    InlineAiOpenerCard(
+                                        prefs = prefs,
+                                        candidate = candidate,
+                                        screenClues = screenClues,
+                                        isChatMode = isChat,
+                                        targetPrompt = commentInfo?.targetPrompt,
+                                        isCommentMode = commentInfo != null,
+                                        hostActivity = activity,
+                                        showDragHandle = true,
+                                        onDismiss = performDismiss,
+                                        onInsert = { text ->
+                                            if (commentInfo != null) {
+                                                insertTextIntoComment(activity, commentInfo, text)
+                                            } else if (isChat) {
+                                                insertReplyIntoChatInput(activity, text)
+                                            } else {
+                                                copyOpenerFallback(activity, text)
+                                            }
+                                            performDismiss()
+                                        }
+                                    )
                                 }
-                            )
+                            }
                         }
                     }
                 }
@@ -1597,12 +1802,14 @@ object HostAppAiFab {
 
     fun closeAiSheet(activity: Activity) {
         activity.runOnUiThread {
+            activeDismissAction = null
             val container = findAttachedContainer(activity) ?: return@runOnUiThread
             val sheetView = container.findViewWithTag<ComposeView>(TAG_AI_SHEET) ?: return@runOnUiThread
+            sheetView.disposeComposition()
             sheetView.visibility = View.GONE
             val prefs = currentPrefsRef?.get()
             if (prefs != null) {
-                updateControlsState(container, activity, prefs)
+                updateControlsState(container, activity, prefs, lastKnownPassRect)
             }
         }
     }
@@ -1611,21 +1818,29 @@ object HostAppAiFab {
         val container = findAttachedContainer(activity)
         val sheetView = container?.findViewWithTag<ComposeView>(TAG_AI_SHEET)
         if (sheetView != null && sheetView.visibility == View.VISIBLE) {
-            closeAiSheet(activity)
+            activeDismissAction?.invoke() ?: closeAiSheet(activity)
         } else {
             openAiSheet(activity, prefs)
         }
     }
 }
 
-private class ComposeDialogLifecycleOwner :
+private class ComposeDialogLifecycleOwner(
+    private val onFallbackBackPressed: (() -> Unit)? = null
+) :
     LifecycleOwner,
     ViewModelStoreOwner,
-    SavedStateRegistryOwner {
+    SavedStateRegistryOwner,
+    OnBackPressedDispatcherOwner {
 
     private val lifecycleRegistry = LifecycleRegistry(this)
     private val store = ViewModelStore()
     private val savedStateRegistryController = SavedStateRegistryController.create(this)
+    private val dispatcher = if (onFallbackBackPressed != null) {
+        OnBackPressedDispatcher { onFallbackBackPressed.invoke() }
+    } else {
+        OnBackPressedDispatcher()
+    }
 
     init {
         savedStateRegistryController.performRestore(null)
@@ -1640,6 +1855,9 @@ private class ComposeDialogLifecycleOwner :
 
     override val savedStateRegistry: SavedStateRegistry
         get() = savedStateRegistryController.savedStateRegistry
+
+    override val onBackPressedDispatcher: OnBackPressedDispatcher
+        get() = dispatcher
 
     fun handleStart() {
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)

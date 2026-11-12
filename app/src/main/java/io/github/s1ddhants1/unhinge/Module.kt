@@ -177,6 +177,7 @@ class Module : XposedModule() {
         io.github.s1ddhants1.unhinge.hook.ui.HostAppAiFab.ensureAccessibilityEnabled(ctx)
 
         PrivacyGmsComponentsHook.apply(this, ctx, cl, prefs)
+        hookAppActivityBack(cl)
 
         val app = ctx as? android.app.Application ?: ctx.applicationContext as? android.app.Application
         if (app != null) {
@@ -218,6 +219,25 @@ class Module : XposedModule() {
             hookAppActivityFallback(cl, prefs)
         }
         Log.i(Consts.TAG, "All Unhinge privacy hooks and host FAB active!")
+    }
+
+    private fun hookAppActivityBack(cl: ClassLoader) {
+        attempt("hook AppActivity.onBackPressed", silent = true) {
+            val activityClass = loadClassFlexible(cl, "co.hinge.app.ui.AppActivity")
+            val onBackMethod = attempt("find AppActivity.onBackPressed", silent = true) {
+                activityClass?.getMethod("onBackPressed")
+            }
+            if (onBackMethod != null) {
+                hookTracked(onBackMethod, idPrefix = "hinge-appactivity-back").intercept { chain ->
+                    val act = chain.thisObject as? android.app.Activity
+                    if (act != null && io.github.s1ddhants1.unhinge.hook.ui.HostAppAiFab.onActivityBackPressed(act)) {
+                        null
+                    } else {
+                        chain.proceed()
+                    }
+                }
+            }
+        }
     }
 
     private fun hookAppActivityFallback(cl: ClassLoader, prefs: PreferencesManager) {
