@@ -1,84 +1,67 @@
 package io.github.s1ddhants1.unhinge.ai
 
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class WingmanPromptsTest {
     @Test
-    fun openerSystemPromptIsMinimalWithoutCustom() {
-        val system = WingmanPrompts.openerSystemPrompt(2, "")
-        assertTrue(system.contains("You are a dating wingman AI assistant for Hinge."))
-        assertTrue(system.contains("Output ONLY a valid JSON object {\"lines\": [...]} with EXACTLY 2 opening replies, one per input prompt."))
+    fun systemPromptIsMinimalWithoutCustom() {
+        val system = WingmanPrompts.systemPrompt(2, "")
+        assertTrue(system.contains("You are a Hinge wingman"))
+        assertTrue(system.contains("Output ONLY a valid JSON object {\"lines\": [...]} with exactly 2 replies"))
+        assertFalse(system.contains("{custom_instructions}"))
     }
 
     @Test
     fun customPromptMergesAsMiddleTier() {
-        val system = WingmanPrompts.openerSystemPrompt(3, "Be brief ({lineCount} max).")
-        assertTrue(system.contains("You are a dating wingman AI assistant for Hinge."))
+        val system = WingmanPrompts.systemPrompt(3, "Be brief ({lineCount} max).")
+        assertTrue(system.contains("You are a Hinge wingman"))
         assertTrue(system.contains("Be brief (3 max)."))
-        assertTrue(system.contains("EXACTLY 3 opening replies"))
+        assertTrue(system.contains("exactly 3 replies"))
+    }
+
+    @Test
+    fun systemPromptEncodesVoiceRules() {
+        val system = WingmanPrompts.systemPrompt(1, "")
+        assertTrue(system.contains("lowercase", ignoreCase = true))
+        assertTrue(system.contains("no emojis", ignoreCase = true))
+        assertTrue(system.contains("no greetings", ignoreCase = true))
+        assertTrue(system.contains("at most one question", ignoreCase = true))
+        assertTrue(system.contains("bold claim", ignoreCase = true))
+        assertTrue(system.contains("plot twist", ignoreCase = true))
+        assertTrue(system.contains("hear me out", ignoreCase = true))
     }
 
     @Test
     fun openerUserPromptIncludesAvoidList() {
         val user = WingmanPrompts.openerUserPrompt("Q: A", listOf("old opener"))
         assertTrue(user.contains("- \"old opener\""))
-        assertTrue(user.contains("EXACTLY 1 opening replies"))
+        assertTrue(user.contains("Prompts (1):"))
     }
 
     @Test
     fun openerUserPromptIncludesProfileBlockBeforePrompts() {
         val user = WingmanPrompts.openerUserPrompt("Q: A", emptyList(), "Ada, 27\nWork: Designer")
-        val profileIdx = user.indexOf("Profile:\nAda, 27")
-        val promptsIdx = user.indexOf("Candidate Prompts (1 items):")
+        val profileIdx = user.indexOf("<profile>\nAda, 27")
+        val promptsIdx = user.indexOf("Prompts (1):")
         assertTrue(profileIdx >= 0)
         assertTrue(promptsIdx > profileIdx)
     }
 
     @Test
     fun openerUserPromptOmitsProfileSectionWhenBlank() {
-        assertFalse(WingmanPrompts.openerUserPrompt("Q: A", emptyList()).contains("Profile:"))
+        assertFalse(WingmanPrompts.openerUserPrompt("Q: A", emptyList()).contains("<profile>"))
     }
 
     @Test
-    fun openerUserPromptEncodesReplyBestPractices() {
-        val user = WingmanPrompts.openerUserPrompt("Q: A", emptyList())
-        assertTrue(user.contains("Energy & Length Calibration", ignoreCase = true))
-        assertTrue(user.contains("match the energy", ignoreCase = true))
-        assertTrue(user.contains("hey/hi/hello", ignoreCase = true))
-        assertTrue(user.contains("bold claim", ignoreCase = true))
-        assertTrue(user.contains("challenge accepted", ignoreCase = true))
-        assertTrue(user.contains("plot twist", ignoreCase = true))
-        assertTrue(user.contains("Few-Shot Calibration", ignoreCase = true))
-        assertTrue(user.contains("Strict Topical Isolation", ignoreCase = true))
-        assertTrue(user.contains("forbidden synthetic slang", ignoreCase = true))
-        assertTrue(user.contains("Forbidden Patterns", ignoreCase = true))
-        assertTrue(user.contains("heavy lifting", ignoreCase = true))
-        assertTrue(user.contains("bet you", ignoreCase = true))
-        assertTrue(user.contains("full time job", ignoreCase = true))
-        assertTrue(user.contains("submit my resume", ignoreCase = true))
-        assertTrue(user.contains("Mock Skeptic", ignoreCase = true))
-        assertTrue(user.contains("Niche Item Callback", ignoreCase = true))
-        assertTrue(user.contains("Relatable Micro-Debate", ignoreCase = true))
-        assertTrue(user.contains("Backstory Inquirer", ignoreCase = true))
-        assertTrue(user.contains("Collaborative Condition", ignoreCase = true))
-    }
-
-    @Test
-    fun customTemplateOverridesDefaultAndSubstitutesVariables() {
-        val customTemplate = "CUSTOM TEMPLATE for {lineCount} prompts:\n{profile}{prompts}{avoid}"
-        val formatted = WingmanPrompts.openerUserPrompt(
-            text = "Q: What is love?",
-            avoidReplies = listOf("Baby don't hurt me"),
-            profileBlock = "Name: Bob",
-            template = customTemplate,
+    fun openerUserPromptIncludesDirectionalStimulus() {
+        val user = WingmanPrompts.openerUserPrompt(
+            text = "Q: A",
+            directionalStimulus = "Micro-Debate"
         )
-        assertTrue(formatted.startsWith("CUSTOM TEMPLATE for 1 prompts:"))
-        assertTrue(formatted.contains("Profile:\nName: Bob"))
-        assertTrue(formatted.contains("Q: What is love?"))
-        assertTrue(formatted.contains("- \"Baby don't hurt me\""))
+        assertTrue(user.contains("<directional_stimulus>"))
+        assertTrue(user.contains("Micro-Debate"))
     }
 
     @Test
@@ -94,28 +77,11 @@ class WingmanPromptsTest {
     }
 
     @Test
-    fun openerUserPromptIncludesDirectionalStimulus() {
-        val user = WingmanPrompts.openerUserPrompt(
-            text = "Q: A",
-            directionalStimulus = "Micro-Debate"
-        )
-        assertTrue(user.contains("<directional_stimulus>"))
-        assertTrue(user.contains("Micro-Debate"))
-    }
-
-    @Test
-    fun openerUserPromptWrapsContextInXmlTags() {
-        val user = WingmanPrompts.openerUserPrompt("Q: A")
-        assertTrue(user.contains("<candidate_context>"))
-        assertTrue(user.contains("</candidate_context>"))
-        assertTrue(user.contains("Strict Topical Isolation", ignoreCase = true))
-    }
-
-    @Test
     fun chatReplySystemPromptContainsRequiredConstraints() {
-        val prompt = WingmanPrompts.chatReplySystemPrompt(custom = "Be brief")
-        assertTrue(prompt.contains("dating wingman AI assistant for Hinge"))
+        val prompt = WingmanPrompts.chatReplySystemPrompt(replyCount = 4, custom = "Be brief")
+        assertTrue(prompt.contains("You are a Hinge wingman"))
         assertTrue(prompt.contains("Be brief"))
+        assertTrue(prompt.contains("exactly 4 replies"))
     }
 
     @Test
@@ -139,5 +105,3 @@ class WingmanPromptsTest {
         assertTrue(userPrompt.contains("4. Casual / Low-Key"))
     }
 }
-
-

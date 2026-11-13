@@ -117,7 +117,7 @@ object AiWingmanHelper {
             currentOpener = currentOpener,
             steerInstruction = steerInstruction,
         )
-        val systemPrompt = WingmanPrompts.openerSystemPrompt(
+        val systemPrompt = WingmanPrompts.systemPrompt(
             lineCount = 1,
             custom = prefs?.aiCustomSystemPrompt.orEmpty(),
             prefs = prefs,
@@ -260,7 +260,6 @@ object AiWingmanHelper {
                 }
 
                 val avoidReplies = if (prompts.size == 1) prompts[0].repliesFlow.value else emptyList()
-                val promptTemplate = prefs?.aiOpenerPromptTemplate?.takeIf { it.isNotBlank() }
 
                 val llmRequest = WingmanLlmRequest(
                     text = fullText,
@@ -273,7 +272,6 @@ object AiWingmanHelper {
                     temperature = temperature,
                     topP = topP,
                     reasoningEffort = reasoningEffort,
-                    promptTemplate = promptTemplate,
                     directionalStimulus = directionalStimulus,
                     promptCount = nonEmptyEntries.size,
                 )
@@ -481,6 +479,7 @@ object AiWingmanHelper {
 
                 val avoidReplies = prompts.flatMap { it.repliesFlow.value }
                 val systemPrompt = WingmanPrompts.chatReplySystemPrompt(
+                    replyCount = prompts.size,
                     custom = prefs?.aiCustomSystemPrompt.orEmpty(),
                     prefs = prefs,
                     context = context,

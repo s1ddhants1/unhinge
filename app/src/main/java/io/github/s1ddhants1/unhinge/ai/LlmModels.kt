@@ -13,7 +13,6 @@ data class WingmanLlmRequest(
     val temperature: Float = Consts.DEFAULT_AI_TEMPERATURE,
     val topP: Float = Consts.DEFAULT_AI_TOP_P,
     val reasoningEffort: String = Consts.DEFAULT_AI_REASONING_EFFORT,
-    val promptTemplate: String? = null,
     val directionalStimulus: String = "",
     val promptCount: Int? = null,
     val maxRetries: Int = 3,

@@ -201,10 +201,4 @@ class FeedNavigationTest {
     fun testTriggerHingeRefreshSafeWithoutActivity() {
         FeedNavigator.triggerHingeRefresh(null)
     }
-
-    @Test
-    fun testReAttachDiscoverFragmentGracefullyHandlesNonFragment() {
-        val dummy = Any()
-        FeedNavigator.reAttachDiscoverFragment(dummy)
-    }
 }

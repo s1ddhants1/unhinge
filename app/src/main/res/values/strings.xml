@@ -39,17 +39,16 @@
     <string name="ai_section_activation">Activation</string>
     <string name="ai_section_model_params">Model Parameters</string>
     <string name="ai_section_prompt">Prompt Instructions</string>
-    <string name="ai_opener_prompt_title">Opener Prompt Template</string>
-    <string name="ai_opener_prompt_default">Default (5 Archetypes &amp; Rules)</string>
-    <string name="ai_opener_prompt_custom">Customized template</string>
-    <string name="ai_remote_sync_title">Sync Prompt from Web</string>
-    <string name="ai_remote_sync_desc">Fetch latest OTA prompt rules from GitHub</string>
-    <string name="ai_remote_url_title">Remote Prompt URL</string>
-    <string name="ai_remote_sync_success">Opener prompt successfully updated from remote</string>
-    <string name="ai_remote_sync_failure">Failed to sync prompt from remote: <xliff:g id="error" example="Network error">%1$s</xliff:g></string>
-    <string name="ai_remote_sync_in_progress">Syncing prompt from remote…</string>
     <string name="ai_custom_model">Custom</string>
     <string name="ai_system_prompt_default">Default</string>
+    <string name="ai_remote_sync_title">Sync prompt from web</string>
+    <string name="ai_remote_sync_desc">Fetch the latest system prompt from GitHub</string>
+    <string name="ai_remote_sync_synced">Synced from web</string>
+    <string name="ai_remote_sync_in_progress">Syncing prompt…</string>
+    <string name="ai_remote_sync_success">System prompt updated from remote</string>
+    <string name="ai_remote_sync_failure">Failed to sync prompt: <xliff:g id="error" example="Network error">%1$s</xliff:g></string>
+    <string name="ai_remote_url_title">Prompt source URL</string>
+    <string name="ai_remote_reset_synced">Reset synced prompt</string>
     <string name="ai_current_model_fallback">current</string>
     <string name="zen_model_free_format"><xliff:g id="model" example="deepseek-v4.1-flash-free">%1$s</xliff:g> (Free)</string>
     <string name="zen_model_paid_format"><xliff:g id="model" example="claude-sonnet-5">%1$s</xliff:g> (Requires Zen key)</string>

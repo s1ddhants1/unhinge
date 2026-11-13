@@ -4,9 +4,7 @@ import android.content.Context
 import io.github.s1ddhants1.unhinge.util.PreferencesManager
 
 object WingmanPrompts {
-    val ROLE: String get() = PromptRepository.getRole()
-
-    fun openerSystemPrompt(
+    fun systemPrompt(
         lineCount: Int,
         custom: String = "",
         template: String? = null,
@@ -15,7 +13,7 @@ object WingmanPrompts {
     ): String {
         val effectiveTemplate = template?.takeIf { it.isNotBlank() }
             ?: PromptRepository.getEffectiveSystemPromptTemplate(prefs, context)
-        return PromptRepository.formatOpenerSystemPrompt(
+        return PromptRepository.formatSystemPrompt(
             template = effectiveTemplate,
             lineCount = lineCount,
             customInstructions = custom,
@@ -26,23 +24,17 @@ object WingmanPrompts {
         text: String,
         avoidReplies: List<String> = emptyList(),
         profileBlock: String = "",
-        template: String? = null,
         prefs: PreferencesManager? = null,
         context: Context? = null,
         directionalStimulus: String = "",
         promptCount: Int? = null,
-    ): String {
-        val effectiveTemplate = template?.takeIf { it.isNotBlank() }
-            ?: PromptRepository.getEffectiveOpenerTemplate(prefs, context)
-        return PromptRepository.formatOpenerUserPrompt(
-            template = effectiveTemplate,
-            promptsText = text,
-            avoidReplies = avoidReplies,
-            profileBlock = profileBlock,
-            directionalStimulus = directionalStimulus,
-            promptCount = promptCount,
-        )
-    }
+    ): String = PromptRepository.formatOpenerUserPrompt(
+        promptsText = text,
+        avoidReplies = avoidReplies,
+        profileBlock = profileBlock,
+        directionalStimulus = directionalStimulus,
+        promptCount = promptCount,
+    )
 
     fun askAiSystemPrompt(
         profileSummary: String,
@@ -61,12 +53,18 @@ object WingmanPrompts {
     }
 
     fun chatReplySystemPrompt(
+        replyCount: Int,
         custom: String = "",
         prefs: PreferencesManager? = null,
         context: Context? = null,
     ): String {
         val effectiveCustom = custom.ifBlank { prefs?.aiCustomSystemPrompt.orEmpty() }
-        return PromptRepository.formatChatReplySystemPrompt(effectiveCustom)
+        return systemPrompt(
+            lineCount = replyCount,
+            custom = effectiveCustom,
+            prefs = prefs,
+            context = context,
+        )
     }
 
     fun chatReplyUserPrompt(
@@ -118,4 +116,3 @@ object WingmanPrompts {
         append("Task: Rewrite and refine the opener to incorporate the steering direction while keeping it natural, witty, and engaging for Hinge. Return ONLY the new opener text directly, with no quotes, commentary, or pleasantries.")
     }
 }
-

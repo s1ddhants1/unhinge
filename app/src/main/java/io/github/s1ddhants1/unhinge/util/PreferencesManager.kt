@@ -274,6 +274,8 @@ class PreferencesManager(
     var openRouterBaseUrl by stringPreference(Consts.PREF_OPENROUTER_BASE_URL, Consts.ZEN_DEFAULT_BASE_URL)
     var openRouterModel by stringPreference(Consts.PREF_OPENROUTER_MODEL, Consts.ZEN_DEFAULT_MODEL)
     var aiCustomSystemPrompt by stringPreference(Consts.PREF_AI_CUSTOM_SYSTEM_PROMPT, "")
+    var aiPromptRemoteUrl by stringPreference(Consts.PREF_AI_PROMPT_REMOTE_URL, Consts.DEFAULT_AI_PROMPT_REMOTE_URL)
+    var aiRemoteSystemPrompt by stringPreference(Consts.PREF_AI_REMOTE_SYSTEM_PROMPT, "")
     var aiOverrideSystemPrompt by booleanPreference(Consts.PREF_AI_OVERRIDE_SYSTEM_PROMPT, false)
     var showHostAppFab by booleanPreference(Consts.PREF_SHOW_HOST_APP_FAB, true)
     var aiTemperature by floatPreference(Consts.PREF_AI_TEMPERATURE, Consts.DEFAULT_AI_TEMPERATURE)
@@ -281,8 +283,6 @@ class PreferencesManager(
     @Deprecated("Artificial token limit removed across app")
     var aiMaxTokens by intPreference(Consts.PREF_AI_MAX_TOKENS, Consts.DEFAULT_AI_MAX_TOKENS)
     var aiReasoningEffort by stringPreference(Consts.PREF_AI_REASONING_EFFORT, Consts.DEFAULT_AI_REASONING_EFFORT)
-    var aiOpenerPromptTemplate by stringPreference(Consts.PREF_AI_OPENER_PROMPT_TEMPLATE, "")
-    var aiPromptRemoteUrl by stringPreference(Consts.PREF_AI_PROMPT_REMOTE_URL, Consts.DEFAULT_AI_PROMPT_REMOTE_URL)
     var zenOpencodeVersion by stringPreference(Consts.PREF_ZEN_OPENCODE_VERSION, Consts.DEFAULT_ZEN_OPENCODE_VERSION)
     var zenCachedFreeModels by stringPreference(Consts.PREF_ZEN_CACHED_FREE_MODELS, "")
     var zenCachedAllModels by stringPreference(Consts.PREF_ZEN_CACHED_ALL_MODELS, "")
@@ -335,6 +335,14 @@ class PreferencesManager(
                 if (customPromptInStorage.isNotBlank()) {
                     aiCustomSystemPrompt = customPromptInStorage
                 }
+                val remoteUrlInStorage = localPrefs.getString(Consts.PREF_AI_PROMPT_REMOTE_URL, "") ?: ""
+                if (remoteUrlInStorage.isNotBlank()) {
+                    aiPromptRemoteUrl = remoteUrlInStorage
+                }
+                val remotePromptInStorage = localPrefs.getString(Consts.PREF_AI_REMOTE_SYSTEM_PROMPT, "") ?: ""
+                if (remotePromptInStorage.isNotBlank()) {
+                    aiRemoteSystemPrompt = remotePromptInStorage
+                }
                 aiOverrideSystemPrompt = localPrefs.getBoolean(Consts.PREF_AI_OVERRIDE_SYSTEM_PROMPT, aiOverrideSystemPrompt)
                 showHostAppFab = localPrefs.getBoolean(Consts.PREF_SHOW_HOST_APP_FAB, showHostAppFab)
                 aiTemperature = localPrefs.getFloat(Consts.PREF_AI_TEMPERATURE, aiTemperature)
@@ -343,14 +351,6 @@ class PreferencesManager(
                 val reasoningEffortInStorage = localPrefs.getString(Consts.PREF_AI_REASONING_EFFORT, "") ?: ""
                 if (reasoningEffortInStorage.isNotBlank()) {
                     aiReasoningEffort = reasoningEffortInStorage
-                }
-                val openerPromptInStorage = localPrefs.getString(Consts.PREF_AI_OPENER_PROMPT_TEMPLATE, "") ?: ""
-                if (openerPromptInStorage.isNotBlank()) {
-                    aiOpenerPromptTemplate = openerPromptInStorage
-                }
-                val promptRemoteUrlInStorage = localPrefs.getString(Consts.PREF_AI_PROMPT_REMOTE_URL, "") ?: ""
-                if (promptRemoteUrlInStorage.isNotBlank()) {
-                    aiPromptRemoteUrl = promptRemoteUrlInStorage
                 }
                 val zenVerInStorage = localPrefs.getString(Consts.PREF_ZEN_OPENCODE_VERSION, "") ?: ""
                 if (zenVerInStorage.isNotBlank()) {
@@ -423,14 +423,14 @@ class PreferencesManager(
                         .putString(Consts.PREF_OPENROUTER_BASE_URL, openRouterBaseUrl)
                         .putString(Consts.PREF_OPENROUTER_MODEL, openRouterModel)
                         .putString(Consts.PREF_AI_CUSTOM_SYSTEM_PROMPT, aiCustomSystemPrompt)
+                        .putString(Consts.PREF_AI_PROMPT_REMOTE_URL, aiPromptRemoteUrl)
+                        .putString(Consts.PREF_AI_REMOTE_SYSTEM_PROMPT, aiRemoteSystemPrompt)
                         .putBoolean(Consts.PREF_AI_OVERRIDE_SYSTEM_PROMPT, aiOverrideSystemPrompt)
                         .putBoolean(Consts.PREF_SHOW_HOST_APP_FAB, showHostAppFab)
                         .putFloat(Consts.PREF_AI_TEMPERATURE, aiTemperature)
                         .putFloat(Consts.PREF_AI_TOP_P, aiTopP)
                         .putInt(Consts.PREF_AI_MAX_TOKENS, aiMaxTokens)
                         .putString(Consts.PREF_AI_REASONING_EFFORT, aiReasoningEffort)
-                        .putString(Consts.PREF_AI_OPENER_PROMPT_TEMPLATE, aiOpenerPromptTemplate)
-                        .putString(Consts.PREF_AI_PROMPT_REMOTE_URL, aiPromptRemoteUrl)
                         .putString(Consts.PREF_ZEN_OPENCODE_VERSION, zenOpencodeVersion)
                         .putString(Consts.PREF_ZEN_CACHED_FREE_MODELS, zenCachedFreeModels)
                         .putString(Consts.PREF_ZEN_CACHED_ALL_MODELS, zenCachedAllModels)
@@ -467,14 +467,14 @@ class PreferencesManager(
                                 .putString(Consts.PREF_OPENROUTER_BASE_URL, openRouterBaseUrl)
                                 .putString(Consts.PREF_OPENROUTER_MODEL, openRouterModel)
                                 .putString(Consts.PREF_AI_CUSTOM_SYSTEM_PROMPT, aiCustomSystemPrompt)
+                                .putString(Consts.PREF_AI_PROMPT_REMOTE_URL, aiPromptRemoteUrl)
+                                .putString(Consts.PREF_AI_REMOTE_SYSTEM_PROMPT, aiRemoteSystemPrompt)
                                 .putBoolean(Consts.PREF_AI_OVERRIDE_SYSTEM_PROMPT, aiOverrideSystemPrompt)
                                 .putBoolean(Consts.PREF_SHOW_HOST_APP_FAB, showHostAppFab)
                                 .putFloat(Consts.PREF_AI_TEMPERATURE, aiTemperature)
                                 .putFloat(Consts.PREF_AI_TOP_P, aiTopP)
                                 .putInt(Consts.PREF_AI_MAX_TOKENS, aiMaxTokens)
                                 .putString(Consts.PREF_AI_REASONING_EFFORT, aiReasoningEffort)
-                                .putString(Consts.PREF_AI_OPENER_PROMPT_TEMPLATE, aiOpenerPromptTemplate)
-                                .putString(Consts.PREF_AI_PROMPT_REMOTE_URL, aiPromptRemoteUrl)
                                 .putString(Consts.PREF_ZEN_OPENCODE_VERSION, zenOpencodeVersion)
                                 .putString(Consts.PREF_ZEN_CACHED_FREE_MODELS, zenCachedFreeModels)
                                 .putString(Consts.PREF_ZEN_CACHED_ALL_MODELS, zenCachedAllModels)
@@ -526,6 +526,8 @@ class PreferencesManager(
             openRouterBaseUrl = openRouterBaseUrl,
             openRouterModel = openRouterModel,
             aiCustomSystemPrompt = aiCustomSystemPrompt,
+            aiPromptRemoteUrl = aiPromptRemoteUrl,
+            aiRemoteSystemPrompt = aiRemoteSystemPrompt,
             aiOverrideSystemPrompt = aiOverrideSystemPrompt,
             showHostAppFab = showHostAppFab,
             aiTemperature = aiTemperature,
@@ -533,9 +535,7 @@ class PreferencesManager(
             aiReasoningEffort = aiReasoningEffort,
             pureBlack = pureBlack,
             themeMode = themeModeString,
-            themeColor = themeColor,
-            aiOpenerPromptTemplate = aiOpenerPromptTemplate,
-            aiPromptRemoteUrl = aiPromptRemoteUrl
+            themeColor = themeColor
         )
     }
 
@@ -563,6 +563,8 @@ class PreferencesManager(
         openRouterBaseUrl = settings.openRouterBaseUrl
         openRouterModel = settings.openRouterModel
         aiCustomSystemPrompt = settings.aiCustomSystemPrompt
+        aiPromptRemoteUrl = settings.aiPromptRemoteUrl
+        aiRemoteSystemPrompt = settings.aiRemoteSystemPrompt
         aiOverrideSystemPrompt = settings.aiOverrideSystemPrompt
         showHostAppFab = settings.showHostAppFab
         aiTemperature = settings.aiTemperature
@@ -571,8 +573,6 @@ class PreferencesManager(
         pureBlack = settings.pureBlack
         themeModeString = settings.themeMode
         themeColor = settings.themeColor
-        aiOpenerPromptTemplate = settings.aiOpenerPromptTemplate
-        aiPromptRemoteUrl = settings.aiPromptRemoteUrl
         saveToFallbackStorageAsync(ctx)
     }
 }

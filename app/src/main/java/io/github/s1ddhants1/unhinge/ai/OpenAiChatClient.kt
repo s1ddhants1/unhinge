@@ -107,7 +107,6 @@ object OpenAiChatClient : LlmClient {
                         topP = request.topP,
                         structured = useStructured,
                         reasoningEffort = request.reasoningEffort,
-                        promptTemplate = request.promptTemplate,
                         directionalStimulus = request.directionalStimulus,
                         promptCount = expectedCount,
                     )
@@ -193,7 +192,6 @@ object OpenAiChatClient : LlmClient {
                         topP = request.topP,
                         structured = useStructured,
                         reasoningEffort = request.reasoningEffort,
-                        promptTemplate = request.promptTemplate,
                         directionalStimulus = request.directionalStimulus,
                         promptCount = expectedCount,
                     )

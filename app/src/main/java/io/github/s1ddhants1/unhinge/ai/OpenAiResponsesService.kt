@@ -39,7 +39,6 @@ object OpenAiResponsesService : LlmClient {
             temperature = request.temperature,
             topP = request.topP,
             reasoningEffort = request.reasoningEffort,
-            promptTemplate = request.promptTemplate,
             directionalStimulus = request.directionalStimulus,
             promptCount = request.effectivePromptCount,
         )
@@ -57,7 +56,6 @@ object OpenAiResponsesService : LlmClient {
             topP = request.topP,
             maxRetries = request.maxRetries,
             reasoningEffort = request.reasoningEffort,
-            promptTemplate = request.promptTemplate,
             directionalStimulus = request.directionalStimulus,
             promptCount = request.effectivePromptCount,
         )
@@ -87,7 +85,6 @@ object OpenAiResponsesService : LlmClient {
         temperature: Float = Consts.DEFAULT_AI_TEMPERATURE,
         topP: Float = Consts.DEFAULT_AI_TOP_P,
         reasoningEffort: String = Consts.DEFAULT_AI_REASONING_EFFORT,
-        promptTemplate: String? = null,
         directionalStimulus: String = "",
         promptCount: Int? = null,
     ): Result<List<String>> =
@@ -103,12 +100,11 @@ object OpenAiResponsesService : LlmClient {
                     val sessionId = ZenRouter.generateSessionId()
                     val body =
                         buildResponsesRequest(
-                            instructions = WingmanPrompts.openerSystemPrompt(expectedCount, customSystemPrompt),
+                            instructions = WingmanPrompts.systemPrompt(expectedCount, customSystemPrompt),
                             input = WingmanPrompts.openerUserPrompt(
                                 text = text,
                                 avoidReplies = avoidReplies,
                                 profileBlock = profileBlock,
-                                template = promptTemplate,
                                 directionalStimulus = directionalStimulus,
                                 promptCount = expectedCount,
                             ),
@@ -185,7 +181,6 @@ object OpenAiResponsesService : LlmClient {
         topP: Float = Consts.DEFAULT_AI_TOP_P,
         maxRetries: Int = 3,
         reasoningEffort: String = Consts.DEFAULT_AI_REASONING_EFFORT,
-        promptTemplate: String? = null,
         directionalStimulus: String = "",
         promptCount: Int? = null,
     ): Flow<OpenRouterStreamingService.StreamChunk> =
@@ -203,12 +198,11 @@ object OpenAiResponsesService : LlmClient {
                     val sessionId = ZenRouter.generateSessionId()
                     val body =
                         buildResponsesRequest(
-                            instructions = WingmanPrompts.openerSystemPrompt(expectedCount, customSystemPrompt),
+                            instructions = WingmanPrompts.systemPrompt(expectedCount, customSystemPrompt),
                             input = WingmanPrompts.openerUserPrompt(
                                 text = text,
                                 avoidReplies = avoidReplies,
                                 profileBlock = profileBlock,
-                                template = promptTemplate,
                                 directionalStimulus = directionalStimulus,
                                 promptCount = expectedCount,
                             ),

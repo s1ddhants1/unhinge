@@ -44,6 +44,8 @@ object Consts {
     const val PREF_OPENROUTER_BASE_URL = "openrouter_base_url"
     const val PREF_OPENROUTER_MODEL = "openrouter_model"
     const val PREF_AI_CUSTOM_SYSTEM_PROMPT = "ai_custom_system_prompt"
+    const val PREF_AI_PROMPT_REMOTE_URL = "ai_prompt_remote_url"
+    const val PREF_AI_REMOTE_SYSTEM_PROMPT = "ai_remote_system_prompt"
     const val PREF_AI_OVERRIDE_SYSTEM_PROMPT = "ai_override_system_prompt"
     const val PREF_SHOW_HOST_APP_FAB = "show_host_app_fab"
     const val PREF_AI_TEMPERATURE = "ai_temperature"
@@ -51,8 +53,6 @@ object Consts {
     @Deprecated("Artificial token limit removed across app")
     const val PREF_AI_MAX_TOKENS = "ai_max_tokens"
     const val PREF_AI_REASONING_EFFORT = "ai_reasoning_effort"
-    const val PREF_AI_OPENER_PROMPT_TEMPLATE = "ai_opener_prompt_template"
-    const val PREF_AI_PROMPT_REMOTE_URL = "ai_prompt_remote_url"
     const val PREF_PURE_BLACK = "pure_black"
     const val PREF_THEME_COLOR = "theme_color"
     const val PREF_THEME_MODE = "theme_mode"
@@ -61,8 +61,6 @@ object Consts {
     const val PREF_ZEN_CACHED_FREE_MODELS = "zen_cached_free_models"
     const val PREF_ZEN_CACHED_ALL_MODELS = "zen_cached_all_models"
     const val PREF_ZEN_LAST_SYNC_TIMESTAMP = "zen_last_sync_timestamp"
-
-    const val DEFAULT_AI_PROMPT_REMOTE_URL = "https://raw.githubusercontent.com/s1ddhants1/unhinge/main/prompts/opener_template.md"
 
     const val OPENROUTER_DEFAULT_BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
     const val OPENROUTER_DEFAULT_MODEL = "inception/mercury-2.5-preview"
@@ -75,6 +73,7 @@ object Consts {
     const val ZEN_NPM_REGISTRY_URL = "https://registry.npmjs.org/@opencode/cli/latest"
     const val ZEN_BREW_FORMULA_URL = "https://formulae.brew.sh/api/formula/opencode.json"
     const val ZEN_MODELS_URL = "https://opencode.ai/inference/openai/v1/models"
+    const val DEFAULT_AI_PROMPT_REMOTE_URL = "https://raw.githubusercontent.com/s1ddhants1/unhinge/main/prompts/system_prompt_template.md"
 
     const val DEFAULT_THEME_COLOR = 0xFFED5564L
     const val DEFAULT_AI_TEMPERATURE = 0.85f
@@ -82,7 +81,4 @@ object Consts {
     @Deprecated("Artificial token limit removed across app")
     const val DEFAULT_AI_MAX_TOKENS = 250
     const val DEFAULT_AI_REASONING_EFFORT = "low"
-
-    val DEFAULT_AI_SYSTEM_PROMPT: String
-        get() = io.github.s1ddhants1.unhinge.ai.PromptRepository.getEffectiveSystemPromptTemplate()
 }

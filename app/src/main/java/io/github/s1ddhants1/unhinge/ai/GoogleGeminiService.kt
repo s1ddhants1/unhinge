@@ -36,7 +36,6 @@ object GoogleGeminiService : LlmClient {
             temperature = request.temperature,
             topP = request.topP,
             reasoningEffort = request.reasoningEffort,
-            promptTemplate = request.promptTemplate,
             directionalStimulus = request.directionalStimulus,
             promptCount = request.effectivePromptCount,
         )
@@ -54,7 +53,6 @@ object GoogleGeminiService : LlmClient {
             topP = request.topP,
             maxRetries = request.maxRetries,
             reasoningEffort = request.reasoningEffort,
-            promptTemplate = request.promptTemplate,
             directionalStimulus = request.directionalStimulus,
             promptCount = request.effectivePromptCount,
         )
@@ -84,7 +82,6 @@ object GoogleGeminiService : LlmClient {
         temperature: Float = Consts.DEFAULT_AI_TEMPERATURE,
         topP: Float = Consts.DEFAULT_AI_TOP_P,
         reasoningEffort: String = Consts.DEFAULT_AI_REASONING_EFFORT,
-        promptTemplate: String? = null,
         directionalStimulus: String = "",
         promptCount: Int? = null,
     ): Result<List<String>> =
@@ -97,12 +94,11 @@ object GoogleGeminiService : LlmClient {
                 try {
                     val body =
                         buildGeminiRequest(
-                            system = WingmanPrompts.openerSystemPrompt(expectedCount, customSystemPrompt),
+                            system = WingmanPrompts.systemPrompt(expectedCount, customSystemPrompt),
                             user = WingmanPrompts.openerUserPrompt(
                                 text = text,
                                 avoidReplies = avoidReplies,
                                 profileBlock = profileBlock,
-                                template = promptTemplate,
                                 directionalStimulus = directionalStimulus,
                                 promptCount = expectedCount,
                             ),
@@ -146,7 +142,6 @@ object GoogleGeminiService : LlmClient {
         topP: Float = Consts.DEFAULT_AI_TOP_P,
         maxRetries: Int = 3,
         reasoningEffort: String = Consts.DEFAULT_AI_REASONING_EFFORT,
-        promptTemplate: String? = null,
         directionalStimulus: String = "",
         promptCount: Int? = null,
     ): Flow<OpenRouterStreamingService.StreamChunk> =
@@ -163,12 +158,11 @@ object GoogleGeminiService : LlmClient {
                 try {
                     val body =
                         buildGeminiRequest(
-                            system = WingmanPrompts.openerSystemPrompt(expectedCount, customSystemPrompt),
+                            system = WingmanPrompts.systemPrompt(expectedCount, customSystemPrompt),
                             user = WingmanPrompts.openerUserPrompt(
                                 text = text,
                                 avoidReplies = avoidReplies,
                                 profileBlock = profileBlock,
-                                template = promptTemplate,
                                 directionalStimulus = directionalStimulus,
                                 promptCount = expectedCount,
                             ),

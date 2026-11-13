@@ -49,8 +49,8 @@ import androidx.compose.ui.unit.dp
 import io.github.s1ddhants1.unhinge.Consts
 import io.github.s1ddhants1.unhinge.R
 import io.github.s1ddhants1.unhinge.ai.AiWingmanHelper
-import io.github.s1ddhants1.unhinge.ai.ModelReasoningCatalog
 import io.github.s1ddhants1.unhinge.ai.PromptRepository
+import io.github.s1ddhants1.unhinge.ai.ModelReasoningCatalog
 import io.github.s1ddhants1.unhinge.ai.ZenRouter
 import kotlinx.coroutines.launch
 import io.github.s1ddhants1.unhinge.ui.component.EnumDialog
@@ -80,12 +80,14 @@ fun AiWingmanSettingsPage(
     var openRouterModel by rememberSaveable { mutableStateOf(prefs.openRouterModel) }
 
     var aiSystemPrompt by rememberSaveable { mutableStateOf(prefs.aiCustomSystemPrompt) }
-    var openerPromptTemplate by rememberSaveable { mutableStateOf(prefs.aiOpenerPromptTemplate) }
     var promptRemoteUrl by rememberSaveable { mutableStateOf(prefs.aiPromptRemoteUrl) }
-    var isSyncingRemote by remember { mutableStateOf(false) }
-    var isSyncingCatalog by remember { mutableStateOf(false) }
-    var showOpenerTemplateDialog by rememberSaveable { mutableStateOf(false) }
     var showRemoteUrlDialog by rememberSaveable { mutableStateOf(false) }
+    var isSyncingPrompt by remember { mutableStateOf(false) }
+    var promptSyncGeneration by remember { mutableStateOf(0) }
+    val defaultSystemPrompt = remember(promptSyncGeneration) {
+        PromptRepository.getEffectiveSystemPromptTemplate(prefs, context)
+    }
+    var isSyncingCatalog by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
 
     var aiTemperature by rememberSaveable { mutableStateOf(prefs.aiTemperature) }
@@ -447,60 +449,24 @@ fun AiWingmanSettingsPage(
         }
     }
 
-    if (showOpenerTemplateDialog) {
-        val defaultTemplate = remember { PromptRepository.getEffectiveOpenerTemplate(context = context) }
-        TextFieldDialog(
-            title = { Text(stringResource(R.string.ai_opener_prompt_title)) },
-            icon = { Icon(Icons.Outlined.Edit, null) },
-            initialTextFieldValue = TextFieldValue(text = openerPromptTemplate.ifBlank { defaultTemplate }),
-            singleLine = false,
-            maxLines = 16,
-            isInputValid = { true },
-            onDone = {
-                openerPromptTemplate = if (it.isBlank() || it == defaultTemplate) "" else it
-                prefs.aiOpenerPromptTemplate = openerPromptTemplate
-                showOpenerTemplateDialog = false
-            },
-            onDismiss = { showOpenerTemplateDialog = false },
-            extraContent = {
-                if (openerPromptTemplate.isNotBlank()) {
-                    Row(
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(top = 8.dp),
-                        horizontalArrangement = Arrangement.End,
-                    ) {
-                        TextButton(
-                            onClick = {
-                                openerPromptTemplate = ""
-                                prefs.aiOpenerPromptTemplate = ""
-                                showOpenerTemplateDialog = false
-                            },
-                        ) {
-                            Text(stringResource(R.string.action_reset_to_default))
-                        }
-                    }
-                }
-            },
-        )
-    }
-
     if (showRemoteUrlDialog) {
         TextFieldDialog(
             title = { Text(stringResource(R.string.ai_remote_url_title)) },
             icon = { Icon(Icons.Outlined.Link, null) },
-            initialTextFieldValue = TextFieldValue(text = promptRemoteUrl.ifBlank { Consts.DEFAULT_AI_PROMPT_REMOTE_URL }),
+            initialTextFieldValue = TextFieldValue(text = promptRemoteUrl),
             singleLine = true,
             isInputValid = { it.isNotBlank() },
             onDone = {
-                promptRemoteUrl = if (it.isBlank()) Consts.DEFAULT_AI_PROMPT_REMOTE_URL else it.trim()
+                promptRemoteUrl = it.trim()
                 prefs.aiPromptRemoteUrl = promptRemoteUrl
+                prefs.saveToFallbackStorageAsync(context)
                 showRemoteUrlDialog = false
             },
             onDismiss = { showRemoteUrlDialog = false },
             extraContent = {
-                if (promptRemoteUrl != Consts.DEFAULT_AI_PROMPT_REMOTE_URL) {
+                val canResetUrl = promptRemoteUrl != Consts.DEFAULT_AI_PROMPT_REMOTE_URL
+                val hasSyncedPrompt = prefs.aiRemoteSystemPrompt.isNotBlank()
+                if (canResetUrl || hasSyncedPrompt) {
                     Row(
                         modifier =
                             Modifier
@@ -508,14 +474,27 @@ fun AiWingmanSettingsPage(
                                 .padding(top = 8.dp),
                         horizontalArrangement = Arrangement.End,
                     ) {
-                        TextButton(
-                            onClick = {
-                                promptRemoteUrl = Consts.DEFAULT_AI_PROMPT_REMOTE_URL
-                                prefs.aiPromptRemoteUrl = Consts.DEFAULT_AI_PROMPT_REMOTE_URL
-                                showRemoteUrlDialog = false
-                            },
-                        ) {
-                            Text(stringResource(R.string.action_reset_to_default))
+                        if (hasSyncedPrompt) {
+                            TextButton(
+                                onClick = {
+                                    prefs.aiRemoteSystemPrompt = ""
+                                    prefs.saveToFallbackStorageAsync(context)
+                                    promptSyncGeneration++
+                                },
+                            ) {
+                                Text(stringResource(R.string.ai_remote_reset_synced))
+                            }
+                        }
+                        if (canResetUrl) {
+                            TextButton(
+                                onClick = {
+                                    promptRemoteUrl = Consts.DEFAULT_AI_PROMPT_REMOTE_URL
+                                    prefs.aiPromptRemoteUrl = promptRemoteUrl
+                                    prefs.saveToFallbackStorageAsync(context)
+                                },
+                            ) {
+                                Text(stringResource(R.string.action_reset_to_default))
+                            }
                         }
                     }
                 }
@@ -527,12 +506,12 @@ fun AiWingmanSettingsPage(
         TextFieldDialog(
             title = { Text(stringResource(R.string.ai_system_prompt_title)) },
             icon = { Icon(Icons.Outlined.Edit, null) },
-            initialTextFieldValue = TextFieldValue(text = aiSystemPrompt.ifBlank { Consts.DEFAULT_AI_SYSTEM_PROMPT }),
+            initialTextFieldValue = TextFieldValue(text = aiSystemPrompt.ifBlank { defaultSystemPrompt }),
             singleLine = false,
             maxLines = 12,
             isInputValid = { true },
             onDone = {
-                aiSystemPrompt = if (it.isBlank() || it == Consts.DEFAULT_AI_SYSTEM_PROMPT) "" else it
+                aiSystemPrompt = if (it.isBlank() || it == defaultSystemPrompt) "" else it
                 prefs.aiCustomSystemPrompt = aiSystemPrompt
                 prefs.aiOverrideSystemPrompt = aiSystemPrompt.isNotBlank()
                 showSystemPromptDialog = false
@@ -716,39 +695,40 @@ fun AiWingmanSettingsPage(
 
         SettingsSectionCard(title = stringResource(R.string.ai_section_prompt)) {
             SettingsActionRow(
-                title = stringResource(R.string.ai_opener_prompt_title),
-                description = if (openerPromptTemplate.isNotBlank()) {
-                    stringResource(R.string.ai_opener_prompt_custom)
+                title = stringResource(R.string.ai_system_prompt_title),
+                description = if (aiSystemPrompt.isNotBlank()) {
+                    aiSystemPrompt.take(60).let {
+                        if (aiSystemPrompt.length > 60) "$it…" else it
+                    }
                 } else {
-                    stringResource(R.string.ai_opener_prompt_default)
+                    stringResource(R.string.ai_system_prompt_default)
                 },
                 icon = Icons.Outlined.Edit,
-                onClick = { showOpenerTemplateDialog = true }
+                onClick = { showSystemPromptDialog = true }
             )
             SettingsDivider()
             SettingsActionRow(
                 title = stringResource(R.string.ai_remote_sync_title),
-                description = if (isSyncingRemote) {
+                description = if (isSyncingPrompt) {
                     stringResource(R.string.ai_remote_sync_in_progress)
+                } else if (prefs.aiRemoteSystemPrompt.isNotBlank()) {
+                    stringResource(R.string.ai_remote_sync_synced)
                 } else {
                     stringResource(R.string.ai_remote_sync_desc)
                 },
                 icon = Icons.Outlined.Refresh,
                 onClick = {
-                    if (!isSyncingRemote) {
-                        isSyncingRemote = true
+                    if (!isSyncingPrompt) {
+                        isSyncingPrompt = true
                         coroutineScope.launch {
-                            val syncResult = PromptRepository.fetchRemoteTemplate(promptRemoteUrl)
-                            isSyncingRemote = false
-                            syncResult.fold(
-                                onSuccess = { newTemplate ->
-                                    openerPromptTemplate = newTemplate
-                                    prefs.aiOpenerPromptTemplate = newTemplate
-                                    Toast.makeText(
-                                        context,
-                                        promptSyncSuccessMsg,
-                                        Toast.LENGTH_SHORT
-                                    ).show()
+                            val result = PromptRepository.fetchRemotePrompt(promptRemoteUrl)
+                            isSyncingPrompt = false
+                            result.fold(
+                                onSuccess = { remotePrompt ->
+                                    prefs.aiRemoteSystemPrompt = remotePrompt
+                                    prefs.saveToFallbackStorageAsync(context)
+                                    promptSyncGeneration++
+                                    Toast.makeText(context, promptSyncSuccessMsg, Toast.LENGTH_SHORT).show()
                                 },
                                 onFailure = { err ->
                                     Toast.makeText(
@@ -768,19 +748,6 @@ fun AiWingmanSettingsPage(
                 description = promptRemoteUrl,
                 icon = Icons.Outlined.Link,
                 onClick = { showRemoteUrlDialog = true }
-            )
-            SettingsDivider()
-            SettingsActionRow(
-                title = stringResource(R.string.ai_system_prompt_title),
-                description = if (aiSystemPrompt.isNotBlank()) {
-                    aiSystemPrompt.take(60).let {
-                        if (aiSystemPrompt.length > 60) "$it…" else it
-                    }
-                } else {
-                    stringResource(R.string.ai_system_prompt_default)
-                },
-                icon = Icons.Outlined.Edit,
-                onClick = { showSystemPromptDialog = true }
             )
         }
 

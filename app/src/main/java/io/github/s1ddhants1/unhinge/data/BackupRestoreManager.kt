@@ -35,6 +35,8 @@ data class UnhingeSettingsBackup(
     val openRouterBaseUrl: String = Consts.ZEN_DEFAULT_BASE_URL,
     val openRouterModel: String = Consts.ZEN_DEFAULT_MODEL,
     val aiCustomSystemPrompt: String = "",
+    val aiPromptRemoteUrl: String = Consts.DEFAULT_AI_PROMPT_REMOTE_URL,
+    val aiRemoteSystemPrompt: String = "",
     val aiOverrideSystemPrompt: Boolean = false,
     val showHostAppFab: Boolean = true,
     val aiTemperature: Float = Consts.DEFAULT_AI_TEMPERATURE,
@@ -42,9 +44,7 @@ data class UnhingeSettingsBackup(
     val aiReasoningEffort: String = Consts.DEFAULT_AI_REASONING_EFFORT,
     val pureBlack: Boolean = false,
     val themeMode: String = "SYSTEM",
-    val themeColor: Long = Consts.DEFAULT_THEME_COLOR,
-    val aiOpenerPromptTemplate: String = "",
-    val aiPromptRemoteUrl: String = Consts.DEFAULT_AI_PROMPT_REMOTE_URL
+    val themeColor: Long = Consts.DEFAULT_THEME_COLOR
 )
 
 @Serializable

@@ -31,17 +31,15 @@ internal fun buildGenerationRequest(
     topP: Float = Consts.DEFAULT_AI_TOP_P,
     structured: Boolean = true,
     reasoningEffort: String = Consts.DEFAULT_AI_REASONING_EFFORT,
-    promptTemplate: String? = null,
     directionalStimulus: String = "",
     promptCount: Int? = null,
 ): JsonObject {
     val lineCount = promptCount ?: text.lines().size
-    val systemPrompt = WingmanPrompts.openerSystemPrompt(lineCount, customSystemPrompt)
+    val systemPrompt = WingmanPrompts.systemPrompt(lineCount, customSystemPrompt)
     val userPrompt = WingmanPrompts.openerUserPrompt(
         text = text,
         avoidReplies = avoidReplies,
         profileBlock = profileBlock,
-        template = promptTemplate,
         directionalStimulus = directionalStimulus,
         promptCount = lineCount,
     )

@@ -18,7 +18,6 @@ object OpenRouterStreamingService {
         maxRetries: Int = 3,
         structured: Boolean = true,
         reasoningEffort: String = Consts.DEFAULT_AI_REASONING_EFFORT,
-        promptTemplate: String? = null,
         directionalStimulus: String = "",
         promptCount: Int? = null,
     ): Flow<StreamChunk> =
@@ -36,7 +35,6 @@ object OpenRouterStreamingService {
                 maxRetries = maxRetries,
                 structured = structured,
                 reasoningEffort = reasoningEffort,
-                promptTemplate = promptTemplate,
                 directionalStimulus = directionalStimulus,
                 promptCount = promptCount,
             )
