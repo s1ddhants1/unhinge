@@ -172,7 +172,6 @@ object HostAppAiFab {
     private var lastUpdateTime = 0L
     private const val UPDATE_THROTTLE_MS = 350L
     private var lastLoggedContext: HostCandidateReader.ScreenContext? = null
-    private var lastLoggedNonCandidate: Boolean? = null
     private var foregroundMonitorJob: kotlinx.coroutines.Job? = null
     private var pendingUpdateRunnable: Runnable? = null
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
@@ -372,17 +371,14 @@ object HostAppAiFab {
             if (passRect != null) {
                 lastKnownPassRect = Rect(passRect)
             }
-            val effectivePassRect = passRect ?: lastKnownPassRect
-            val commentInfo = findCommentCardInfo(decor)
-
-            val screenClues = extractScreenClues(activity)
-            val isCandidate = !screenClues.isNonCandidate && (
-                effectivePassRect != null ||
-                commentInfo != null ||
-                screenClues.activeContext == HostCandidateReader.ScreenContext.DISCOVER
-            )
-
             val attached = findAttachedContainer(activity)
+            val sheetView = attached?.findViewWithTag<View>(TAG_AI_SHEET)
+            val isSheetOpen = sheetView != null && sheetView.visibility == View.VISIBLE
+            val commentInfo = findCommentCardInfo(decor)
+            val isCommentMode = commentInfo != null
+
+            val isCandidate = passRect != null || isCommentMode || isSheetOpen
+
             val rootGroup = (decor as? ViewGroup)
                 ?: (activity.findViewById(android.R.id.content) as? ViewGroup)
 
@@ -396,13 +392,12 @@ object HostAppAiFab {
                     bindLayoutListener(newContainer, activity, prefs)
                     newContainer
                 }
-                updateControlsState(container, activity, prefs, effectivePassRect, commentInfo, screenClues)
+                updateControlsState(container, activity, prefs, passRect, commentInfo)
             } else {
                 lastKnownPassRect = null
                 currentTargetCandidate = null
                 if (attached != null) {
-                    val sheetView = attached.findViewWithTag<View>(TAG_AI_SHEET)
-                    if (sheetView != null && sheetView.visibility == View.VISIBLE) {
+                    if (isSheetOpen) {
                         closeAiSheet(activity)
                     }
                     attached.visibility = View.GONE
@@ -663,22 +658,16 @@ object HostAppAiFab {
     ) {
         if (activity.isFinishing || activity.isDestroyed) return
 
-        val screenClues = clues ?: extractScreenClues(activity)
         val directPassRect = passRect ?: findPassButtonBounds(container.rootView)
         if (directPassRect != null) {
             lastKnownPassRect = Rect(directPassRect)
         }
-        val pRect = directPassRect ?: lastKnownPassRect
         val detectedComment = detectedCommentInfo ?: findCommentCardInfo(container.rootView)
         val isCommentMode = detectedComment != null
-
-        val isCandidate = !screenClues.isNonCandidate && (
-            pRect != null ||
-            isCommentMode ||
-            screenClues.activeContext == HostCandidateReader.ScreenContext.DISCOVER
-        )
         val sheetView = container.findViewWithTag<View>(TAG_AI_SHEET)
         val isSheetOpen = sheetView != null && sheetView.visibility == View.VISIBLE
+
+        val isCandidate = directPassRect != null || isCommentMode || isSheetOpen
 
         if (!isCandidate) {
             lastKnownPassRect = null
@@ -689,6 +678,9 @@ object HostAppAiFab {
             container.visibility = View.GONE
             return
         }
+
+        val screenClues = clues ?: extractScreenClues(activity)
+        val pRect = directPassRect ?: lastKnownPassRect
 
         if (FeedNavigator.isNavigated && prefs.enableFeedNavigation) {
             FeedNavigator.refreshTotal(activity)
@@ -782,7 +774,7 @@ object HostAppAiFab {
             val commentRect = commentInfo.commentInputRect
             targetX = (commentRect.right - containerScreenX - fabSize).toFloat()
             targetY = (commentRect.top - containerScreenY - fabSize - (8 * density))
-        } else if (isValidPassRect && pRect != null) {
+        } else if (isValidPassRect) {
             val validRect = pRect
             fabSize = validRect.width()
             val leftMargin = validRect.left - containerScreenX
@@ -852,19 +844,23 @@ object HostAppAiFab {
     internal fun findPassButtonBounds(rootView: View?): Rect? {
         if (rootView == null || rootView.visibility != View.VISIBLE) return null
         val desc = rootView.contentDescription?.toString()?.trim()
-        if (desc != null && (desc.startsWith("Skip", ignoreCase = true) || desc.startsWith("Pass", ignoreCase = true))) {
+        val text = (rootView as? TextView)?.text?.toString()?.trim()
+        val entryName = try {
+            if (rootView.id != View.NO_ID) rootView.resources.getResourceEntryName(rootView.id) else null
+        } catch (_: Throwable) { null }
+        if (isPassOrSkipButton(desc, text, entryName, rootView.context)) {
             val rect = Rect()
             rootView.getGlobalVisibleRect(rect)
             val displayMetrics = android.content.res.Resources.getSystem().displayMetrics
-            val maxLeft = displayMetrics.widthPixels * 0.45f
-            val minTop = displayMetrics.heightPixels * 0.45f
+            val maxLeft = displayMetrics.widthPixels * 0.50f
+            val minTop = displayMetrics.heightPixels * 0.40f
             if (rect.width() > 0 && rect.height() > 0 && rect.left < maxLeft && rect.top > minTop) {
                 return rect
             }
         }
         val provider = rootView.accessibilityNodeProvider
         if (provider != null) {
-            val found = searchForPassButtonNode(provider, AccessibilityNodeProvider.HOST_VIEW_ID)
+            val found = searchForPassButtonNode(provider, AccessibilityNodeProvider.HOST_VIEW_ID, context = rootView.context)
             if (found != null) return found
         }
         if (rootView is ViewGroup) {
@@ -880,7 +876,8 @@ object HostAppAiFab {
         provider: AccessibilityNodeProvider,
         virtualId: Int,
         visited: MutableSet<Int> = mutableSetOf(),
-        depth: Int = 0
+        depth: Int = 0,
+        context: Context? = null,
     ): Rect? {
         if (depth > 40 || !visited.add(virtualId)) return null
         val node = try {
@@ -889,16 +886,14 @@ object HostAppAiFab {
 
         val desc = node.contentDescription?.toString()?.trim()
         val text = node.text?.toString()?.trim()
-        val isPassLabel = (desc != null && (desc.startsWith("Skip", ignoreCase = true) || desc.startsWith("Pass", ignoreCase = true) || desc.equals("Skip", ignoreCase = true) || desc.equals("Pass", ignoreCase = true))) ||
-                (text != null && (text.startsWith("Skip", ignoreCase = true) || text.startsWith("Pass", ignoreCase = true) || text.equals("Skip", ignoreCase = true) || text.equals("Pass", ignoreCase = true)))
-
-        if (isPassLabel) {
+        val viewId = node.viewIdResourceName?.trim()
+        if (isPassOrSkipButton(desc, text, viewId, context)) {
             val rect = Rect()
             node.getBoundsInScreen(rect)
 
             val displayMetrics = android.content.res.Resources.getSystem().displayMetrics
-            val maxLeft = displayMetrics.widthPixels * 0.45f
-            val minTop = displayMetrics.heightPixels * 0.45f
+            val maxLeft = displayMetrics.widthPixels * 0.50f
+            val minTop = displayMetrics.heightPixels * 0.40f
             if (rect.width() > 0 && rect.height() > 0 && rect.left < maxLeft && rect.top > minTop) {
                 return rect
             }
@@ -907,10 +902,58 @@ object HostAppAiFab {
         val childCount = node.childCount
         for (i in 0 until childCount) {
             val childId = getChildVirtualId(node, i) ?: continue
-            val found = searchForPassButtonNode(provider, childId, visited, depth + 1)
+            val found = searchForPassButtonNode(provider, childId, visited, depth + 1, context)
             if (found != null) return found
         }
         return null
+    }
+
+    private val SKIP_LABEL_PATTERNS = listOf(
+        Regex("(?i)^Skip\\s+.+$"),
+        Regex("(?i)^Saltarse\\s+a\\s+.+$"),
+        Regex("(?i)^Spring\\s+.+\\s+over$"),
+        Regex("(?i)^.+\\s+überspringen$"),
+        Regex("(?i)^Saltar\\s+a\\s+.+$"),
+        Regex("(?i)^Ohita\\s+.+$"),
+        Regex("(?i)^Ignorer\\s+.+$"),
+        Regex("(?i)^Salta\\s+il\\s+profilo\\s+di\\s+.+$"),
+        Regex("(?i)^Hopp\\s+over\\s+.+$"),
+        Regex("(?i)^.+\\s+overslaan$"),
+        Regex("(?i)^Pomiń\\s+użytkownika\\s+.+$"),
+        Regex("(?i)^Pular\\s+.+$"),
+        Regex("(?i)^Hoppa\\s+över\\s+.+$"),
+        Regex("(?i)^(Skip|Saltar|Spring over|Überspringen|Ohita|Ignorer|Salta|Hopp over|Overslaan|Pomiń|Pular|Hoppa över)$"),
+        Regex("^[xX✕×✖]$"),
+    )
+
+    private fun isPassOrSkipButton(
+        desc: String?,
+        text: String?,
+        viewId: String? = null,
+        context: Context? = null,
+    ): Boolean {
+        if (isPassOrSkipLabel(desc) || isPassOrSkipLabel(text)) return true
+        if (context != null) {
+            try {
+                val resId = context.resources.getIdentifier("common_skipButton_accessibilityLabel", "string", context.packageName)
+                if (resId != 0) {
+                    val rawFormat = context.getString(resId)
+                    val cleaned = rawFormat.replace("%s", "").replace("%1\$s", "").trim()
+                    if (cleaned.isNotEmpty()) {
+                        if (desc?.startsWith(cleaned, ignoreCase = true) == true || text?.startsWith(cleaned, ignoreCase = true) == true) {
+                            return true
+                        }
+                    }
+                }
+            } catch (_: Throwable) {}
+        }
+        return false
+    }
+
+    private fun isPassOrSkipLabel(label: String?): Boolean {
+        if (label.isNullOrBlank()) return false
+        val s = label.trim()
+        return SKIP_LABEL_PATTERNS.any { it.matches(s) }
     }
 
     internal fun findChatInputBounds(rootView: View?): Rect? {
@@ -1469,20 +1512,6 @@ object HostAppAiFab {
             it.contains("They like you", ignoreCase = true) ||
             (it.contains("Likes you", ignoreCase = true) && !it.equals("Likes You", ignoreCase = true))
         }
-        val isMatchesScreen = visibleTexts.any {
-            it.equals("No matches right now", ignoreCase = true) ||
-            it.equals("Boost your profile", ignoreCase = true) ||
-            it.equals("Upgrade to HingeX", ignoreCase = true) ||
-            it.equals("Conversations", ignoreCase = true) ||
-            it.equals("Your turn", ignoreCase = true) ||
-            it.equals("Their turn", ignoreCase = true)
-        }
-        val isProfileScreen = visibleTexts.any {
-            it.equals("Check your Signals", ignoreCase = true) ||
-            it.equals("My Hinge", ignoreCase = true) ||
-            it.equals("Edit Profile", ignoreCase = true)
-        }
-
         val isChatScreen = visibleTexts.any {
             it.equals("Send a message", ignoreCase = true) ||
             it.equals("Type a message", ignoreCase = true) ||
@@ -1490,32 +1519,20 @@ object HostAppAiFab {
             it.contains("messageComposition", ignoreCase = true)
         }
 
-        val isEmptyFeed = visibleTexts.any {
-            it.startsWith("You've seen everyone", ignoreCase = true) ||
-            it.equals("Out of people", ignoreCase = true) ||
-            it.startsWith("You're all caught up", ignoreCase = true) ||
-            it.startsWith("Expand your preferences", ignoreCase = true)
-        }
-
-        val isNonCandidate = isMatchesScreen || isProfileScreen || isEmptyFeed || isStandoutsPage
-
         val activeContext = when {
             isChatScreen -> HostCandidateReader.ScreenContext.MATCH_CHAT
             isStandoutsPage || isStandoutCandidate -> HostCandidateReader.ScreenContext.STANDOUTS
             isLikesYouScreen -> HostCandidateReader.ScreenContext.LIKES_YOU
-            isMatchesScreen || isProfileScreen -> HostCandidateReader.ScreenContext.UNKNOWN
             else -> HostCandidateReader.ScreenContext.DISCOVER
         }
 
-        if (lastLoggedContext != activeContext || lastLoggedNonCandidate != isNonCandidate) {
+        if (lastLoggedContext != activeContext) {
             lastLoggedContext = activeContext
-            lastLoggedNonCandidate = isNonCandidate
-            Log.d(Consts.TAG, "extractScreenClues: activeContext=$activeContext, isNonCandidate=$isNonCandidate, textsCount=${visibleTexts.size}")
+            Log.d(Consts.TAG, "extractScreenClues: activeContext=$activeContext, textsCount=${visibleTexts.size}")
         }
         return HostCandidateReader.ScreenClues(
             visibleTexts = visibleTexts,
             activeContext = activeContext,
-            isNonCandidate = isNonCandidate,
         )
     }
 
@@ -1810,7 +1827,7 @@ object HostAppAiFab {
             sheetView.visibility = View.GONE
             val prefs = currentPrefsRef?.get()
             if (prefs != null) {
-                updateControlsState(container, activity, prefs, lastKnownPassRect)
+                updateControlsState(container, activity, prefs)
             }
         }
     }
