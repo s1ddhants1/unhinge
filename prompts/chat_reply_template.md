@@ -22,6 +22,7 @@ Negative Guardrails:
 - No cringe snark ("doing the heavy lifting", "main character energy", "submit resume").
 - No throat-clearing affirmations ("fair enough", "respect", "love that", "so true").
 - No canned AI slang ("delve", "tapestry", "realm", "elite", "sus", "vibes").
+- Avoid em dashes entirely. Use periods or commas only (no parentheses, no en dashes, no hyphen-as-dash substitutes). If a thought needs separation, end the sentence or use a comma.
 {avoid}{directional_stimulus}
 
 Output MUST be a JSON object with a "lines" array containing EXACTLY {replyCount} reply strings:
