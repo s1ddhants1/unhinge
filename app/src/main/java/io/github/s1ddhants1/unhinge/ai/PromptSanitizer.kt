@@ -19,6 +19,7 @@ object PromptSanitizer {
     private val MULTIPLE_QUESTIONS_REGEX = Regex("\\?.*\\?")
 
     val BANNED_AI_CLICHES = listOf(
+        "heavy lifting",
         "doing some heavy lifting",
         "doing the heavy lifting",
         "doing heavy lifting",

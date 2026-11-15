@@ -18,7 +18,7 @@ Generate EXACTLY {replyCount} options, one for each archetype in order:
 4. Casual / Low-Key: Effortless follow-up observation or low-stakes question.
 
 Negative Guardrails:
-- No AI preambles ("bold claim", "plot twist", "hear me out", "let's be honest").
+- No AI preambles ("bold claim", "plot twist", "hear me out", "heavy lifting", "let's be honest").
 - No cringe snark ("doing the heavy lifting", "main character energy", "submit resume").
 - No throat-clearing affirmations ("fair enough", "respect", "love that", "so true").
 - No canned AI slang ("delve", "tapestry", "realm", "elite", "sus", "vibes").
