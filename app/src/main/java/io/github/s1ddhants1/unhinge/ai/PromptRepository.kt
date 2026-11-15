@@ -38,11 +38,11 @@ object PromptRepository {
         }
 
         val candidatePaths = listOf(
-            "app/src/main/assets/$path",
-            "src/main/assets/$path",
             path,
             "../$path",
-            "../../$path"
+            "../../$path",
+            "app/src/main/assets/$path",
+            "src/main/assets/$path"
         )
         for (candidate in candidatePaths) {
             val file = File(candidate)

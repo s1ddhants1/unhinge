@@ -21,6 +21,21 @@ android {
         versionName = appVersionName
     }
 
+    val syncPromptsAssets = tasks.register<Sync>("syncPromptsAssets") {
+        from(rootProject.file("prompts"))
+        into(layout.buildDirectory.dir("generated/prompts_assets/prompts"))
+    }
+
+    tasks.named("preBuild") {
+        dependsOn(syncPromptsAssets)
+    }
+
+    sourceSets {
+        getByName("main") {
+            assets.directories.add(layout.buildDirectory.dir("generated/prompts_assets").get().asFile.absolutePath)
+        }
+    }
+
     signingConfigs {
         val rootKeystore = rootProject.file("unhinge.keystore")
         val appKeystore = project.file("unhinge.keystore")
