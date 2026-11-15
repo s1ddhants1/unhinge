@@ -726,6 +726,9 @@ fun AiWingmanSettingsPage(
                             result.fold(
                                 onSuccess = { remotePrompt ->
                                     prefs.aiRemoteSystemPrompt = remotePrompt
+                                    if (promptRemoteUrl != prefs.aiPromptRemoteUrl) {
+                                        promptRemoteUrl = prefs.aiPromptRemoteUrl
+                                    }
                                     prefs.saveToFallbackStorageAsync(context)
                                     promptSyncGeneration++
                                     Toast.makeText(context, promptSyncSuccessMsg, Toast.LENGTH_SHORT).show()

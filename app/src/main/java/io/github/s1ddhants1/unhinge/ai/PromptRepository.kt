@@ -1,6 +1,7 @@
 package io.github.s1ddhants1.unhinge.ai
 
 import android.content.Context
+import io.github.s1ddhants1.unhinge.Consts
 import io.github.s1ddhants1.unhinge.util.PreferencesManager
 import io.github.s1ddhants1.unhinge.util.attempt
 import kotlinx.coroutines.Dispatchers
@@ -89,16 +90,32 @@ object PromptRepository {
 
     suspend fun fetchRemotePrompt(url: String): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
-            val target = url.trim().ifBlank { error("Remote prompt URL is empty") }
-            val request = Request.Builder().url(target).build()
-            AiHttpClient.clientFor(target).newCall(request).execute().use { response ->
-                if (!response.isSuccessful) error("HTTP ${response.code}")
-                val body = response.body.string().trim()
-                require(body.isNotBlank()) { "Remote prompt is empty" }
-                require(body.contains("{lineCount}")) { "Remote prompt is missing {lineCount}" }
-                require(body.contains("\"lines\"")) { "Remote prompt is missing the JSON output contract" }
-                body
+            var target = url.trim().ifBlank { error("Remote prompt URL is empty") }
+            if (PreferencesManager.isLegacyRemotePromptUrl(target)) {
+                target = Consts.DEFAULT_AI_PROMPT_REMOTE_URL
             }
+            val request = Request.Builder().url(target).build()
+            val initialResponse = attempt("fetch remote prompt from $target", silent = true) {
+                AiHttpClient.clientFor(target).newCall(request).execute()
+            }
+            val body = if (initialResponse != null && initialResponse.isSuccessful) {
+                initialResponse.use { it.body.string().trim() }
+            } else {
+                initialResponse?.close()
+                if (target != Consts.DEFAULT_AI_PROMPT_REMOTE_URL && target.contains("githubusercontent.com/s1ddhants1/unhinge")) {
+                    val fallbackReq = Request.Builder().url(Consts.DEFAULT_AI_PROMPT_REMOTE_URL).build()
+                    AiHttpClient.clientFor(Consts.DEFAULT_AI_PROMPT_REMOTE_URL).newCall(fallbackReq).execute().use { resp ->
+                        if (!resp.isSuccessful) error("HTTP ${resp.code}")
+                        resp.body.string().trim()
+                    }
+                } else {
+                    error("HTTP ${initialResponse?.code ?: 404}")
+                }
+            }
+            require(body.isNotBlank()) { "Remote prompt is empty" }
+            require(body.contains("{lineCount}")) { "Remote prompt is missing {lineCount}" }
+            require(body.contains("\"lines\"")) { "Remote prompt is missing the JSON output contract" }
+            body
         }
     }
 

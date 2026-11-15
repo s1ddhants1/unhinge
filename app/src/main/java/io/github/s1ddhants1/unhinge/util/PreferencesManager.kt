@@ -274,7 +274,19 @@ class PreferencesManager(
     var openRouterBaseUrl by stringPreference(Consts.PREF_OPENROUTER_BASE_URL, Consts.ZEN_DEFAULT_BASE_URL)
     var openRouterModel by stringPreference(Consts.PREF_OPENROUTER_MODEL, Consts.ZEN_DEFAULT_MODEL)
     var aiCustomSystemPrompt by stringPreference(Consts.PREF_AI_CUSTOM_SYSTEM_PROMPT, "")
-    var aiPromptRemoteUrl by stringPreference(Consts.PREF_AI_PROMPT_REMOTE_URL, Consts.DEFAULT_AI_PROMPT_REMOTE_URL)
+    var aiPromptRemoteUrl: String
+        get() {
+            val stored = getString(Consts.PREF_AI_PROMPT_REMOTE_URL, Consts.DEFAULT_AI_PROMPT_REMOTE_URL)
+            return if (isLegacyRemotePromptUrl(stored)) {
+                Consts.DEFAULT_AI_PROMPT_REMOTE_URL
+            } else {
+                stored
+            }
+        }
+        set(value) {
+            val normalized = if (isLegacyRemotePromptUrl(value)) Consts.DEFAULT_AI_PROMPT_REMOTE_URL else value.trim()
+            putString(Consts.PREF_AI_PROMPT_REMOTE_URL, normalized)
+        }
     var aiRemoteSystemPrompt by stringPreference(Consts.PREF_AI_REMOTE_SYSTEM_PROMPT, "")
     var aiOverrideSystemPrompt by booleanPreference(Consts.PREF_AI_OVERRIDE_SYSTEM_PROMPT, false)
     var showHostAppFab by booleanPreference(Consts.PREF_SHOW_HOST_APP_FAB, true)
@@ -337,7 +349,11 @@ class PreferencesManager(
                 }
                 val remoteUrlInStorage = localPrefs.getString(Consts.PREF_AI_PROMPT_REMOTE_URL, "") ?: ""
                 if (remoteUrlInStorage.isNotBlank()) {
-                    aiPromptRemoteUrl = remoteUrlInStorage
+                    aiPromptRemoteUrl = if (isLegacyRemotePromptUrl(remoteUrlInStorage)) {
+                        Consts.DEFAULT_AI_PROMPT_REMOTE_URL
+                    } else {
+                        remoteUrlInStorage
+                    }
                 }
                 val remotePromptInStorage = localPrefs.getString(Consts.PREF_AI_REMOTE_SYSTEM_PROMPT, "") ?: ""
                 if (remotePromptInStorage.isNotBlank()) {
@@ -574,5 +590,15 @@ class PreferencesManager(
         themeModeString = settings.themeMode
         themeColor = settings.themeColor
         saveToFallbackStorageAsync(ctx)
+    }
+
+    companion object {
+        fun isLegacyRemotePromptUrl(url: String): Boolean {
+            val trimmed = url.trim()
+            return trimmed.isBlank() ||
+                trimmed == Consts.LEGACY_AI_PROMPT_REMOTE_URL ||
+                (trimmed.contains("githubusercontent.com/s1ddhants1/unhinge") &&
+                    (trimmed.endsWith("opener_template.md") || trimmed.contains("/app/src/main/assets/prompts/")))
+        }
     }
 }

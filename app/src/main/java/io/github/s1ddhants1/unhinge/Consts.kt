@@ -74,6 +74,7 @@ object Consts {
     const val ZEN_BREW_FORMULA_URL = "https://formulae.brew.sh/api/formula/opencode.json"
     const val ZEN_MODELS_URL = "https://opencode.ai/inference/openai/v1/models"
     const val DEFAULT_AI_PROMPT_REMOTE_URL = "https://raw.githubusercontent.com/s1ddhants1/unhinge/main/prompts/system_prompt_template.md"
+    const val LEGACY_AI_PROMPT_REMOTE_URL = "https://raw.githubusercontent.com/s1ddhants1/unhinge/main/prompts/opener_template.md"
 
     const val DEFAULT_THEME_COLOR = 0xFFED5564L
     const val DEFAULT_AI_TEMPERATURE = 0.85f
