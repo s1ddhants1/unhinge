@@ -182,4 +182,6 @@ dependencies {
     implementation(libs.bundles.compose)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
+
+    testImplementation(libs.junit)
 }

@@ -43,6 +43,15 @@ object AiProviderPresets {
         AiModelInfo("deepseek/deepseek-v4-flash", inputUsdPerMTok = 0.14, outputUsdPerMTok = 0.28),
     )
 
+    // OpenCode Zen offline fallback model catalog
+    val openCodeOfflineModels = listOf(
+        AiModelInfo("big-pickle", name = "Big Pickle", inputUsdPerMTok = 0.0, outputUsdPerMTok = 0.0, contextLength = 200000),
+        AiModelInfo("deepseek-v4.1-flash-free", name = "DeepSeek v4.1 Flash Free", inputUsdPerMTok = 0.0, outputUsdPerMTok = 0.0, contextLength = 200000),
+        AiModelInfo("mimo-v2.6-flash-free", name = "MiMo v2.6 Flash Free", inputUsdPerMTok = 0.0, outputUsdPerMTok = 0.0, contextLength = 200000),
+        AiModelInfo("longcat-2.5-free", name = "LongCat 2.5 Free", inputUsdPerMTok = 0.0, outputUsdPerMTok = 0.0, contextLength = 1000000),
+        AiModelInfo("nemotron-3.5-lightning-free", name = "Nemotron 3.5 Lightning Free", inputUsdPerMTok = 0.0, outputUsdPerMTok = 0.0, contextLength = 262144),
+    )
+
     val all: List<AiProviderPreset> = listOf(
         AiProviderPreset(
             "OpenRouter",
@@ -57,7 +66,7 @@ object AiProviderPresets {
             "OpenCodeZen",
             AiProviderGroup.GATEWAY,
             endpoint = "https://opencode.ai/zen/v1/chat/completions",
-            defaultModel = "deepseek-v4-flash",
+            defaultModel = "big-pickle",
             modelsDevId = "opencode",
             publicModelList = true,
             mixedProtocols = true,
@@ -198,11 +207,16 @@ object AiProviderPresets {
             baseUrl
         }
 
+    fun isFreeModel(model: String): Boolean {
+        val lower = model.lowercase(java.util.Locale.US)
+        return lower.endsWith(":free") || lower.endsWith("-free") || lower == "big-pickle"
+    }
+
     fun isApiKeyRequired(provider: String, model: String = ""): Boolean {
         val norm = normalizeProvider(provider)
         return when (norm) {
             "OpenCodeZen", "OpenCodeGo" -> false
-            "OpenRouter" -> !model.endsWith(":free")
+            "OpenRouter" -> !isFreeModel(model)
             else -> true
         }
     }

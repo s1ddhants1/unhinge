@@ -79,6 +79,9 @@ class AiModelCatalog(
                 if (result.isNullOrEmpty() && preset.id == "OpenRouter" && fromApi?.isSuccess != true) {
                     result = filterAndSort(AiProviderPresets.openRouterOfflineModels)
                 }
+                if (result.isNullOrEmpty() && (preset.id == "OpenCodeZen" || preset.id == "OpenCodeGo") && fromApi?.isSuccess != true) {
+                    result = filterAndSort(AiProviderPresets.openCodeOfflineModels)
+                }
 
                 if (result == null) {
                     return@withContext Result.failure(fromApi?.exceptionOrNull() ?: IllegalStateException("No model list available"))
@@ -120,7 +123,7 @@ class AiModelCatalog(
         val ids = lock.withLock { availableIds[cacheKey(preset, apiKey, effectiveBaseUrl)] } ?: return savedModel
         if (ids.isEmpty() || savedModel in ids) return savedModel
         val candidates = models.filter { it.id in ids }
-        return defaultModel(preset, candidates, freeOnly = savedModel.endsWith(":free")) ?: savedModel
+        return defaultModel(preset, candidates, freeOnly = AiProviderPresets.isFreeModel(savedModel)) ?: savedModel
     }
 
     suspend fun throughput(modelId: String): Double? = withContext(Dispatchers.IO) {
@@ -168,21 +171,25 @@ class AiModelCatalog(
 
         return try {
             val reqBuilder = Request.Builder().url(url).get()
-            if (preset.id == "OpenRouter" || url.contains("openrouter.ai")) {
-                reqBuilder.header("HTTP-Referer", "https://github.com/s1ddhants1/unhinge")
-                reqBuilder.header("X-Title", "Unhinge")
-            }
-            if (apiKey.isNotBlank()) {
-                when (preset.protocol) {
-                    AiProtocol.ANTHROPIC -> {
-                        reqBuilder.header("x-api-key", apiKey.trim())
-                        reqBuilder.header("anthropic-version", "2023-06-01")
-                    }
-                    AiProtocol.GEMINI -> {
-                        reqBuilder.header("x-goog-api-key", apiKey.trim())
-                    }
-                    AiProtocol.OPENAI -> {
-                        reqBuilder.header("Authorization", "Bearer ${apiKey.trim()}")
+            if (OpenCodeEmulation.isOpenCode(preset.id, url)) {
+                OpenCodeEmulation.injectHeaders(reqBuilder, apiKey)
+            } else {
+                if (preset.id == "OpenRouter" || url.contains("openrouter.ai")) {
+                    reqBuilder.header("HTTP-Referer", "https://github.com/s1ddhants1/unhinge")
+                    reqBuilder.header("X-Title", "Unhinge")
+                }
+                if (apiKey.isNotBlank()) {
+                    when (preset.protocol) {
+                        AiProtocol.ANTHROPIC -> {
+                            reqBuilder.header("x-api-key", apiKey.trim())
+                            reqBuilder.header("anthropic-version", "2023-06-01")
+                        }
+                        AiProtocol.GEMINI -> {
+                            reqBuilder.header("x-goog-api-key", apiKey.trim())
+                        }
+                        AiProtocol.OPENAI -> {
+                            reqBuilder.header("Authorization", "Bearer ${apiKey.trim()}")
+                        }
                     }
                 }
             }
@@ -284,12 +291,19 @@ class AiModelCatalog(
                 .mapNotNull { entry ->
                     val id = entry.string("id") ?: return@mapNotNull null
                     val pricing = entry["pricing"] as? JsonObject
+                    val costText = (entry["cost"] as? JsonObject)?.get("text") as? JsonObject
+                    val inputCost = pricing?.number("prompt")?.times(1_000_000)
+                        ?: (costText?.get("input") as? JsonObject)?.number("price")
+                    val outputCost = pricing?.number("completion")?.times(1_000_000)
+                        ?: (costText?.get("output") as? JsonObject)?.number("price")
+                    val contextLength = entry["context_length"]?.jsonPrimitive?.intOrNull
+                        ?: (entry["limit"] as? JsonObject)?.get("context")?.jsonPrimitive?.intOrNull
                     AiModelInfo(
                         id = id,
                         name = entry.string("name") ?: id,
-                        inputUsdPerMTok = pricing?.number("prompt")?.times(1_000_000),
-                        outputUsdPerMTok = pricing?.number("completion")?.times(1_000_000),
-                        contextLength = entry["context_length"]?.jsonPrimitive?.intOrNull,
+                        inputUsdPerMTok = inputCost,
+                        outputUsdPerMTok = outputCost,
+                        contextLength = contextLength,
                     )
                 }
 
@@ -349,7 +363,8 @@ class AiModelCatalog(
         private fun JsonObject.number(key: String): Double? = (this[key] as? JsonPrimitive)?.doubleOrNull
 
         private fun JsonObject.modalities(key: String): List<String> =
-            ((this["architecture"] as? JsonObject)?.get("${key}_modalities") as? JsonArray)
+            ((this["architecture"] as? JsonObject)?.get("${key}_modalities") as? JsonArray
+                ?: (this["modalities"] as? JsonObject)?.get(key) as? JsonArray)
                 ?.mapNotNull { it.jsonPrimitive.contentOrNull }
                 .orEmpty()
 
@@ -358,8 +373,12 @@ class AiModelCatalog(
             models: List<AiModelInfo>,
             freeOnly: Boolean = false,
         ): String? {
-            val candidates = filterAndSort(models).filter { !freeOnly || (it.free && it.id.endsWith(":free")) }
-            val preferred = if (freeOnly) AiProviderPresets.FREE_AI_MODEL else preset.defaultModel
+            val candidates = filterAndSort(models).filter { !freeOnly || (it.free && AiProviderPresets.isFreeModel(it.id)) }
+            val preferred = if (freeOnly) {
+                if (preset.id == "OpenCodeZen") "big-pickle" else AiProviderPresets.FREE_AI_MODEL
+            } else {
+                preset.defaultModel
+            }
             return candidates.firstOrNull { it.id == preferred }?.id ?: candidates.firstOrNull()?.id
         }
 
@@ -410,7 +429,7 @@ class AiModelCatalog(
             val endpoints = entry["endpoints"] as? JsonArray
             if (endpoints != null && endpoints.none { it.jsonPrimitive.contentOrNull?.endsWith("/chat/completions") == true }) return false
             if (input.isEmpty() && output.isEmpty()) return !requireMetadata
-            return input.contains("text") && output == listOf("text")
+            return input.contains("text") && (output.contains("text") || output.isEmpty())
         }
     }
 }

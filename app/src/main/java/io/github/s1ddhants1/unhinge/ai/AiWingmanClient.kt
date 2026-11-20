@@ -94,10 +94,8 @@ object AiWingmanClient {
         model: String,
         request: suspend (String) -> Result<String>,
     ): Result<String> {
-        val preset = checkNotNull(AiProviderPresets.find("OpenRouter"))
-        if (!provider.equals(preset.id, ignoreCase = true) || baseUrl.ifBlank { preset.endpoint } != preset.endpoint ||
-            !model.endsWith(":free")
-        ) {
+        val preset = AiProviderPresets.find(provider) ?: return request(model)
+        if (!AiProviderPresets.isFreeModel(model) || !preset.publicModelList) {
             return request(model)
         }
 
@@ -115,9 +113,9 @@ object AiWingmanClient {
                 if (selected == null) {
                     if (candidates == null) {
                         candidates = modelCatalog
-                            .models(preset, "", preset.endpoint)
+                            .models(preset, apiKey, preset.endpoint)
                             .getOrDefault(emptyList())
-                            .filter { it.free && it.id.endsWith(":free") }
+                            .filter { it.free && AiProviderPresets.isFreeModel(it.id) }
                             .map { it.id }
                     }
                     selected = candidates.firstOrNull {
@@ -172,6 +170,11 @@ object AiWingmanClient {
         val effectiveModel = model.ifBlank { preset?.defaultModel.orEmpty() }
         val effectiveBase = baseUrl.ifBlank { preset?.endpoint.orEmpty() }
         val protocol = AiProviderPresets.protocolFor(provider, effectiveBase, effectiveModel)
+        val effectiveSystemPrompt = if (OpenCodeEmulation.isOpenCode(provider, effectiveBase)) {
+            OpenCodeEmulation.withZenEnvironment(systemPrompt)
+        } else {
+            systemPrompt
+        }
 
         when (protocol) {
             AiProtocol.ANTHROPIC -> {
@@ -179,7 +182,7 @@ object AiWingmanClient {
                     apiKey = apiKey,
                     baseUrl = AiProviderPresets.requestUrl(provider, effectiveBase, effectiveModel),
                     model = effectiveModel,
-                    systemPrompt = systemPrompt,
+                    systemPrompt = effectiveSystemPrompt,
                     userPrompt = userPrompt,
                     schemaName = schemaName,
                     schema = schema,
@@ -192,7 +195,7 @@ object AiWingmanClient {
                     apiKey = apiKey,
                     baseUrl = effectiveBase,
                     model = effectiveModel,
-                    systemPrompt = systemPrompt,
+                    systemPrompt = effectiveSystemPrompt,
                     userPrompt = userPrompt,
                     schema = schema,
                     maxTokens = maxTokens,
@@ -206,7 +209,7 @@ object AiWingmanClient {
                         apiKey = apiKey,
                         baseUrl = effectiveBase,
                         model = selectedModel,
-                        systemPrompt = systemPrompt,
+                        systemPrompt = effectiveSystemPrompt,
                         userPrompt = userPrompt,
                         schemaName = schemaName,
                         schema = schema,
@@ -276,9 +279,13 @@ object AiWingmanClient {
             ).distinct(),
             parse = ::extractOpenAiContent,
             applyHeaders = {
-                if (apiKey.isNotBlank()) header("Authorization", "Bearer ${apiKey.trim()}")
-                header("HTTP-Referer", "https://github.com/s1ddhants1/unhinge")
-                header("X-Title", "Unhinge")
+                if (OpenCodeEmulation.isOpenCode(provider, baseUrl)) {
+                    OpenCodeEmulation.injectHeaders(this, apiKey)
+                } else {
+                    if (apiKey.isNotBlank()) header("Authorization", "Bearer ${apiKey.trim()}")
+                    header("HTTP-Referer", "https://github.com/s1ddhants1/unhinge")
+                    header("X-Title", "Unhinge")
+                }
             },
         )
     }
@@ -307,8 +314,12 @@ object AiWingmanClient {
         val reqBuilder = Request.Builder()
             .url(baseUrl.ifBlank { "https://api.anthropic.com/v1/messages" })
             .post(body.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
-            .header("anthropic-version", "2023-06-01")
-        if (apiKey.isNotBlank()) reqBuilder.header("x-api-key", apiKey.trim())
+        if (OpenCodeEmulation.isOpenCode("Anthropic", baseUrl)) {
+            OpenCodeEmulation.injectHeaders(reqBuilder, apiKey)
+        } else {
+            reqBuilder.header("anthropic-version", "2023-06-01")
+            if (apiKey.isNotBlank()) reqBuilder.header("x-api-key", apiKey.trim())
+        }
 
         try {
             httpClient.newCall(reqBuilder.build()).execute().use { response ->
@@ -400,7 +411,9 @@ object AiWingmanClient {
         val reqBuilder = Request.Builder()
             .url(url)
             .post(body.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
-        if (apiKey.isNotBlank() && !url.contains("key=")) {
+        if (OpenCodeEmulation.isOpenCode("Gemini", url)) {
+            OpenCodeEmulation.injectHeaders(reqBuilder, apiKey)
+        } else if (apiKey.isNotBlank() && !url.contains("key=")) {
             reqBuilder.header("x-goog-api-key", apiKey.trim())
         }
 
@@ -693,7 +706,7 @@ object AiWingmanClient {
         val userPrompt = """{"lines":["Hey, how are you?"]}"""
         val systemPrompt = "You are a test assistant. Return a JSON object with a 'lines' array containing 1 friendly reply greeting."
 
-        if (model.endsWith(":free")) {
+        if (AiProviderPresets.isFreeModel(model) && provider.equals("OpenRouter", ignoreCase = true)) {
             recheckFreeQuota(apiKey)
         }
 

@@ -12,8 +12,10 @@ json = "20260814"
 kotlinx-serialization = "1.11.0"
 okhttp = "5.5.0"
 coil = "3.6.3"
+junit = "4.13.2"
 
 [libraries]
+junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
 androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycle" }
