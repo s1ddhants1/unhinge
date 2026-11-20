@@ -69,7 +69,7 @@ fun classifyAiHttpFailure(
     val choice = (root?.get("choices") as? JsonArray)?.firstOrNull() as? JsonObject
     val error = (root?.get("error") ?: choice?.get("error")) as? JsonObject
     val metadata = error?.get("metadata") as? JsonObject
-    val type = ((metadata?.get("error_type") ?: error?.get("error_type")) as? JsonPrimitive)?.contentOrNull
+    val type = ((metadata?.get("error_type") ?: error?.get("error_type") ?: error?.get("type") ?: root?.get("type")) as? JsonPrimitive)?.contentOrNull
     val message = (error?.get("message") as? JsonPrimitive)?.contentOrNull.orEmpty().lowercase()
     val code = (error?.get("code") as? JsonPrimitive)?.intOrNull ?: statusCode
 
@@ -77,15 +77,15 @@ fun classifyAiHttpFailure(
         "data policy" in message || "privacy settings" in message -> {
             AiFailure.DATA_POLICY
         }
-        type == "authentication" || code == 401 -> {
+        type in setOf("authentication", "authentication_error", "AuthError") || code == 401 -> {
             AiFailure.AUTHENTICATION
         }
-        type == "payment_required" || code == 402 -> {
+        type in setOf("payment_required", "InsufficientQuotaError") || code == 402 -> {
             AiFailure.CREDIT_LIMIT
         }
-        type == "rate_limit_exceeded" || code == 429 -> {
+        type in setOf("rate_limit_exceeded", "FreeUsageLimitError") || code == 429 -> {
             when {
-                "free-models-per-day" in message || "daily" in message || "per day" in message -> {
+                "free-models-per-day" in message || "daily" in message || "per day" in message || "free usage limit" in message -> {
                     AiFailure.FREE_DAILY_LIMIT
                 }
                 "free-models-per-min" in message || "per minute" in message -> {
