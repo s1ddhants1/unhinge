@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
@@ -21,32 +22,31 @@ import io.github.s1ddhants1.unhinge.ui.theme.AccentSuccess
 fun FrameworkStatusBanner(
     isConnected: Boolean,
     isInjectable: Boolean,
-    title: String,
-    desc: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    title: String = "",
+    desc: String = ""
 ) {
     val isActive = isConnected && isInjectable
 
     val containerBg = if (isActive) {
         MaterialTheme.colorScheme.surfaceContainer
     } else {
-        MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f)
+        MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f)
     }
 
     val statusAccent = if (isActive) AccentSuccess else MaterialTheme.colorScheme.error
 
     UnhingeDoubleBezelCard(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
+        modifier = modifier,
         shape = ShapeTokens.Card,
         containerColor = containerBg,
-        borderColor = if (isActive) null else MaterialTheme.colorScheme.error.copy(alpha = 0.4f)
+        borderColor = if (isActive) null else MaterialTheme.colorScheme.error.copy(alpha = 0.35f),
+        contentPadding = PaddingValues(vertical = 14.dp, horizontal = 12.dp)
     ) {
-        Row(
+        Column(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
         ) {
             Surface(
                 shape = CircleShape,
@@ -55,48 +55,22 @@ fun FrameworkStatusBanner(
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
-                        imageVector = if (isActive) Icons.Default.CheckCircle else Icons.Default.Warning,
-                        contentDescription = null,
+                        imageVector = if (isActive) Icons.Default.Extension else Icons.Default.Warning,
+                        contentDescription = "lsposed",
                         tint = statusAccent,
                         modifier = Modifier.size(20.dp)
                     )
                 }
             }
 
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.align(Alignment.CenterVertically)
-                    )
-                    UnhingeBadge(
-                        label = if (isActive) stringResource(R.string.banner_status_active) else stringResource(R.string.banner_status_degraded),
-                        containerColor = statusAccent.copy(alpha = 0.18f),
-                        contentColor = statusAccent,
-                        modifier = Modifier.align(Alignment.CenterVertically)
-                    )
-                }
+            Spacer(modifier = Modifier.height(6.dp))
 
-                if (desc.isNotBlank()) {
-                    Text(
-                        text = desc,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
+            Text(
+                text = "LSPosed",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
         }
     }
 }
@@ -118,29 +92,22 @@ fun RootStatusBanner(
         null -> Icons.Default.Shield
     }
 
-    val badgeLabel = when (isRootGranted) {
-        true -> stringResource(R.string.root_status_granted)
-        false -> stringResource(R.string.root_status_unavailable)
-        null -> stringResource(R.string.root_status_checking)
-    }
-
-    val desc = when (isRootGranted) {
-        true -> stringResource(R.string.root_desc_granted)
-        false -> stringResource(R.string.root_desc_unavailable)
-        null -> stringResource(R.string.root_desc_checking)
+    val containerBg = when (isRootGranted) {
+        false -> MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.6f)
+        else -> MaterialTheme.colorScheme.surfaceContainer
     }
 
     UnhingeDoubleBezelCard(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
+        modifier = modifier,
         shape = ShapeTokens.Card,
-        containerColor = MaterialTheme.colorScheme.surfaceContainer
+        containerColor = containerBg,
+        borderColor = if (isRootGranted == false) MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f) else null,
+        contentPadding = PaddingValues(vertical = 14.dp, horizontal = 12.dp)
     ) {
-        Row(
+        Column(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
         ) {
             Surface(
                 shape = CircleShape,
@@ -150,53 +117,22 @@ fun RootStatusBanner(
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
                         imageVector = icon,
-                        contentDescription = null,
+                        contentDescription = "Root",
                         tint = statusAccent,
                         modifier = Modifier.size(20.dp)
                     )
                 }
             }
 
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        text = stringResource(R.string.root_access_title),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.align(Alignment.CenterVertically)
-                    )
-                    UnhingeBadge(
-                        label = badgeLabel,
-                        containerColor = when (isRootGranted) {
-                            true -> AccentSuccess.copy(alpha = 0.18f)
-                            false -> MaterialTheme.colorScheme.surfaceContainerHighest
-                            null -> MaterialTheme.colorScheme.surfaceContainerHighest
-                        },
-                        contentColor = when (isRootGranted) {
-                            true -> AccentSuccess
-                            false -> MaterialTheme.colorScheme.onSurfaceVariant
-                            null -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                        },
-                        modifier = Modifier.align(Alignment.CenterVertically)
-                    )
-                }
+            Spacer(modifier = Modifier.height(6.dp))
 
-                Text(
-                    text = desc,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
+            Text(
+                text = "Root",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
         }
     }
 }
+

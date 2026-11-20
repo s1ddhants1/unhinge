@@ -55,12 +55,12 @@ private fun getResetCountdown(): String {
 fun TelemetryScreen(
     data: CompleteHingeData,
     modifier: Modifier = Modifier,
-    isRefreshing: Boolean = false
+    isRefreshing: Boolean = false,
+    headerContent: (@Composable () -> Unit)? = null
 ) {
     val t = data.telemetry
     val inLikes = data.incomingLikes
     val behavior = data.behaviorMetrics
-    val playerPhoto = data.playerMedia.firstOrNull { it.photoUrl.isNotBlank() }?.photoUrl
 
     var countdownText by remember { mutableStateOf(getResetCountdown()) }
     LaunchedEffect(Unit) {
@@ -71,7 +71,10 @@ fun TelemetryScreen(
     }
 
     if (isRefreshing && data.telemetry.identityId.isBlank() && data.candidates.isEmpty()) {
-        TelemetrySkeleton(modifier = modifier)
+        TelemetrySkeleton(
+            modifier = modifier,
+            headerContent = headerContent
+        )
         return
     }
 
@@ -82,105 +85,8 @@ fun TelemetryScreen(
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-
-        UnhingeDoubleBezelCard(
-            modifier = Modifier.fillMaxWidth(),
-            shape = ShapeTokens.Card,
-            containerColor = MaterialTheme.colorScheme.surfaceContainer
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-
-                        val initial = t.firstName.firstOrNull()?.uppercase() ?: "H"
-                        Surface(
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.primaryContainer,
-                            modifier = Modifier.size(46.dp)
-                        ) {
-                            if (!playerPhoto.isNullOrBlank()) {
-                                SubcomposeAsyncImage(
-                                    model = playerPhoto,
-                                    contentDescription = stringResource(R.string.cd_profile_photo),
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .clip(CircleShape),
-                                    loading = {
-                                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                            CircularProgressIndicator(
-                                                modifier = Modifier.size(18.dp),
-                                                strokeWidth = 2.dp,
-                                                color = MaterialTheme.colorScheme.primary
-                                            )
-                                        }
-                                    },
-                                    error = {
-                                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                            Text(
-                                                text = initial,
-                                                style = MaterialTheme.typography.titleMedium,
-                                                fontWeight = FontWeight.Bold,
-                                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                                            )
-                                        }
-                                    }
-                                )
-                            } else {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Text(
-                                        text = initial,
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                                    )
-                                }
-                            }
-                        }
-
-                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text(
-                                text = if (t.firstName.isNotBlank()) t.firstName else stringResource(R.string.telemetry_account_fallback),
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = if (t.metroArea.isNotBlank()) "${t.metroArea} (${t.billingCountryCode})" else stringResource(R.string.telemetry_account_local),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-
-                    if (t.isAccountPaused) {
-                        UnhingeBadge(
-                            label = stringResource(R.string.telemetry_badge_paused),
-                            icon = Icons.Default.PauseCircle,
-                            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
-                            contentColor = MaterialTheme.colorScheme.error,
-                            showPulseDot = false
-                        )
-                    }
-                }
-
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    MetaLabelValue(stringResource(R.string.telemetry_meta_created), formatDate(t.createdTimestamp))
-                    MetaLabelValue(stringResource(R.string.telemetry_meta_synced), formatDate(t.lastHingeSync))
-                }
-            }
+        if (headerContent != null) {
+            headerContent()
         }
 
         UnhingeDoubleBezelCard(
@@ -559,19 +465,19 @@ private fun InboundTypePill(
 }
 
 @Composable
-private fun TelemetrySkeleton(modifier: Modifier = Modifier) {
+private fun TelemetrySkeleton(
+    modifier: Modifier = Modifier,
+    headerContent: (@Composable () -> Unit)? = null
+) {
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        SkeletonBox(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(160.dp),
-            shape = RoundedCornerShape(18.dp)
-        )
+        if (headerContent != null) {
+            headerContent()
+        }
         SkeletonBox(
             modifier = Modifier
                 .fillMaxWidth()

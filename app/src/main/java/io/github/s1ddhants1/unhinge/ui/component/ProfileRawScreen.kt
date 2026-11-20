@@ -27,11 +27,16 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil3.compose.SubcomposeAsyncImage
 import io.github.s1ddhants1.unhinge.model.CompleteHingeData
 import io.github.s1ddhants1.unhinge.model.PlayerAnswerItem
 import io.github.s1ddhants1.unhinge.model.PlayerMediaItem
 import io.github.s1ddhants1.unhinge.ui.theme.AccentSuccess
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun ProfileRawScreen(
@@ -48,6 +53,8 @@ fun ProfileRawScreen(
     val copyPhotoUrlLabel = stringResource(R.string.copy_photo_url)
     val copyPromptAnswerLabel = stringResource(R.string.copy_prompt_answer)
 
+    val playerPhoto = data.playerMedia.firstOrNull { it.photoUrl.isNotBlank() }?.photoUrl
+
     fun copy(label: String, text: String) {
         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         cm.setPrimaryClip(ClipData.newPlainText(label, text))
@@ -61,6 +68,106 @@ fun ProfileRawScreen(
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+
+        UnhingeDoubleBezelCard(
+            modifier = Modifier.fillMaxWidth(),
+            shape = ShapeTokens.Card,
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+
+                        val initial = t.firstName.firstOrNull()?.uppercase() ?: "H"
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            modifier = Modifier.size(46.dp)
+                        ) {
+                            if (!playerPhoto.isNullOrBlank()) {
+                                SubcomposeAsyncImage(
+                                    model = playerPhoto,
+                                    contentDescription = stringResource(R.string.cd_profile_photo),
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .clip(CircleShape),
+                                    loading = {
+                                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(18.dp),
+                                                strokeWidth = 2.dp,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                    },
+                                    error = {
+                                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                            Text(
+                                                text = initial,
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                                            )
+                                        }
+                                    }
+                                )
+                            } else {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text(
+                                        text = initial,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                }
+                            }
+                        }
+
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                text = if (t.firstName.isNotBlank()) t.firstName else stringResource(R.string.telemetry_account_fallback),
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = if (t.metroArea.isNotBlank()) "${t.metroArea} (${t.billingCountryCode})" else stringResource(R.string.telemetry_account_local),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    if (t.isAccountPaused) {
+                        UnhingeBadge(
+                            label = stringResource(R.string.telemetry_badge_paused),
+                            icon = Icons.Default.PauseCircle,
+                            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
+                            contentColor = MaterialTheme.colorScheme.error,
+                            showPulseDot = false
+                        )
+                    }
+                }
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    MetaLabelValue(stringResource(R.string.telemetry_meta_created), formatDate(t.createdTimestamp))
+                    MetaLabelValue(stringResource(R.string.telemetry_meta_synced), formatDate(t.lastHingeSync))
+                }
+            }
+        }
 
         UnhingeDoubleBezelCard(
             modifier = Modifier.fillMaxWidth(),
@@ -376,3 +483,31 @@ private fun ProfileSectionHeader(title: String, badgeText: String) {
         }
     }
 }
+
+@Composable
+private fun MetaLabelValue(label: String, value: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+    }
+}
+
+private fun formatDate(timestamp: Long): String {
+    if (timestamp <= 0) return "N/A"
+    return try {
+        val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+        sdf.format(Date(timestamp))
+    } catch (e: Exception) {
+        "N/A"
+    }
+}
+

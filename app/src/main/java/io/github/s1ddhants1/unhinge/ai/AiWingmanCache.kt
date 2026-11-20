@@ -12,8 +12,9 @@ object AiWingmanCache {
         temperature: Float,
         topP: Float,
         directionalStimulus: String = "",
+        template: String = "",
     ): String =
-        "${text.hashCode()}_${profileBlock.hashCode()}_${systemPrompt.hashCode()}_${temperature}_${topP}_${directionalStimulus.hashCode()}"
+        "${text.hashCode()}_${profileBlock.hashCode()}_${systemPrompt.hashCode()}_${template.hashCode()}_${temperature}_${topP}_${directionalStimulus.hashCode()}"
 
     fun get(key: String): List<String>? = replyCache[key]
 

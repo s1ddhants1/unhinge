@@ -10,7 +10,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -55,44 +54,8 @@ object AiWingmanHelper {
         }
     }
 
-    fun isApiKeyRequired(provider: String, model: String): Boolean =
-        LlmProtocolRouter.isApiKeyRequired(provider, model)
-
-    fun resolveEffectiveEndpoint(
-        provider: String,
-        apiKey: String,
-        baseUrl: String,
-        model: String,
-    ): Triple<LlmProtocol, String, String> =
-        LlmProtocolRouter.resolveEffectiveEndpoint(provider, apiKey, baseUrl, model)
-
-    fun streamCustomChat(
-        userPrompt: String,
-        systemPrompt: String,
-        apiKey: String,
-        baseUrl: String,
-        model: String,
-        provider: String,
-        temperature: Float = Consts.DEFAULT_AI_TEMPERATURE,
-        topP: Float = Consts.DEFAULT_AI_TOP_P,
-        reasoningEffort: String = Consts.DEFAULT_AI_REASONING_EFFORT,
-    ): Flow<OpenRouterStreamingService.ChatStreamChunk> {
-        val (protocol, effectiveBaseUrl, effectiveModel) =
-            resolveEffectiveEndpoint(provider, apiKey, baseUrl, model)
-        val client = LlmClientRegistry.getClient(protocol)
-        return client.streamChat(
-            ChatLlmRequest(
-                userPrompt = userPrompt,
-                systemPrompt = systemPrompt,
-                apiKey = apiKey,
-                baseUrl = effectiveBaseUrl,
-                model = effectiveModel,
-                temperature = temperature,
-                topP = topP,
-                reasoningEffort = reasoningEffort,
-            ),
-        )
-    }
+    fun isApiKeyRequired(provider: String, model: String = ""): Boolean =
+        AiProviderPresets.isApiKeyRequired(provider, model)
 
     fun steerOpener(
         entry: PromptEntry,
@@ -129,39 +92,33 @@ object AiWingmanHelper {
         entry.addFollowUpAssistantMessage("")
 
         scope.launch(Dispatchers.IO) {
-            val contentAccumulator = StringBuilder()
             try {
-                streamCustomChat(
-                    userPrompt = userPrompt,
-                    systemPrompt = systemPrompt,
+                val result = AiWingmanClient.requestStructuredAi(
+                    provider = provider,
                     apiKey = apiKey,
                     baseUrl = baseUrl,
                     model = model,
-                    provider = provider,
-                    temperature = temperature,
-                    topP = topP,
+                    systemPrompt = systemPrompt,
+                    userPrompt = userPrompt,
+                    temperature = temperature.toDouble(),
+                    topP = topP.toDouble(),
                     reasoningEffort = reasoningEffort,
-                ).collect { chunk ->
-                    when (chunk) {
-                        is OpenRouterStreamingService.ChatStreamChunk.Content -> {
-                            contentAccumulator.append(chunk.text)
-                            entry.updateLastAssistantMessage(contentAccumulator.toString())
-                        }
-                        is OpenRouterStreamingService.ChatStreamChunk.Complete -> {
-                            val finalReply = (chunk.fullText.ifBlank { contentAccumulator.toString() })
-                                .trim()
-                                .removeSurrounding("\"")
-                            entry.updateLastAssistantMessage(finalReply)
-                            entry.addReply(finalReply, selectNew = true)
-                            entry.isSteeringFlow.value = false
-                            onComplete?.invoke(finalReply)
-                        }
-                        is OpenRouterStreamingService.ChatStreamChunk.Error -> {
-                            entry.updateLastAssistantMessage("Error: ${chunk.message}")
-                            entry.isSteeringFlow.value = false
-                        }
+                )
+                result.fold(
+                    onSuccess = { raw ->
+                        val lines = AiWingmanClient.parseJsonLinesPayload(raw)
+                        val reply = lines?.firstOrNull() ?: raw.trim().removeSurrounding("\"")
+                        entry.updateLastAssistantMessage(reply)
+                        entry.addReply(reply, selectNew = true)
+                        entry.isSteeringFlow.value = false
+                        onComplete?.invoke(reply)
+                    },
+                    onFailure = { error ->
+                        val errorMsg = error.aiFailure().userFriendlyMessage(context)
+                        entry.updateLastAssistantMessage("Error: $errorMsg")
+                        entry.isSteeringFlow.value = false
                     }
-                }
+                )
             } catch (e: Exception) {
                 entry.updateLastAssistantMessage("Error: ${e.message ?: "Failed to steer opener"}")
                 entry.isSteeringFlow.value = false
@@ -175,7 +132,6 @@ object AiWingmanHelper {
         } catch (_: Throwable) {
             fallback
         }
-
 
     fun generateReplies(
         prompts: List<PromptEntry>,
@@ -208,19 +164,10 @@ object AiWingmanHelper {
         generationJob = scope.launch(Dispatchers.IO) {
             try {
                 if (isApiKeyRequired(provider, model) && apiKey.isBlank()) {
-                    val err = if (provider.equals("Zen", ignoreCase = true)) {
-                        safeErrorString(context, R.string.ai_error_zen_paid_key_required, "An API key is required for paid Zen models. Switch to a free model or set an API key in Settings.")
-                    } else {
-                        safeErrorString(context, R.string.ai_error_api_key_required, "API key is required")
-                    }
+                    val err = safeErrorString(context, R.string.ai_error_api_key_required, "API key is required")
                     _status.value = WingmanStatus.Error(err)
                     return@launch
                 }
-
-                val (protocol, effectiveBaseUrl, effectiveModel) =
-                    resolveEffectiveEndpoint(provider, apiKey, baseUrl, model)
-
-                Timber.d("generateReplies: protocol=${protocol.wireId}, baseUrl=$effectiveBaseUrl, model=$effectiveModel, keyLen=${apiKey.length}, forceRefresh=$forceRefresh, vibe=$directionalStimulus")
 
                 if (prompts.isEmpty()) {
                     _status.value = WingmanStatus.Error(safeErrorString(context, R.string.ai_error_no_prompts, "No prompts available"))
@@ -237,7 +184,16 @@ object AiWingmanHelper {
                 }
 
                 val fullText = nonEmptyEntries.joinToString("\n") { it.second.text }
-                val cacheKey = AiWingmanCache.createKey(fullText, profileBlock, systemPrompt, temperature, topP, directionalStimulus)
+                val effectiveTemplate = PromptRepository.getEffectiveSystemPromptTemplate(prefs, context)
+                val cacheKey = AiWingmanCache.createKey(
+                    text = fullText,
+                    profileBlock = profileBlock,
+                    systemPrompt = systemPrompt,
+                    temperature = temperature,
+                    topP = topP,
+                    directionalStimulus = directionalStimulus,
+                    template = effectiveTemplate,
+                )
 
                 if (!forceRefresh) {
                     val cachedReplies = AiWingmanCache.get(cacheKey)
@@ -260,131 +216,76 @@ object AiWingmanHelper {
                 }
 
                 val avoidReplies = if (prompts.size == 1) prompts[0].repliesFlow.value else emptyList()
-
-                val llmRequest = WingmanLlmRequest(
+                val effectiveSystemPrompt = WingmanPrompts.systemPrompt(
+                    lineCount = nonEmptyEntries.size,
+                    custom = systemPrompt.ifBlank { prefs?.aiCustomSystemPrompt.orEmpty() },
+                    prefs = prefs,
+                    context = context,
+                )
+                val userPrompt = WingmanPrompts.openerUserPrompt(
                     text = fullText,
-                    apiKey = apiKey,
-                    baseUrl = effectiveBaseUrl,
-                    model = effectiveModel,
-                    customSystemPrompt = systemPrompt,
                     profileBlock = profileBlock,
                     avoidReplies = avoidReplies,
-                    temperature = temperature,
-                    topP = topP,
-                    reasoningEffort = reasoningEffort,
+                    prefs = prefs,
+                    context = context,
                     directionalStimulus = directionalStimulus,
                     promptCount = nonEmptyEntries.size,
                 )
 
-                val client = LlmClientRegistry.getClient(protocol)
-                val result = if (useStreaming && provider != "Custom") {
-                    Timber.d("Using streaming for wingman generation with provider: $provider")
-                    var generatedLines: List<String>? = null
-                    var hasError = false
-                    var errorMessage = ""
-                    val contentAccumulator = StringBuilder()
+                val result = AiWingmanClient.requestStructuredAi(
+                    provider = provider,
+                    apiKey = apiKey,
+                    baseUrl = baseUrl,
+                    model = model,
+                    systemPrompt = effectiveSystemPrompt,
+                    userPrompt = userPrompt,
+                    temperature = temperature.toDouble(),
+                    topP = topP.toDouble(),
+                    reasoningEffort = reasoningEffort,
+                )
 
-                    client.streamGeneration(llmRequest).collect { chunk ->
-                        when (chunk) {
-                            is OpenRouterStreamingService.StreamChunk.Content -> {
-                                contentAccumulator.append(chunk.text)
-                                val partialResult = tryParsePartialReplies(contentAccumulator.toString(), nonEmptyEntries.size)
-                                if (partialResult.isNotEmpty()) {
-                                    partialResult.forEachIndexed { idx, reply ->
-                                        if (idx < nonEmptyEntries.size && reply.isNotBlank()) {
-                                            val originalIndex = nonEmptyEntries[idx].first
-                                            prompts[originalIndex].suggestedReplyFlow.value = reply
-                                        }
+                result.fold(
+                    onSuccess = { raw ->
+                        if (!isCompositionActive) return@fold
+                        val replies = AiWingmanClient.parseJsonLinesPayload(raw)
+                            ?: tryParsePartialReplies(raw, nonEmptyEntries.size)
+                        if (!forceRefresh) {
+                            AiWingmanCache.put(cacheKey, replies)
+                        }
+                        val expectedCount = nonEmptyEntries.size
+                        when {
+                            replies.size >= expectedCount -> {
+                                nonEmptyEntries.forEachIndexed { idx, (_, entry) ->
+                                    entry.addReply(replies[idx], selectNew = true)
+                                }
+                                _hasActiveSuggestions.value = true
+                                _status.value = WingmanStatus.Success
+                            }
+                            replies.isNotEmpty() -> {
+                                replies.forEachIndexed { idx, reply ->
+                                    if (idx < nonEmptyEntries.size) {
+                                        val (_, entry) = nonEmptyEntries[idx]
+                                        entry.addReply(reply, selectNew = true)
                                     }
-                                    _status.value = WingmanStatus.Generating
                                 }
+                                _hasActiveSuggestions.value = true
+                                _status.value = WingmanStatus.Success
                             }
-                            is OpenRouterStreamingService.StreamChunk.Complete -> {
-                                Timber.d("Streaming complete with ${chunk.generatedLines.size} lines")
-                                generatedLines = chunk.generatedLines
-                            }
-                            is OpenRouterStreamingService.StreamChunk.Error -> {
-                                Timber.e("Streaming error: ${chunk.message}")
-                                hasError = true
-                                errorMessage = chunk.message
+                            else -> {
+                                _status.value = WingmanStatus.Error("Failed to parse reply suggestions")
                             }
                         }
-                    }
-
-                    if (hasError) {
-                        val isFreeTierRestriction = isFreeTierError(errorMessage) && effectiveModel != Consts.ZEN_DEFAULT_MODEL
-                        if (isFreeTierRestriction) {
-                            fallbackToDefaultFreeModel(context, prefs)
-                            val fallbackReq = llmRequest.copy(
-                                baseUrl = Consts.ZEN_DEFAULT_BASE_URL,
-                                model = Consts.ZEN_DEFAULT_MODEL,
-                            )
-                            OpenAiChatClient.generate(fallbackReq)
-                        } else if (isFallbackWorthy(errorMessage)) {
-                            Timber.d("Streaming failed transiently, falling back to non-streaming")
-                            client.generate(llmRequest)
-                        } else {
-                            Result.failure(Exception(errorMessage))
+                        delay(3000)
+                        if (_status.value is WingmanStatus.Success && isCompositionActive) {
+                            _status.value = WingmanStatus.Idle
                         }
-                    } else if (generatedLines != null) {
-                        Result.success(generatedLines)
-                    } else {
-                        Result.failure(Exception("No wingman response received"))
+                    },
+                    onFailure = { error ->
+                        if (!isCompositionActive) return@fold
+                        val errorMessage = error.aiFailure().userFriendlyMessage(context)
+                        _status.value = WingmanStatus.Error(errorMessage)
                     }
-                } else {
-                    Timber.d("Using non-streaming for wingman generation")
-                    val initialResult = client.generate(llmRequest)
-                    if (initialResult.isFailure) {
-                        val errMsg = initialResult.exceptionOrNull()?.message.orEmpty()
-                        if (isFreeTierError(errMsg) && effectiveModel != Consts.ZEN_DEFAULT_MODEL) {
-                            fallbackToDefaultFreeModel(context, prefs)
-                            val fallbackReq = llmRequest.copy(
-                                baseUrl = Consts.ZEN_DEFAULT_BASE_URL,
-                                model = Consts.ZEN_DEFAULT_MODEL,
-                            )
-                            OpenAiChatClient.generate(fallbackReq)
-                        } else {
-                            initialResult
-                        }
-                    } else {
-                        initialResult
-                    }
-                }
-
-                result.onSuccess { replies ->
-                    if (!isCompositionActive) return@onSuccess
-                    if (!forceRefresh) {
-                        AiWingmanCache.put(cacheKey, replies)
-                    }
-                    val expectedCount = nonEmptyEntries.size
-                    when {
-                        replies.size >= expectedCount -> {
-                            nonEmptyEntries.forEachIndexed { idx, (_, entry) ->
-                                entry.addReply(replies[idx], selectNew = true)
-                            }
-                            _hasActiveSuggestions.value = true
-                            _status.value = WingmanStatus.Success
-                        }
-                        replies.isNotEmpty() -> {
-                            replies.forEachIndexed { idx, reply ->
-                                if (idx < nonEmptyEntries.size) {
-                                    val (_, entry) = nonEmptyEntries[idx]
-                                    entry.addReply(reply, selectNew = true)
-                                }
-                            }
-                            _hasActiveSuggestions.value = true
-                            _status.value = WingmanStatus.Success
-                        }
-                    }
-                    delay(3000)
-                    if (_status.value is WingmanStatus.Success && isCompositionActive) {
-                        _status.value = WingmanStatus.Idle
-                    }
-                }.onFailure { error ->
-                    if (!isCompositionActive) return@onFailure
-                    val errorMessage = error.message ?: safeErrorString(context, R.string.ai_error_unknown, "An unknown error occurred")
-                    _status.value = WingmanStatus.Error(errorMessage)
-                }
+                )
             } catch (e: Exception) {
                 if (e !is CancellationException && isCompositionActive) {
                     val errorMessage = e.message ?: safeErrorString(context, R.string.ai_error_generation_failed, "Generation failed")
@@ -442,20 +343,28 @@ object AiWingmanHelper {
         generationJob = scope.launch(Dispatchers.IO) {
             try {
                 if (isApiKeyRequired(provider, model) && apiKey.isBlank()) {
-                    val err = if (provider.equals("Zen", ignoreCase = true)) {
-                        safeErrorString(context, R.string.ai_error_zen_paid_key_required, "An API key is required for paid Zen models. Switch to a free model or set an API key in Settings.")
-                    } else {
-                        safeErrorString(context, R.string.ai_error_api_key_required, "API key is required")
-                    }
+                    val err = safeErrorString(context, R.string.ai_error_api_key_required, "API key is required")
                     _status.value = WingmanStatus.Error(err)
                     return@launch
                 }
 
-                val (protocol, effectiveBaseUrl, effectiveModel) =
-                    resolveEffectiveEndpoint(provider, apiKey, baseUrl, model)
-
                 val historyText = formatConversationHistory(matchName, conversationHistory)
-                val cacheKey = AiWingmanCache.createKey("chat_${matchName}_${historyText.hashCode()}", profileBlock, directionalStimulus, temperature, topP)
+                val systemPrompt = WingmanPrompts.chatReplySystemPrompt(
+                    replyCount = prompts.size,
+                    custom = prefs?.aiCustomSystemPrompt.orEmpty(),
+                    prefs = prefs,
+                    context = context,
+                )
+                val effectiveTemplate = PromptRepository.getEffectiveChatReplyTemplate(prefs, context)
+                val cacheKey = AiWingmanCache.createKey(
+                    text = "chat_${matchName}_${historyText.hashCode()}",
+                    profileBlock = profileBlock,
+                    systemPrompt = systemPrompt,
+                    temperature = temperature,
+                    topP = topP,
+                    directionalStimulus = directionalStimulus,
+                    template = effectiveTemplate,
+                )
 
                 if (!forceRefresh) {
                     val cachedReplies = AiWingmanCache.get(cacheKey)
@@ -478,12 +387,6 @@ object AiWingmanHelper {
                 }
 
                 val avoidReplies = prompts.flatMap { it.repliesFlow.value }
-                val systemPrompt = WingmanPrompts.chatReplySystemPrompt(
-                    replyCount = prompts.size,
-                    custom = prefs?.aiCustomSystemPrompt.orEmpty(),
-                    prefs = prefs,
-                    context = context,
-                )
                 val userPrompt = WingmanPrompts.chatReplyUserPrompt(
                     matchName = matchName,
                     conversationHistoryText = historyText,
@@ -495,65 +398,47 @@ object AiWingmanHelper {
                     replyCount = prompts.size,
                 )
 
-                val contentAccumulator = StringBuilder()
-                var hasError = false
-                var errorMessage = ""
-
-                streamCustomChat(
-                    userPrompt = userPrompt,
-                    systemPrompt = systemPrompt,
-                    apiKey = apiKey,
-                    baseUrl = effectiveBaseUrl,
-                    model = effectiveModel,
+                val result = AiWingmanClient.requestStructuredAi(
                     provider = provider,
-                    temperature = temperature,
-                    topP = topP,
+                    apiKey = apiKey,
+                    baseUrl = baseUrl,
+                    model = model,
+                    systemPrompt = systemPrompt,
+                    userPrompt = userPrompt,
+                    temperature = temperature.toDouble(),
+                    topP = topP.toDouble(),
                     reasoningEffort = reasoningEffort,
-                ).collect { chunk ->
-                    when (chunk) {
-                        is OpenRouterStreamingService.ChatStreamChunk.Content -> {
-                            contentAccumulator.append(chunk.text)
-                            val partialResult = tryParsePartialReplies(contentAccumulator.toString(), prompts.size)
-                            if (partialResult.isNotEmpty()) {
-                                partialResult.forEachIndexed { idx, reply ->
-                                    if (idx < prompts.size && reply.isNotBlank()) {
-                                        prompts[idx].suggestedReplyFlow.value = reply
-                                    }
+                )
+
+                result.fold(
+                    onSuccess = { raw ->
+                        if (!isCompositionActive) return@fold
+                        val parsedReplies = AiWingmanClient.parseJsonLinesPayload(raw)
+                            ?: tryParsePartialReplies(raw, prompts.size)
+
+                        if (parsedReplies.isNotEmpty()) {
+                            parsedReplies.forEachIndexed { idx, reply ->
+                                if (idx < prompts.size) {
+                                    prompts[idx].addReply(reply, selectNew = true)
                                 }
-                                _status.value = WingmanStatus.Generating
                             }
+                            AiWingmanCache.put(cacheKey, parsedReplies)
+                            _hasActiveSuggestions.value = true
+                            _status.value = WingmanStatus.Success
+                            delay(3000)
+                            if (_status.value is WingmanStatus.Success && isCompositionActive) {
+                                _status.value = WingmanStatus.Idle
+                            }
+                        } else {
+                            _status.value = WingmanStatus.Error("Failed to parse reply suggestions")
                         }
-                        is OpenRouterStreamingService.ChatStreamChunk.Complete -> {
-                        }
-                        is OpenRouterStreamingService.ChatStreamChunk.Error -> {
-                            hasError = true
-                            errorMessage = chunk.message
-                        }
+                    },
+                    onFailure = { error ->
+                        if (!isCompositionActive) return@fold
+                        val errorMessage = error.aiFailure().userFriendlyMessage(context)
+                        _status.value = WingmanStatus.Error(errorMessage)
                     }
-                }
-
-                val finalFullText = contentAccumulator.toString()
-                val parsedReplies = tryParsePartialReplies(finalFullText, prompts.size)
-
-                if (parsedReplies.isNotEmpty() && !hasError) {
-                    parsedReplies.forEachIndexed { idx, reply ->
-                        if (idx < prompts.size) {
-                            prompts[idx].addReply(reply, selectNew = true)
-                        }
-                    }
-                    AiWingmanCache.put(cacheKey, parsedReplies)
-                    _hasActiveSuggestions.value = true
-                    _status.value = WingmanStatus.Success
-                    delay(3000)
-                    if (_status.value is WingmanStatus.Success && isCompositionActive) {
-                        _status.value = WingmanStatus.Idle
-                    }
-                } else if (hasError) {
-                    if (!isCompositionActive) return@launch
-                    _status.value = WingmanStatus.Error(errorMessage)
-                } else {
-                    _status.value = WingmanStatus.Error("Failed to parse reply suggestions")
-                }
+                )
             } catch (e: Exception) {
                 if (e !is CancellationException && isCompositionActive) {
                     val msg = e.message ?: safeErrorString(context, R.string.ai_error_generation_failed, "Generation failed")
@@ -563,38 +448,6 @@ object AiWingmanHelper {
                 prompts.forEach { it.isGeneratingFlow.value = false }
             }
         }
-    }
-
-    private fun isFreeTierError(msg: String): Boolean =
-        msg.contains("FreeTierError", ignoreCase = true) ||
-            msg.contains("within OpenCode", ignoreCase = true) ||
-            msg.contains("free-tier restriction", ignoreCase = true)
-
-    private fun fallbackToDefaultFreeModel(context: Context, prefs: PreferencesManager?) {
-        Timber.d("Model restricted on free tier, falling back to ${Consts.ZEN_DEFAULT_MODEL}")
-        runCatching {
-            prefs?.let { p ->
-                p.openRouterModel = Consts.ZEN_DEFAULT_MODEL
-                p.saveToFallbackStorageAsync(context)
-            }
-            val sp = context.getSharedPreferences(Consts.PREFS_SETTINGS, Context.MODE_PRIVATE)
-            sp.edit().putString(Consts.PREF_OPENROUTER_MODEL, Consts.ZEN_DEFAULT_MODEL).apply()
-        }
-    }
-
-    private fun isFallbackWorthy(message: String): Boolean {
-        val lower = message.lowercase()
-        return lower.contains("503") ||
-            lower.contains("502") ||
-            lower.contains("529") ||
-            lower.contains("temporarily unavailable") ||
-            lower.contains("no available model provider") ||
-            lower.contains("no endpoints") ||
-            lower.contains("empty response") ||
-            lower.contains("parse") ||
-            lower.contains("freetiererror") ||
-            lower.contains("free-tier restriction") ||
-            lower.contains("within opencode")
     }
 
     private fun tryParsePartialReplies(content: String, expectedLines: Int): List<String> {

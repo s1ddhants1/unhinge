@@ -267,7 +267,9 @@ data class MatchRecord(
     val lastMessageTimestamp: Long = 0L,
     val lastMessageSentBySubject: Boolean = false,
     val messageCount: Int = 0,
-    val messages: List<ChatMessageRecord> = emptyList()
+    val messages: List<ChatMessageRecord> = emptyList(),
+    val isLiveMatch: Boolean = true,
+    val isUnmatched: Boolean = false
 )
 
 @Keep

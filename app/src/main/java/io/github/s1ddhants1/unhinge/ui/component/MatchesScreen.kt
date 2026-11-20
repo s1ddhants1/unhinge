@@ -74,35 +74,41 @@ fun MatchesScreen(
         Toast.makeText(context, java.lang.String.format(toastCopiedFormat, label), Toast.LENGTH_SHORT).show()
     }
 
-    val searchMatchedMatches = remember(matches, searchQuery) {
-        if (searchQuery.isBlank()) matches else {
-            matches.filter { m -> matchesSearchQuery(m, searchQuery) }
+    val deduplicatedMatches = remember(matches) {
+        deduplicateMatches(matches)
+    }
+
+    val searchMatchedMatches = remember(deduplicatedMatches, searchQuery) {
+        if (searchQuery.isBlank()) deduplicatedMatches else {
+            deduplicatedMatches.filter { m -> matchesSearchQuery(m, searchQuery) }
         }
     }
 
-    val activeCount = remember(searchMatchedMatches) { searchMatchedMatches.count { !it.chatEnded && it.messageCount > 0 } }
-    val yourTurnCount = remember(searchMatchedMatches) { searchMatchedMatches.count { !it.chatEnded && it.lastMessageSentBySubject && it.messageCount > 0 } }
-    val waitingCount = remember(searchMatchedMatches) { searchMatchedMatches.count { !it.chatEnded && !it.lastMessageSentBySubject && it.messageCount > 0 } }
+    val activeCount = remember(searchMatchedMatches) { searchMatchedMatches.count { !it.chatEnded && !it.isUnmatched && it.isLiveMatch && it.messageCount > 0 } }
+    val yourTurnCount = remember(searchMatchedMatches) { searchMatchedMatches.count { !it.chatEnded && !it.isUnmatched && it.isLiveMatch && it.lastMessageSentBySubject && it.messageCount > 0 } }
+    val waitingCount = remember(searchMatchedMatches) { searchMatchedMatches.count { !it.chatEnded && !it.isUnmatched && it.isLiveMatch && !it.lastMessageSentBySubject && it.messageCount > 0 } }
     val phoneCount = remember(searchMatchedMatches) { searchMatchedMatches.count { it.phoneNumberExchanged } }
-    val endedCount = remember(searchMatchedMatches) { searchMatchedMatches.count { it.chatEnded } }
+    val unmatchedCount = remember(searchMatchedMatches) { searchMatchedMatches.count { it.isUnmatched || !it.isLiveMatch } }
+    val endedCount = remember(searchMatchedMatches) { searchMatchedMatches.count { it.chatEnded || it.isUnmatched || !it.isLiveMatch } }
 
     val filtered = remember(searchMatchedMatches, selectedFilter) {
         searchMatchedMatches.filter { m ->
             when (selectedFilter) {
-                "Active" -> !m.chatEnded && m.messageCount > 0
-                "Your Turn" -> !m.chatEnded && m.lastMessageSentBySubject && m.messageCount > 0
-                "Waiting" -> !m.chatEnded && !m.lastMessageSentBySubject && m.messageCount > 0
+                "Active" -> !m.chatEnded && !m.isUnmatched && m.isLiveMatch && m.messageCount > 0
+                "Your Turn" -> !m.chatEnded && !m.isUnmatched && m.isLiveMatch && m.lastMessageSentBySubject && m.messageCount > 0
+                "Waiting" -> !m.chatEnded && !m.isUnmatched && m.isLiveMatch && !m.lastMessageSentBySubject && m.messageCount > 0
                 "Phone Shared" -> m.phoneNumberExchanged
                 "Social Shared" -> m.socialMediaExchanged
                 "Priority Like" -> m.originatedFromPriorityLike
-                "Ended" -> m.chatEnded
+                "Unmatched" -> m.isUnmatched || !m.isLiveMatch
+                "Ended" -> m.chatEnded || m.isUnmatched || !m.isLiveMatch
                 else -> true
             }
         }
     }
 
-    val activeChatMatch = remember(matches, activeChatSubjectId) {
-        matches.firstOrNull { it.subjectId == activeChatSubjectId }
+    val activeChatMatch = remember(deduplicatedMatches, activeChatSubjectId) {
+        deduplicatedMatches.firstOrNull { it.subjectId == activeChatSubjectId }
     }
 
     Column(
@@ -112,7 +118,7 @@ fun MatchesScreen(
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
 
-        MatchAnalyticsBento(matches = matches)
+        MatchAnalyticsBento(matches = deduplicatedMatches)
 
         UnhingeSearchBar(
             query = searchQuery,
@@ -162,6 +168,12 @@ fun MatchesScreen(
                 shape = ShapeTokens.Pill
             )
             FilterChip(
+                selected = selectedFilter == "Unmatched",
+                onClick = { toggleFilter("Unmatched") },
+                label = { Text(stringResource(R.string.match_unmatched_format, unmatchedCount)) },
+                shape = ShapeTokens.Pill
+            )
+            FilterChip(
                 selected = selectedFilter == "Ended",
                 onClick = { toggleFilter("Ended") },
                 label = { Text(stringResource(R.string.match_ended_format, endedCount)) },
@@ -176,7 +188,7 @@ fun MatchesScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = stringResource(R.string.match_showing_format, filtered.size, matches.size),
+                    text = stringResource(R.string.match_showing_format, filtered.size, deduplicatedMatches.size),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -196,13 +208,20 @@ fun MatchesScreen(
         }
 
         if (filtered.isEmpty()) {
+            val emptyTitle = when {
+                deduplicatedMatches.isEmpty() -> stringResource(R.string.matches_empty_title)
+                selectedFilter == "Unmatched" -> stringResource(R.string.empty_matches_unmatched)
+                else -> stringResource(R.string.matches_empty_filter_title)
+            }
+            val emptyDesc = when {
+                deduplicatedMatches.isEmpty() -> stringResource(R.string.matches_empty_none_desc)
+                selectedFilter == "Unmatched" -> stringResource(R.string.empty_matches_unmatched_desc)
+                else -> stringResource(R.string.matches_empty_search_desc)
+            }
             EmptyStateView(
-                icon = if (matches.isEmpty()) Icons.Default.ChatBubbleOutline else Icons.Default.FilterListOff,
-                title = if (matches.isEmpty()) stringResource(R.string.matches_empty_title) else stringResource(R.string.matches_empty_filter_title),
-                description = if (matches.isEmpty())
-                    stringResource(R.string.matches_empty_none_desc)
-                else
-                    stringResource(R.string.matches_empty_search_desc),
+                icon = if (deduplicatedMatches.isEmpty()) Icons.Default.ChatBubbleOutline else Icons.Default.FilterListOff,
+                title = emptyTitle,
+                description = emptyDesc,
                 actionLabel = if (searchQuery.isNotBlank() || selectedFilter != "All") stringResource(R.string.action_clear_filters) else null,
                 onAction = {
                     searchQuery = ""
@@ -292,7 +311,7 @@ fun MatchesScreen(
 @Composable
 private fun MatchAnalyticsBento(matches: List<MatchRecord>) {
     val total = matches.size
-    val active = matches.count { !it.chatEnded && it.messageCount > 0 }
+    val active = matches.count { !it.chatEnded && !it.isUnmatched && it.isLiveMatch && it.messageCount > 0 }
     val contactsExchanged = matches.count { it.phoneNumberExchanged || it.socialMediaExchanged }
     val priorityLikes = matches.count { it.originatedFromPriorityLike }
 
@@ -364,7 +383,7 @@ private fun MatchCard(
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
 
-                val isYourTurn = !match.chatEnded && match.lastMessageSentBySubject && match.messageCount > 0
+                val isYourTurn = !match.chatEnded && !match.isUnmatched && match.isLiveMatch && match.lastMessageSentBySubject && match.messageCount > 0
 
                 Box(
                     modifier = Modifier
@@ -491,7 +510,7 @@ private fun MatchCard(
                         contentColor = MaterialTheme.colorScheme.onTertiaryContainer
                     )
                 }
-                if (match.chatEnded) {
+                if (match.chatEnded || match.isUnmatched || !match.isLiveMatch) {
                     UnhingeBadge(
                         label = if (match.chatEndedByMe) stringResource(R.string.tag_ended_by_you) else stringResource(R.string.tag_unmatched),
                         containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f),
@@ -584,6 +603,10 @@ private fun ChatTranscriptDialog(
     onOpenAiWingman: (MatchRecord) -> Unit,
     onCopy: (String, String) -> Unit
 ) {
+    val deduplicatedMessages = remember(match.messages) {
+        deduplicateMessages(match.messages)
+    }
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -612,7 +635,7 @@ private fun ChatTranscriptDialog(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = stringResource(R.string.matches_messages_recorded_format, match.messages.size),
+                            text = stringResource(R.string.matches_messages_recorded_format, deduplicatedMessages.size),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -638,7 +661,7 @@ private fun ChatTranscriptDialog(
 
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
 
-                if (match.messages.isEmpty()) {
+                if (deduplicatedMessages.isEmpty()) {
                     Column(
                         modifier = Modifier
                             .weight(1f)
@@ -670,10 +693,13 @@ private fun ChatTranscriptDialog(
                             .padding(horizontal = 16.dp, vertical = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        itemsIndexed(
-                            items = match.messages,
-                            key = { index, msg -> if (msg.localId.isNotBlank()) "${msg.localId}_$index" else "msg_$index" }
-                        ) { _, msg ->
+                        items(
+                            items = deduplicatedMessages,
+                            key = { msg ->
+                                if (msg.localId.isNotBlank()) msg.localId
+                                else "${msg.createdTimestamp}_${msg.sentBySubject}_${msg.body.hashCode()}"
+                            }
+                        ) { msg ->
                             ChatBubble(
                                 message = msg,
                                 senderName = match.firstName,
@@ -819,3 +845,64 @@ private fun matchesSearchQuery(match: MatchRecord, query: String): Boolean {
     val corpus = normalizeSearchText(sb.toString())
     return tokens.all { token -> corpus.contains(token) }
 }
+
+private fun deduplicateMatches(rawMatches: List<MatchRecord>): List<MatchRecord> {
+    if (rawMatches.isEmpty()) return emptyList()
+
+    return rawMatches
+        .groupBy { match ->
+            if (match.subjectId.isNotBlank()) match.subjectId
+            else "${match.firstName}_${match.age}_${match.photoUrl}"
+        }
+        .map { (_, group) ->
+            if (group.size == 1) {
+                val item = group[0]
+                item.copy(messages = deduplicateMessages(item.messages))
+            } else {
+                group.reduce { acc, cur ->
+                    val mergedMessages = deduplicateMessages(acc.messages + cur.messages)
+                    val lastMsg = mergedMessages.lastOrNull()
+                    acc.copy(
+                        subjectId = acc.subjectId.ifBlank { cur.subjectId },
+                        firstName = acc.firstName.ifBlank { cur.firstName },
+                        photoUrl = acc.photoUrl.ifBlank { cur.photoUrl },
+                        age = if (acc.age > 0) acc.age else cur.age,
+                        jobTitle = acc.jobTitle.ifBlank { cur.jobTitle },
+                        playerInitiated = acc.playerInitiated || cur.playerInitiated,
+                        reciprocatedTimestamp = maxOf(acc.reciprocatedTimestamp, cur.reciprocatedTimestamp),
+                        initiatedTimestamp = maxOf(acc.initiatedTimestamp, cur.initiatedTimestamp),
+                        initiatedWith = acc.initiatedWith.ifBlank { cur.initiatedWith },
+                        originatedFromPriorityLike = acc.originatedFromPriorityLike || cur.originatedFromPriorityLike,
+                        phoneNumberExchanged = acc.phoneNumberExchanged || cur.phoneNumberExchanged,
+                        socialMediaExchanged = acc.socialMediaExchanged || cur.socialMediaExchanged,
+                        replyNudgeDays = maxOf(acc.replyNudgeDays, cur.replyNudgeDays),
+                        isHidden = acc.isHidden && cur.isHidden,
+                        chatEnded = acc.chatEnded || cur.chatEnded,
+                        chatEndedByMe = acc.chatEndedByMe || cur.chatEndedByMe,
+                        draftMessage = acc.draftMessage.ifBlank { cur.draftMessage },
+                        lastMessageText = lastMsg?.body ?: if (cur.lastMessageTimestamp > acc.lastMessageTimestamp) cur.lastMessageText else acc.lastMessageText.ifBlank { cur.lastMessageText },
+                        lastMessageTimestamp = lastMsg?.createdTimestamp ?: maxOf(acc.lastMessageTimestamp, cur.lastMessageTimestamp),
+                        lastMessageSentBySubject = lastMsg?.sentBySubject ?: if (cur.lastMessageTimestamp > acc.lastMessageTimestamp) cur.lastMessageSentBySubject else acc.lastMessageSentBySubject,
+                        messageCount = mergedMessages.size.coerceAtLeast(maxOf(acc.messageCount, cur.messageCount)),
+                        messages = mergedMessages,
+                        isLiveMatch = acc.isLiveMatch || cur.isLiveMatch,
+                        isUnmatched = acc.isUnmatched && cur.isUnmatched
+                    )
+                }
+            }
+        }
+        .sortedWith(
+            compareByDescending { maxOf(it.lastMessageTimestamp, it.reciprocatedTimestamp, it.initiatedTimestamp) }
+        )
+}
+
+private fun deduplicateMessages(messages: List<ChatMessageRecord>): List<ChatMessageRecord> {
+    if (messages.isEmpty()) return emptyList()
+    return messages
+        .distinctBy { msg ->
+            if (msg.localId.isNotBlank()) msg.localId
+            else "${msg.createdTimestamp}_${msg.sentBySubject}_${msg.body}"
+        }
+        .sortedBy { it.createdTimestamp }
+}
+

@@ -54,7 +54,7 @@ object AiHttpClient {
             .build()
 
     fun clientFor(url: String): OkHttpClient =
-        if (ZenRouter.isZenUrl(url)) zenClient else client
+        if (url.contains("opencode.ai", ignoreCase = true)) zenClient else client
 
     fun isTransientHttpCode(code: Int): Boolean =
         code == 500 || code == 502 || code == 503 || code == 529
@@ -68,5 +68,21 @@ object AiHttpClient {
             message.contains("temporarily unavailable", ignoreCase = true) ||
             message.contains("timeout", ignoreCase = true) ||
             message.contains("Unable to resolve host", ignoreCase = true)
+    }
+
+    fun okhttp3.Response.readTextLimited(maxBytes: Long): String? {
+        val body = this.body
+        val contentLength = body.contentLength()
+        if (contentLength > maxBytes) return null
+        val source = body.source()
+        return try {
+            if (source.request(maxBytes + 1L) && source.buffer.size > maxBytes) {
+                null
+            } else {
+                source.readUtf8()
+            }
+        } catch (_: Exception) {
+            null
+        }
     }
 }

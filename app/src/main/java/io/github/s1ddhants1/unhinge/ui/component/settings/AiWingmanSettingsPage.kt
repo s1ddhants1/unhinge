@@ -1,759 +1,971 @@
 package io.github.s1ddhants1.unhinge.ui.component.settings
 
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import android.widget.Toast
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.outlined.Explore
-import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Link
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.TouchApp
 import androidx.compose.material.icons.outlined.Tune
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.LinkAnnotation
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.TextLinkStyles
-import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.s1ddhants1.unhinge.Consts
 import io.github.s1ddhants1.unhinge.R
-import io.github.s1ddhants1.unhinge.ai.AiWingmanHelper
+import io.github.s1ddhants1.unhinge.ai.AiHttpException
+import io.github.s1ddhants1.unhinge.ai.aiFailure
+import io.github.s1ddhants1.unhinge.ai.AiModelInfo
+import io.github.s1ddhants1.unhinge.ai.AiProviderGroup
+import io.github.s1ddhants1.unhinge.ai.AiProviderPreset
+import io.github.s1ddhants1.unhinge.ai.AiProviderPresets
+import io.github.s1ddhants1.unhinge.ai.AiWingmanClient
+import io.github.s1ddhants1.unhinge.ai.OpenRouterAuth
 import io.github.s1ddhants1.unhinge.ai.PromptRepository
-import io.github.s1ddhants1.unhinge.ai.ModelReasoningCatalog
-import io.github.s1ddhants1.unhinge.ai.ZenRouter
-import kotlinx.coroutines.launch
+import io.github.s1ddhants1.unhinge.ui.component.DefaultDialog
 import io.github.s1ddhants1.unhinge.ui.component.EnumDialog
-import io.github.s1ddhants1.unhinge.ui.component.settings.SettingsActionRow
-import io.github.s1ddhants1.unhinge.ui.component.settings.SettingsDivider
-import io.github.s1ddhants1.unhinge.ui.component.settings.SettingsSectionCard
-import io.github.s1ddhants1.unhinge.ui.component.settings.SettingsSliderRow
-import io.github.s1ddhants1.unhinge.ui.component.settings.SettingsSwitchRow
 import io.github.s1ddhants1.unhinge.ui.component.TextFieldDialog
 import io.github.s1ddhants1.unhinge.util.PreferencesManager
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.Locale
+import kotlin.math.pow
 import kotlin.math.roundToInt
+import kotlin.math.roundToLong
 
 @Composable
 fun AiWingmanSettingsPage(
     prefs: PreferencesManager
 ) {
     val context = LocalContext.current
-    val zenSyncInProgressMsg = stringResource(R.string.zen_sync_in_progress)
-    val zenSyncSuccessFormat = stringResource(R.string.zen_sync_success_format)
-    val zenSyncFailureFormat = stringResource(R.string.zen_sync_failure)
-    val promptSyncSuccessMsg = stringResource(R.string.ai_remote_sync_success)
-    val promptSyncFailureFormat = stringResource(R.string.ai_remote_sync_failure)
-    var aiProvider by rememberSaveable { mutableStateOf(prefs.aiProvider) }
-    var openRouterApiKey by rememberSaveable { mutableStateOf(prefs.openRouterApiKey) }
-    var openRouterBaseUrl by rememberSaveable { mutableStateOf(prefs.openRouterBaseUrl) }
-    var openRouterModel by rememberSaveable { mutableStateOf(prefs.openRouterModel) }
+    val coroutineScope = rememberCoroutineScope()
+
+    var aiProvider by rememberSaveable { mutableStateOf(AiProviderPresets.normalizeProvider(prefs.aiProvider)) }
+    var currentPreset by remember(aiProvider) { mutableStateOf(AiProviderPresets.find(aiProvider) ?: AiProviderPresets.all.first()) }
+
+    var openRouterModel by rememberSaveable { mutableStateOf(prefs.openRouterModel.ifBlank { currentPreset.defaultModel }) }
+    var openRouterBaseUrl by rememberSaveable { mutableStateOf(prefs.openRouterBaseUrl.ifBlank { currentPreset.endpoint }) }
+    var apiKey by remember(aiProvider) { mutableStateOf(prefs.aiApiKeyFor(currentPreset.id)) }
+
+    var openRouterOAuthKey by remember { mutableStateOf(prefs.openRouterOAuthKey) }
+    var openRouterOAuthSession by remember { mutableStateOf(prefs.openRouterOAuthSession) }
 
     var aiSystemPrompt by rememberSaveable { mutableStateOf(prefs.aiCustomSystemPrompt) }
     var promptRemoteUrl by rememberSaveable { mutableStateOf(prefs.aiPromptRemoteUrl) }
-    var showRemoteUrlDialog by rememberSaveable { mutableStateOf(false) }
-    var isSyncingPrompt by remember { mutableStateOf(false) }
-    var promptSyncGeneration by remember { mutableStateOf(0) }
-    val defaultSystemPrompt = remember(promptSyncGeneration) {
-        PromptRepository.getEffectiveSystemPromptTemplate(prefs, context)
-    }
-    var isSyncingCatalog by remember { mutableStateOf(false) }
-    val coroutineScope = rememberCoroutineScope()
+    var aiOverrideSystemPrompt by rememberSaveable { mutableStateOf(prefs.aiOverrideSystemPrompt) }
+    var showHostAppFab by rememberSaveable { mutableStateOf(prefs.showHostAppFab) }
 
     var aiTemperature by rememberSaveable { mutableStateOf(prefs.aiTemperature) }
     var aiTopP by rememberSaveable { mutableStateOf(prefs.aiTopP) }
     var aiReasoningEffort by rememberSaveable { mutableStateOf(prefs.aiReasoningEffort) }
 
-    val aiProviders =
-        mapOf(
-            "Zen" to Consts.ZEN_DEFAULT_BASE_URL,
-            "OpenRouter" to "https://openrouter.ai/api/v1/chat/completions",
-            "OpenAI" to "https://api.openai.com/v1/chat/completions",
-            "Perplexity" to "https://api.perplexity.ai/chat/completions",
-            "Claude" to "https://api.anthropic.com/v1/messages",
-            "Gemini" to "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
-            "XAi" to "https://api.x.ai/v1/chat/completions",
-            "Mistral" to "https://api.mistral.ai/v1/chat/completions",
-            "Inception" to "https://api.inceptionlabs.ai/v1/chat/completions",
-            "Custom" to "",
-        )
+    // Dialog state
+    var showProviderPicker by remember { mutableStateOf(false) }
+    var showModelPicker by remember { mutableStateOf(false) }
+    var showApiKeyDialog by remember { mutableStateOf(false) }
+    var showBaseUrlDialog by remember { mutableStateOf(false) }
+    var showSystemPromptDialog by remember { mutableStateOf(false) }
+    var showRemoteUrlDialog by remember { mutableStateOf(false) }
+    var showReasoningDialog by remember { mutableStateOf(false) }
 
-    val providerHelpText =
-        mapOf(
-            "Zen" to stringResource(R.string.ai_provider_zen_help),
-            "OpenRouter" to stringResource(R.string.ai_provider_openrouter_help),
-            "OpenAI" to stringResource(R.string.ai_provider_openai_help),
-            "Perplexity" to stringResource(R.string.ai_provider_perplexity_help),
-            "Claude" to stringResource(R.string.ai_provider_claude_help),
-            "Gemini" to stringResource(R.string.ai_provider_gemini_help),
-            "XAi" to stringResource(R.string.ai_provider_xai_help),
-            "Mistral" to stringResource(R.string.ai_provider_mistral_help),
-            "Inception" to stringResource(R.string.ai_provider_inception_help),
-            "Custom" to "",
-        )
+    // OpenRouter OAuth PKCE
+    val openRouterAuth = remember { OpenRouterAuth() }
+    var oauthAwaitingCode by remember {
+        mutableStateOf(openRouterOAuthSession.takeIf(String::isNotBlank)?.let(openRouterAuth::restore) == true)
+    }
+    var oauthInputCode by remember { mutableStateOf("") }
+    var oauthBusy by remember { mutableStateOf(false) }
 
-    val modelsByProvider =
-        mapOf(
-            "Zen" to (ZenRouter.FreeModels + ZenRouter.DefaultPaidModels).distinct(),
-            "OpenRouter" to
-                listOf(
-                    "inception/mercury-2.5-preview",
-                    "meta/muse-spark-1.3",
-                    "z-ai/glm-5.3-flash",
-                    "qwen/qwen3.8-flash",
-                    "deepseek/deepseek-v4-flash-latest",
-                    "openai/gpt-mini-latest",
-                    "openai/gpt-oss-120b",
-                    "google/gemini-flash-latest",
-                ),
-            "OpenAI" to
-                listOf(
-                    "gpt-5.6-sol",
-                    "gpt-5.6-terra",
-                    "gpt-5.6-luna",
-                    "gpt-5.5-2026-04-23",
-                    "gpt-5.4-2026-03-05",
-                ),
-            "Claude" to
-                listOf(
-                    "claude-opus-5",
-                    "claude-sonnet-5",
-                    "claude-haiku-4-5-20251001",
-                    "claude-fable-5-1",
-                ),
-            "Gemini" to
-                listOf(
-                    "gemini-flash-lite-latest",
-                    "gemini-pro-latest",
-                    "gemini-flash-latest",
-                    "gemini-3.8-flash",
-                ),
-            "Perplexity" to
-                listOf(
-                    "sonar",
-                    "sonar-pro",
-                    "sonar-reasoning-pro",
-                ),
-            "XAi" to
-                listOf(
-                    "grok-4.3",
-                    "grok-4.6",
-                    "grok-4.1-fast",
-                ),
-            "Mistral" to
-                listOf(
-                    "mistral-large-latest",
-                    "mistral-medium-latest",
-                    "mistral-small-latest",
-                    "mistral-tiny-latest",
-                ),
-            "Inception" to
-                listOf(
-                    "mercury-2",
-                ),
-            "Custom" to listOf(),
-        )
+    val oauthConnected = currentPreset.id == "OpenRouter" && openRouterOAuthKey.isNotBlank()
 
-    val commonModels = if (aiProvider == "Zen") {
-        ZenRouter.allAvailableModels
-    } else {
-        modelsByProvider[aiProvider] ?: listOf()
+    // Remote prompt sync
+    var isSyncingPrompt by remember { mutableStateOf(false) }
+    var promptSyncGeneration by remember { mutableStateOf(0) }
+    val defaultSystemPrompt = remember(promptSyncGeneration) {
+        PromptRepository.getEffectiveSystemPromptTemplate(prefs, context)
     }
 
-    androidx.compose.runtime.LaunchedEffect(Unit) {
-        ZenRouter.initFromPreferences(prefs)
-    }
-
-    var showProviderDialog by rememberSaveable { mutableStateOf(false) }
-    var showProviderHelpDialog by rememberSaveable { mutableStateOf(false) }
-    var showApiKeyDialog by rememberSaveable { mutableStateOf(false) }
-    var showBaseUrlDialog by rememberSaveable { mutableStateOf(false) }
-    var showModelDialog by rememberSaveable { mutableStateOf(false) }
-    var showCustomModelInput by rememberSaveable { mutableStateOf(false) }
-    var showReasoningEffortDialog by rememberSaveable { mutableStateOf(false) }
-
-    var showSystemPromptDialog by rememberSaveable { mutableStateOf(false) }
-
-    if (showProviderHelpDialog) {
-        AlertDialog(
-            onDismissRequest = { showProviderHelpDialog = false },
-            confirmButton = {
-                TextButton(onClick = { showProviderHelpDialog = false }) {
-                    Text(stringResource(android.R.string.ok))
-                }
-            },
-            icon = { Icon(Icons.Outlined.Info, null) },
-            title = { Text(stringResource(R.string.ai_provider_help)) },
-            text = {
-                Column {
-                    providerHelpText.forEach { (provider, help) ->
-                        if (help.isNotEmpty()) {
-                            val primaryColor = MaterialTheme.colorScheme.primary
-                            val annotatedString =
-                                buildAnnotatedString {
-                                    append("$provider: ")
-                                    val urlRegex = "https?://[^\\s]+".toRegex()
-                                    val match = urlRegex.find(help)
-                                    if (match != null) {
-                                        val url = match.value
-                                        val beforeUrl = help.substring(0, match.range.first)
-                                        val afterUrl = help.substring(match.range.last + 1)
-
-                                        append(beforeUrl)
-                                        val linkStart = length
-                                        append(url)
-                                        val linkEnd = length
-                                        append(afterUrl)
-
-                                        addLink(
-                                            LinkAnnotation.Url(
-                                                url = url,
-                                                styles =
-                                                    TextLinkStyles(
-                                                        style =
-                                                            SpanStyle(
-                                                                color = primaryColor,
-                                                                textDecoration = TextDecoration.Underline,
-                                                            ),
-                                                    ),
-                                            ),
-                                            start = linkStart,
-                                            end = linkEnd,
-                                        )
-                                    } else {
-                                        append(help)
-                                    }
-                                }
-
-                            Text(
-                                text = annotatedString,
-                                style =
-                                    MaterialTheme.typography.bodyMedium.copy(
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                    ),
-                                modifier = Modifier.padding(vertical = 4.dp),
-                            )
-                        }
-                    }
-                }
-            },
-        )
-    }
-
-    if (showProviderDialog) {
-        EnumDialog(
-            onDismiss = { showProviderDialog = false },
-            onSelect = {
-                aiProvider = it
-                prefs.aiProvider = it
-                if (it != "Custom") {
-                    val url = aiProviders[it] ?: ""
-                    openRouterBaseUrl = url
-                    prefs.openRouterBaseUrl = url
-                } else {
-                    openRouterBaseUrl = ""
-                    prefs.openRouterBaseUrl = ""
-                }
-                val modelsForProvider = if (it == "Zen") {
-                    ZenRouter.allAvailableModels
-                } else {
-                    modelsByProvider[it] ?: listOf()
-                }
-                openRouterModel =
-                    if (modelsForProvider.isNotEmpty()) {
-                        modelsForProvider[0]
-                    } else {
-                        ""
-                    }
-                prefs.openRouterModel = openRouterModel
-                prefs.saveToFallbackStorageAsync(context)
-                showProviderDialog = false
-            },
-            title = stringResource(R.string.ai_provider),
-            current = aiProvider,
-            values = aiProviders.keys.toList(),
-            valueText = { it },
-        )
-    }
-
-    if (showApiKeyDialog) {
-        TextFieldDialog(
-            title = { Text(stringResource(R.string.ai_api_key)) },
-            icon = { Icon(Icons.Outlined.Key, null) },
-            initialTextFieldValue = TextFieldValue(text = openRouterApiKey),
-            placeholder = {
-                if (aiProvider == "Zen") {
-                    Text(stringResource(R.string.ai_api_key_placeholder))
-                } else {
-                    Text(stringResource(R.string.ai_not_set))
-                }
-            },
-            onDone = {
-                val trimmed = it.trim()
-                openRouterApiKey = trimmed
-                prefs.openRouterApiKey = trimmed
-                prefs.saveToFallbackStorageAsync(context)
-                showApiKeyDialog = false
-            },
-            onDismiss = { showApiKeyDialog = false },
-        )
-    }
-
-    if (showBaseUrlDialog && aiProvider == "Custom") {
-        TextFieldDialog(
-            title = { Text(stringResource(R.string.ai_base_url)) },
-            icon = { Icon(Icons.Outlined.Link, null) },
-            initialTextFieldValue = TextFieldValue(text = openRouterBaseUrl),
-            onDone = {
-                openRouterBaseUrl = it
-                prefs.openRouterBaseUrl = it
-                prefs.saveToFallbackStorageAsync(context)
-                showBaseUrlDialog = false
-            },
-            onDismiss = { showBaseUrlDialog = false },
-        )
-    }
-
-    if (showModelDialog) {
-        EnumDialog(
-            onDismiss = { showModelDialog = false },
-            onSelect = {
-                if (it == "custom_input") {
-                    showCustomModelInput = true
-                    showModelDialog = false
-                } else {
-                    openRouterModel = it
-                    prefs.openRouterModel = it
-                    prefs.saveToFallbackStorageAsync(context)
-                    showModelDialog = false
-                }
-            },
-            title = stringResource(R.string.ai_model),
-            current = if (openRouterModel in commonModels) openRouterModel else "custom_input",
-            values = commonModels + "custom_input",
-            valueText = {
-                if (it == "custom_input") {
-                    stringResource(R.string.ai_custom_model)
-                } else if (aiProvider == "Zen") {
-                    if (ZenRouter.isFreeModel(it)) {
-                        stringResource(R.string.zen_model_free_format, it)
-                    } else {
-                        stringResource(R.string.zen_model_paid_format, it)
-                    }
-                } else {
-                    it
-                }
-            },
-        )
-    }
-
-    if (showCustomModelInput) {
-        TextFieldDialog(
-            title = { Text(stringResource(R.string.ai_model)) },
-            icon = { Icon(Icons.Outlined.Tune, null) },
-            initialTextFieldValue = TextFieldValue(text = openRouterModel),
-            onDone = {
-                val effective = if (aiProvider == "Zen") ZenRouter.normalizeModelId(it) else it
-                openRouterModel = effective
-                prefs.openRouterModel = effective
-                prefs.saveToFallbackStorageAsync(context)
-                showCustomModelInput = false
-            },
-            onDismiss = { showCustomModelInput = false },
-        )
-    }
-
-    if (showReasoningEffortDialog) {
-        val options = ModelReasoningCatalog.getAvailableOptions(openRouterModel, aiProvider)
-        when (val support = ModelReasoningCatalog.getReasoningSupport(openRouterModel, aiProvider)) {
-            is ModelReasoningCatalog.ReasoningSupport.Unsupported -> {
-                val unsupportedModelLabel = openRouterModel.ifBlank { stringResource(R.string.ai_current_model_fallback) }
-                AlertDialog(
-                    onDismissRequest = { showReasoningEffortDialog = false },
-                    title = { Text(stringResource(R.string.ai_reasoning_unsupported_title)) },
-                    text = {
-                        Text(
-                            stringResource(R.string.ai_reasoning_unsupported_message, unsupportedModelLabel)
-                        )
-                    },
-                    confirmButton = {
-                        TextButton(onClick = { showReasoningEffortDialog = false }) {
-                            Text(stringResource(R.string.action_ok))
-                        }
-                    },
-                )
-            }
-            is ModelReasoningCatalog.ReasoningSupport.Fixed -> {
-                val fixedModelLabel = openRouterModel.ifBlank { stringResource(R.string.ai_current_model_fallback) }
-                AlertDialog(
-                    onDismissRequest = { showReasoningEffortDialog = false },
-                    title = { Text(stringResource(R.string.ai_reasoning_fixed_title)) },
-                    text = {
-                        Text(
-                            stringResource(R.string.ai_reasoning_fixed_message, fixedModelLabel)
-                        )
-                    },
-                    confirmButton = {
-                        TextButton(onClick = { showReasoningEffortDialog = false }) {
-                            Text(stringResource(R.string.action_ok))
-                        }
-                    },
-                )
-            }
-            else -> {
-                val currentSelection = if (options.any { it.first == aiReasoningEffort }) aiReasoningEffort else "default"
-                EnumDialog(
-                    onDismiss = { showReasoningEffortDialog = false },
-                    onSelect = {
-                        aiReasoningEffort = it
-                        prefs.aiReasoningEffort = it
-                        prefs.saveToFallbackStorageAsync(context)
-                        showReasoningEffortDialog = false
-                    },
-                    title = stringResource(R.string.ai_reasoning_level_title, openRouterModel.substringAfterLast('/').ifBlank { stringResource(R.string.ai_reasoning_level_fallback) }),
-                    current = currentSelection,
-                    values = options.map { it.first },
-                    valueText = { key -> options.firstOrNull { it.first == key }?.second ?: ModelReasoningCatalog.levelLabel(key) },
-                )
-            }
-        }
-    }
-
-    if (showRemoteUrlDialog) {
-        TextFieldDialog(
-            title = { Text(stringResource(R.string.ai_remote_url_title)) },
-            icon = { Icon(Icons.Outlined.Link, null) },
-            initialTextFieldValue = TextFieldValue(text = promptRemoteUrl),
-            singleLine = true,
-            isInputValid = { it.isNotBlank() },
-            onDone = {
-                promptRemoteUrl = it.trim()
-                prefs.aiPromptRemoteUrl = promptRemoteUrl
-                prefs.saveToFallbackStorageAsync(context)
-                showRemoteUrlDialog = false
-            },
-            onDismiss = { showRemoteUrlDialog = false },
-            extraContent = {
-                val canResetUrl = promptRemoteUrl != Consts.DEFAULT_AI_PROMPT_REMOTE_URL
-                val hasSyncedPrompt = prefs.aiRemoteSystemPrompt.isNotBlank()
-                if (canResetUrl || hasSyncedPrompt) {
-                    Row(
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(top = 8.dp),
-                        horizontalArrangement = Arrangement.End,
-                    ) {
-                        if (hasSyncedPrompt) {
-                            TextButton(
-                                onClick = {
-                                    prefs.aiRemoteSystemPrompt = ""
-                                    prefs.saveToFallbackStorageAsync(context)
-                                    promptSyncGeneration++
-                                },
-                            ) {
-                                Text(stringResource(R.string.ai_remote_reset_synced))
-                            }
-                        }
-                        if (canResetUrl) {
-                            TextButton(
-                                onClick = {
-                                    promptRemoteUrl = Consts.DEFAULT_AI_PROMPT_REMOTE_URL
-                                    prefs.aiPromptRemoteUrl = promptRemoteUrl
-                                    prefs.saveToFallbackStorageAsync(context)
-                                },
-                            ) {
-                                Text(stringResource(R.string.action_reset_to_default))
-                            }
-                        }
-                    }
-                }
-            },
-        )
-    }
-
-    if (showSystemPromptDialog) {
-        TextFieldDialog(
-            title = { Text(stringResource(R.string.ai_system_prompt_title)) },
-            icon = { Icon(Icons.Outlined.Edit, null) },
-            initialTextFieldValue = TextFieldValue(text = aiSystemPrompt.ifBlank { defaultSystemPrompt }),
-            singleLine = false,
-            maxLines = 12,
-            isInputValid = { true },
-            onDone = {
-                aiSystemPrompt = if (it.isBlank() || it == defaultSystemPrompt) "" else it
-                prefs.aiCustomSystemPrompt = aiSystemPrompt
-                prefs.aiOverrideSystemPrompt = aiSystemPrompt.isNotBlank()
-                showSystemPromptDialog = false
-            },
-            onDismiss = { showSystemPromptDialog = false },
-            extraContent = {
-                if (aiSystemPrompt.isNotBlank()) {
-                    Row(
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(top = 8.dp),
-                        horizontalArrangement = Arrangement.End,
-                    ) {
-                        TextButton(
-                            onClick = {
-                                aiSystemPrompt = ""
-                                prefs.aiCustomSystemPrompt = ""
-                                prefs.aiOverrideSystemPrompt = false
-                                showSystemPromptDialog = false
-                            },
-                        ) {
-                            Text(stringResource(R.string.action_reset_to_default))
-                        }
-                    }
-                }
-            },
-        )
-    }
+    // Connection probe state
+    var isTestingConnection by remember { mutableStateOf(false) }
+    var testResultLatency by remember { mutableStateOf<Long?>(null) }
+    var testResultSample by remember { mutableStateOf<String?>(null) }
+    var testErrorMessage by remember { mutableStateOf<String?>(null) }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp)
-            .verticalScroll(rememberScrollState()),
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Spacer(Modifier.height(4.dp))
-
-        SettingsSectionCard(title = stringResource(R.string.ai_section_activation)) {
-            SettingsSwitchRow(
-                title = stringResource(R.string.ai_fab_title),
-                icon = Icons.Outlined.TouchApp,
-                checked = prefs.showHostAppFab,
-                onCheckedChange = { prefs.showHostAppFab = it }
-            )
-        }
-
+        // --- 1. PROVIDER SECTION ---
         SettingsSectionCard(title = stringResource(R.string.ai_provider)) {
             SettingsActionRow(
-                title = stringResource(R.string.ai_provider),
-                description = aiProvider,
-                icon = Icons.Outlined.Explore,
-                onClick = { showProviderDialog = true },
-                trailingContent = {
-                    IconButton(onClick = { showProviderHelpDialog = true }) {
-                        Icon(
-                            Icons.Outlined.Info,
-                            contentDescription = stringResource(R.string.ai_provider_help),
-                            modifier = Modifier.size(20.dp),
-                        )
-                    }
-                }
+                title = currentPreset.id,
+                description = when (currentPreset.group) {
+                    AiProviderGroup.GATEWAY -> stringResource(R.string.ai_provider_group_gateways)
+                    AiProviderGroup.DIRECT -> stringResource(R.string.ai_provider_group_direct)
+                    AiProviderGroup.CUSTOM -> stringResource(R.string.ai_provider_group_custom)
+                },
+                onClick = { showProviderPicker = true }
             )
-            if (aiProvider == "Custom") {
-                SettingsDivider()
-                SettingsActionRow(
-                    title = stringResource(R.string.ai_base_url),
-                    description = openRouterBaseUrl.ifBlank { stringResource(R.string.ai_not_set) },
-                    icon = Icons.Outlined.Link,
-                    onClick = { showBaseUrlDialog = true }
-                )
-            }
         }
 
-        val isApiKeyRequired = AiWingmanHelper.isApiKeyRequired(aiProvider, openRouterModel)
-
+        // --- 2. CONNECTION SECTION ---
         SettingsSectionCard(title = stringResource(R.string.ai_setup_guide)) {
-            SettingsActionRow(
-                title = stringResource(R.string.ai_api_key),
-                description = if (openRouterApiKey.isNotEmpty()) {
-                    "•".repeat(minOf(openRouterApiKey.length, 8))
-                } else {
-                    stringResource(R.string.ai_not_set)
-                },
-                icon = Icons.Outlined.Key,
-                enabled = isApiKeyRequired,
-                onClick = { if (isApiKeyRequired) showApiKeyDialog = true }
-            )
-            SettingsDivider()
-            SettingsActionRow(
-                title = stringResource(R.string.ai_model),
-                description = openRouterModel.ifBlank { stringResource(R.string.ai_not_set) },
-                icon = Icons.Outlined.Tune,
-                onClick = { showModelDialog = true }
-            )
-            if (aiProvider == "Zen") {
-                SettingsDivider()
-                SettingsActionRow(
-                    title = stringResource(R.string.zen_sync_title),
-                    description = stringResource(
-                        R.string.zen_sync_desc_format,
-                        ZenRouter.currentVersion,
-                        ZenRouter.allFreeModels.size,
-                        ZenRouter.allAvailableModels.size,
-                    ),
-                    icon = Icons.Outlined.Refresh,
-                    onClick = {
-                        if (!isSyncingCatalog) {
-                            isSyncingCatalog = true
-                            Toast.makeText(context, zenSyncInProgressMsg, Toast.LENGTH_SHORT).show()
-                            coroutineScope.launch {
-                                val result = ZenRouter.syncCatalogAndVersion(prefs, force = true)
-                                isSyncingCatalog = false
-                                if (result.success) {
-                                    Toast.makeText(
-                                        context,
-                                        java.lang.String.format(
-                                            zenSyncSuccessFormat,
-                                            result.version,
-                                            result.freeCount,
-                                            result.totalCount,
-                                        ),
-                                        Toast.LENGTH_LONG
-                                    ).show()
+            // OpenRouter PKCE OAuth
+            if (currentPreset.supportsOAuth) {
+                if (oauthConnected) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.openrouter_sign_in_title),
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = stringResource(R.string.openrouter_signed_in_description),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        TextButton(
+                            onClick = {
+                                openRouterOAuthKey = ""
+                                prefs.openRouterOAuthKey = ""
+                                openRouterOAuthSession = ""
+                                prefs.openRouterOAuthSession = ""
+                                prefs.saveToFallbackStorageAsync(context)
+                                Toast.makeText(context, "Disconnected OpenRouter OAuth", Toast.LENGTH_SHORT).show()
+                            }
+                        ) {
+                            Text(stringResource(R.string.openrouter_disconnect), color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                } else if (oauthAwaitingCode) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.openrouter_auth_instruction),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        OutlinedTextField(
+                            value = oauthInputCode,
+                            onValueChange = { oauthInputCode = it },
+                            label = { Text(stringResource(R.string.openrouter_auth_code)) },
+                            singleLine = true,
+                            enabled = !oauthBusy,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            TextButton(
+                                onClick = {
+                                    openRouterAuth.cancel()
+                                    oauthAwaitingCode = false
+                                    openRouterOAuthSession = ""
+                                    prefs.openRouterOAuthSession = ""
+                                    prefs.saveToFallbackStorageAsync(context)
+                                },
+                                enabled = !oauthBusy
+                            ) {
+                                Text(stringResource(R.string.action_cancel))
+                            }
+                            Spacer(Modifier.width(8.dp))
+                            TextButton(
+                                onClick = {
+                                    oauthBusy = true
+                                    coroutineScope.launch {
+                                        try {
+                                            val key = openRouterAuth.exchange(oauthInputCode)
+                                            openRouterOAuthKey = key
+                                            prefs.openRouterOAuthKey = key
+                                            openRouterOAuthSession = ""
+                                            prefs.openRouterOAuthSession = ""
+                                            oauthAwaitingCode = false
+                                            prefs.saveToFallbackStorageAsync(context)
+                                            Toast.makeText(context, "Signed in with OpenRouter!", Toast.LENGTH_SHORT).show()
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, "Sign-in failed: ${e.message}", Toast.LENGTH_LONG).show()
+                                        } finally {
+                                            oauthBusy = false
+                                        }
+                                    }
+                                },
+                                enabled = !oauthBusy && oauthInputCode.isNotBlank()
+                            ) {
+                                if (oauthBusy) {
+                                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                                 } else {
-                                    Toast.makeText(
-                                        context,
-                                        java.lang.String.format(
-                                            zenSyncFailureFormat,
-                                            result.errorMessage ?: "Unknown error"
-                                        ),
-                                        Toast.LENGTH_LONG
-                                    ).show()
+                                    Text(stringResource(R.string.action_apply))
                                 }
                             }
                         }
                     }
-                )
+                } else {
+                    SettingsActionRow(
+                        title = stringResource(R.string.openrouter_sign_in_title),
+                        description = stringResource(R.string.openrouter_sign_in_description),
+                        icon = Icons.Outlined.Lock,
+                        onClick = {
+                            try {
+                                val url = openRouterAuth.start()
+                                openRouterOAuthSession = openRouterAuth.pendingSession().orEmpty()
+                                prefs.openRouterOAuthSession = openRouterOAuthSession
+                                prefs.saveToFallbackStorageAsync(context)
+                                oauthAwaitingCode = true
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Could not open browser: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    )
+                }
+                SettingsDivider()
+            }
+
+            // API Key
+            SettingsActionRow(
+                title = stringResource(R.string.ai_api_key),
+                description = when {
+                    oauthConnected -> stringResource(R.string.openrouter_signed_in_description)
+                    apiKey.isNotBlank() -> "••••••••••••"
+                    else -> stringResource(R.string.ai_not_set)
+                },
+                icon = Icons.Outlined.Key,
+                enabled = !oauthConnected,
+                onClick = { showApiKeyDialog = true }
+            )
+
+            SettingsDivider()
+
+            // Base URL
+            SettingsActionRow(
+                title = stringResource(R.string.ai_base_url),
+                description = openRouterBaseUrl.ifBlank { currentPreset.endpoint },
+                icon = Icons.Outlined.Link,
+                onClick = { showBaseUrlDialog = true }
+            )
+        }
+
+        // --- 3. MODEL SECTION ---
+        SettingsSectionCard(title = stringResource(R.string.ai_model)) {
+            val (credKey, credUrl) = prefs.aiCredentials(currentPreset.id)
+            val modelsReady = oauthConnected || credKey.isNotBlank() || currentPreset.publicModelList
+
+            SettingsActionRow(
+                title = openRouterModel.ifBlank { currentPreset.defaultModel },
+                description = if (!modelsReady) stringResource(R.string.ai_model_api_key_needed) else "Tap to choose or search model",
+                icon = Icons.Outlined.Tune,
+                enabled = modelsReady,
+                onClick = { showModelPicker = true }
+            )
+        }
+
+        // --- 4. CONNECTION TEST ---
+        SettingsSectionCard(title = stringResource(R.string.ai_test_connection)) {
+            val (credKey, credUrl) = prefs.aiCredentials(currentPreset.id)
+            val canRun = oauthConnected || credKey.isNotBlank() || !AiProviderPresets.isApiKeyRequired(currentPreset.id, openRouterModel)
+
+            Text(
+                text = stringResource(R.string.ai_test_connection_description),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                TextButton(
+                    onClick = {
+                        if (!canRun) {
+                            testErrorMessage = context.getString(R.string.ai_test_missing_credentials)
+                            testResultLatency = null
+                            testResultSample = null
+                            return@TextButton
+                        }
+                        isTestingConnection = true
+                        testErrorMessage = null
+                        testResultLatency = null
+                        testResultSample = null
+
+                        coroutineScope.launch {
+                            val probe = AiWingmanClient.probeConnection(
+                                provider = currentPreset.id,
+                                apiKey = credKey,
+                                baseUrl = credUrl,
+                                model = openRouterModel.ifBlank { currentPreset.defaultModel },
+                            )
+                            isTestingConnection = false
+                            probe.fold(
+                                onSuccess = { (sample, latency) ->
+                                    testResultLatency = latency
+                                    testResultSample = sample
+                                    testErrorMessage = null
+                                },
+                                onFailure = { error ->
+                                    testErrorMessage = error.aiFailure().userFriendlyMessage(context)
+                                    testResultLatency = null
+                                    testResultSample = null
+                                }
+                            )
+                        }
+                    },
+                    enabled = !isTestingConnection
+                ) {
+                    if (isTestingConnection) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(R.string.ai_test_connection_running))
+                    } else {
+                        Icon(Icons.Outlined.PlayArrow, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(stringResource(R.string.ai_test_connection))
+                    }
+                }
+            }
+
+            testResultLatency?.let { latency ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Outlined.CheckCircle, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = stringResource(R.string.ai_test_connection_success, latency.toString()),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                testResultSample?.let { sample ->
+                    Text(
+                        text = "Reply preview: $sample",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            testErrorMessage?.let { err ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Outlined.ErrorOutline, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = stringResource(R.string.ai_test_connection_failed, err),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
             }
         }
 
+        // --- 5. MODEL PARAMETERS ---
         SettingsSectionCard(title = stringResource(R.string.ai_section_model_params)) {
             SettingsSliderRow(
                 title = stringResource(R.string.ai_temperature_title),
                 value = aiTemperature,
                 onValueChange = {
-                    aiTemperature = ((it / 0.05f).roundToInt() * 0.05f).coerceIn(0f, 1.5f)
-                },
-                valueRange = 0f..1.5f,
-                onValueChangeFinished = {
+                    aiTemperature = (it * 20f).roundToInt() / 20f
                     prefs.aiTemperature = aiTemperature
-                    prefs.saveToFallbackStorageAsync(context)
                 },
+                valueRange = 0.0f..1.5f,
                 valueText = String.format(Locale.US, "%.2f", aiTemperature),
-                icon = Icons.Outlined.Tune
+                onValueChangeFinished = { prefs.saveToFallbackStorageAsync(context) }
             )
+
             SettingsDivider()
+
             SettingsSliderRow(
                 title = stringResource(R.string.ai_top_p_title),
                 value = aiTopP,
                 onValueChange = {
-                    aiTopP = ((it / 0.05f).roundToInt() * 0.05f).coerceIn(0.1f, 1f)
-                },
-                valueRange = 0.1f..1f,
-                onValueChangeFinished = {
+                    aiTopP = (it * 20f).roundToInt() / 20f
                     prefs.aiTopP = aiTopP
-                    prefs.saveToFallbackStorageAsync(context)
                 },
+                valueRange = 0.0f..1.0f,
                 valueText = String.format(Locale.US, "%.2f", aiTopP),
-                icon = Icons.Outlined.Tune
+                onValueChangeFinished = { prefs.saveToFallbackStorageAsync(context) }
             )
+
             SettingsDivider()
+
             SettingsActionRow(
                 title = stringResource(R.string.ai_reasoning_effort_title),
-                description = ModelReasoningCatalog.getEffortSummary(aiReasoningEffort, openRouterModel, aiProvider),
-                icon = Icons.Outlined.Tune,
-                onClick = { showReasoningEffortDialog = true }
+                description = aiReasoningEffort.replaceFirstChar { it.uppercase() },
+                onClick = { showReasoningDialog = true }
             )
         }
 
+        // --- 6. WINGMAN PROMPTS & INTEGRATION ---
         SettingsSectionCard(title = stringResource(R.string.ai_section_prompt)) {
             SettingsActionRow(
                 title = stringResource(R.string.ai_system_prompt_title),
-                description = if (aiSystemPrompt.isNotBlank()) {
-                    aiSystemPrompt.take(60).let {
-                        if (aiSystemPrompt.length > 60) "$it…" else it
-                    }
-                } else {
-                    stringResource(R.string.ai_system_prompt_default)
-                },
+                description = if (aiSystemPrompt.isBlank()) stringResource(R.string.ai_system_prompt_default) else "${aiSystemPrompt.length} chars",
                 icon = Icons.Outlined.Edit,
                 onClick = { showSystemPromptDialog = true }
             )
+
             SettingsDivider()
+
             SettingsActionRow(
                 title = stringResource(R.string.ai_remote_sync_title),
-                description = if (isSyncingPrompt) {
-                    stringResource(R.string.ai_remote_sync_in_progress)
-                } else if (prefs.aiRemoteSystemPrompt.isNotBlank()) {
-                    stringResource(R.string.ai_remote_sync_synced)
-                } else {
-                    stringResource(R.string.ai_remote_sync_desc)
+                description = stringResource(R.string.ai_remote_sync_desc),
+                icon = Icons.Outlined.CloudDownload,
+                trailingContent = {
+                    if (isSyncingPrompt) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    } else {
+                        Text(
+                            text = stringResource(R.string.refresh),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 },
-                icon = Icons.Outlined.Refresh,
                 onClick = {
-                    if (!isSyncingPrompt) {
-                        isSyncingPrompt = true
-                        coroutineScope.launch {
-                            val result = PromptRepository.fetchRemotePrompt(promptRemoteUrl)
-                            isSyncingPrompt = false
-                            result.fold(
-                                onSuccess = { remotePrompt ->
-                                    prefs.aiRemoteSystemPrompt = remotePrompt
-                                    if (promptRemoteUrl != prefs.aiPromptRemoteUrl) {
-                                        promptRemoteUrl = prefs.aiPromptRemoteUrl
-                                    }
-                                    prefs.saveToFallbackStorageAsync(context)
-                                    promptSyncGeneration++
-                                    Toast.makeText(context, promptSyncSuccessMsg, Toast.LENGTH_SHORT).show()
-                                },
-                                onFailure = { err ->
-                                    Toast.makeText(
-                                        context,
-                                        java.lang.String.format(promptSyncFailureFormat, err.message ?: "Network error"),
-                                        Toast.LENGTH_LONG
-                                    ).show()
-                                }
-                            )
-                        }
+                    if (isSyncingPrompt) return@SettingsActionRow
+                    isSyncingPrompt = true
+                    coroutineScope.launch {
+                        val result = PromptRepository.fetchRemotePrompt(promptRemoteUrl)
+                        isSyncingPrompt = false
+                        result.fold(
+                            onSuccess = { fetched ->
+                                prefs.aiRemoteSystemPrompt = fetched
+                                prefs.saveToFallbackStorageAsync(context)
+                                promptSyncGeneration++
+                                Toast.makeText(context, R.string.ai_remote_sync_success, Toast.LENGTH_SHORT).show()
+                            },
+                            onFailure = { error ->
+                                Toast.makeText(context, context.getString(R.string.ai_remote_sync_failure, error.message), Toast.LENGTH_LONG).show()
+                            }
+                        )
                     }
                 }
             )
+
             SettingsDivider()
+
             SettingsActionRow(
                 title = stringResource(R.string.ai_remote_url_title),
                 description = promptRemoteUrl,
                 icon = Icons.Outlined.Link,
                 onClick = { showRemoteUrlDialog = true }
             )
+
+            SettingsDivider()
+
+            SettingsSwitchRow(
+                title = "Override default prompt",
+                description = "Always use custom system prompt instructions",
+                checked = aiOverrideSystemPrompt,
+                onCheckedChange = {
+                    aiOverrideSystemPrompt = it
+                    prefs.aiOverrideSystemPrompt = it
+                    prefs.saveToFallbackStorageAsync(context)
+                }
+            )
+
+            SettingsDivider()
+
+            SettingsSwitchRow(
+                title = stringResource(R.string.ai_fab_title),
+                description = "Shows the floating wingman button over profiles and chats in Hinge",
+                icon = Icons.Outlined.TouchApp,
+                checked = showHostAppFab,
+                onCheckedChange = {
+                    showHostAppFab = it
+                    prefs.showHostAppFab = it
+                    prefs.saveToFallbackStorageAsync(context)
+                }
+            )
+        }
+    }
+
+    // --- DIALOGS ---
+
+    // 1. Provider Picker Dialog
+    if (showProviderPicker) {
+        DefaultDialog(
+            onDismiss = { showProviderPicker = false },
+            title = { Text(stringResource(R.string.ai_provider)) },
+            buttons = {
+                TextButton(onClick = { showProviderPicker = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        ) {
+            LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp)) {
+                AiProviderGroup.entries.forEach { group ->
+                    val groupPresets = AiProviderPresets.all.filter { it.group == group }
+                    if (groupPresets.isNotEmpty()) {
+                        item(key = "header_${group.name}") {
+                            Text(
+                                text = stringResource(
+                                    when (group) {
+                                        AiProviderGroup.GATEWAY -> R.string.ai_provider_group_gateways
+                                        AiProviderGroup.DIRECT -> R.string.ai_provider_group_direct
+                                        AiProviderGroup.CUSTOM -> R.string.ai_provider_group_custom
+                                    }
+                                ),
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(vertical = 8.dp)
+                            )
+                        }
+                        items(groupPresets, key = { it.id }) { preset ->
+                            val isSelected = preset.id == currentPreset.id
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(MaterialTheme.shapes.small)
+                                    .selectable(
+                                        selected = isSelected,
+                                        role = Role.RadioButton,
+                                        onClick = {
+                                            aiProvider = preset.id
+                                            currentPreset = preset
+                                            prefs.aiProvider = preset.id
+                                            if (preset.defaultModel.isNotBlank()) {
+                                                openRouterModel = preset.defaultModel
+                                                prefs.openRouterModel = preset.defaultModel
+                                            }
+                                            if (preset.endpoint.isNotBlank()) {
+                                                openRouterBaseUrl = preset.endpoint
+                                                prefs.openRouterBaseUrl = preset.endpoint
+                                            }
+                                            apiKey = prefs.aiApiKeyFor(preset.id)
+                                            if (preset.id != "OpenRouter") {
+                                                openRouterOAuthSession = ""
+                                                prefs.openRouterOAuthSession = ""
+                                            }
+                                            prefs.saveToFallbackStorageAsync(context)
+                                            showProviderPicker = false
+                                        }
+                                    )
+                                    .padding(vertical = 10.dp, horizontal = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = preset.id,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
+                                    )
+                                    if (preset.defaultModel.isNotBlank()) {
+                                        Text(
+                                            text = preset.defaultModel,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                                if (isSelected) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. Model Picker Dialog
+    if (showModelPicker) {
+        val (modelApiKey, modelBaseUrl) = prefs.aiCredentials(currentPreset.id)
+        var reloadTrigger by remember { mutableIntStateOf(0) }
+        var searchQuery by remember { mutableStateOf("") }
+
+        val modelState by produceState<Result<List<AiModelInfo>>?>(null, currentPreset.id, modelApiKey, modelBaseUrl, reloadTrigger) {
+            value = null
+            value = AiWingmanClient.modelCatalog.models(
+                preset = currentPreset,
+                apiKey = modelApiKey,
+                baseUrl = modelBaseUrl,
+                refresh = reloadTrigger > 0
+            )
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        DefaultDialog(
+            onDismiss = { showModelPicker = false },
+            title = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(stringResource(R.string.ai_model))
+                    IconButton(onClick = { reloadTrigger++ }) {
+                        Icon(Icons.Outlined.Refresh, contentDescription = "Refresh")
+                    }
+                }
+            },
+            buttons = {
+                TextButton(onClick = { showModelPicker = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    label = { Text(stringResource(R.string.ai_model_search)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                )
+
+                val typed = searchQuery.trim()
+                val catalogModels = modelState?.getOrNull().orEmpty()
+
+                LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 380.dp)) {
+                    // Custom typed model option if query not found
+                    if (typed.isNotEmpty() && catalogModels.none { it.id.equals(typed, ignoreCase = true) }) {
+                        item(key = "custom_typed") {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(MaterialTheme.shapes.small)
+                                    .clickable {
+                                        openRouterModel = typed
+                                        prefs.openRouterModel = typed
+                                        prefs.saveToFallbackStorageAsync(context)
+                                        showModelPicker = false
+                                    }
+                                    .padding(vertical = 10.dp, horizontal = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "${stringResource(R.string.ai_model_custom_id)}: $typed",
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    when {
+                        modelState == null -> {
+                            item {
+                                Box(
+                                    modifier = Modifier.fillMaxWidth().padding(32.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    CircularProgressIndicator(strokeWidth = 2.dp)
+                                }
+                            }
+                        }
+                        modelState?.isFailure == true -> {
+                            item {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Text(
+                                        text = stringResource(R.string.ai_model_load_failed),
+                                        color = MaterialTheme.colorScheme.error,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                    Spacer(Modifier.height(8.dp))
+                                    TextButton(onClick = { reloadTrigger++ }) {
+                                        Text(stringResource(R.string.retry))
+                                    }
+                                }
+                            }
+                        }
+                        else -> {
+                            val filtered = catalogModels.filter {
+                                typed.isEmpty() || it.id.contains(typed, ignoreCase = true) || it.name.contains(typed, ignoreCase = true)
+                            }
+                            if (filtered.isEmpty() && typed.isNotEmpty()) {
+                                item {
+                                    Text(
+                                        text = stringResource(R.string.ai_model_none_found),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(16.dp)
+                                    )
+                                }
+                            }
+                            items(filtered, key = { it.id }) { modelInfo ->
+                                val isSelected = modelInfo.id == openRouterModel
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(MaterialTheme.shapes.small)
+                                        .selectable(
+                                            selected = isSelected,
+                                            role = Role.RadioButton,
+                                            onClick = {
+                                                openRouterModel = modelInfo.id
+                                                prefs.openRouterModel = modelInfo.id
+                                                prefs.saveToFallbackStorageAsync(context)
+                                                showModelPicker = false
+                                            }
+                                        )
+                                        .padding(vertical = 10.dp, horizontal = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = modelInfo.name,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
+                                        )
+                                        if (modelInfo.name != modelInfo.id) {
+                                            Text(
+                                                text = modelInfo.id,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        // Pricing badge
+                                        val priceText = when {
+                                            modelInfo.free -> stringResource(R.string.ai_model_free)
+                                            modelInfo.inputUsdPerMTok != null && modelInfo.outputUsdPerMTok != null -> {
+                                                stringResource(
+                                                    R.string.ai_model_price,
+                                                    formatUsd(modelInfo.inputUsdPerMTok),
+                                                    formatUsd(modelInfo.outputUsdPerMTok)
+                                                )
+                                            }
+                                            else -> null
+                                        }
+                                        priceText?.let {
+                                            Text(
+                                                text = it,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = if (modelInfo.free) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
+                                            )
+                                        }
+                                    }
+                                    if (isSelected) {
+                                        Icon(
+                                            imageVector = Icons.Default.Check,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
+
+    // 3. API Key Dialog
+    if (showApiKeyDialog) {
+        TextFieldDialog(
+            title = { Text(stringResource(R.string.ai_api_key)) },
+            initialTextFieldValue = TextFieldValue(apiKey),
+            singleLine = true,
+            keyboardType = KeyboardType.Password,
+            placeholder = { Text("Enter API key") },
+            onDone = { newKey ->
+                apiKey = newKey.trim()
+                prefs.setAiApiKey(currentPreset.id, apiKey)
+                prefs.saveToFallbackStorageAsync(context)
+                showApiKeyDialog = false
+            },
+            onDismiss = { showApiKeyDialog = false }
+        )
+    }
+
+    // 4. Base URL Dialog
+    if (showBaseUrlDialog) {
+        TextFieldDialog(
+            title = { Text(stringResource(R.string.ai_base_url)) },
+            initialTextFieldValue = TextFieldValue(openRouterBaseUrl.ifBlank { currentPreset.endpoint }),
+            singleLine = true,
+            keyboardType = KeyboardType.Uri,
+            placeholder = { Text(currentPreset.endpoint) },
+            extraContent = {
+                if (currentPreset.endpoint.isNotBlank()) {
+                    TextButton(
+                        onClick = {
+                            openRouterBaseUrl = currentPreset.endpoint
+                            prefs.openRouterBaseUrl = currentPreset.endpoint
+                            prefs.saveToFallbackStorageAsync(context)
+                            showBaseUrlDialog = false
+                        }
+                    ) {
+                        Text(stringResource(R.string.ai_provider_default))
+                    }
+                }
+            },
+            onDone = { newUrl ->
+                openRouterBaseUrl = newUrl.trim()
+                prefs.openRouterBaseUrl = openRouterBaseUrl
+                prefs.saveToFallbackStorageAsync(context)
+                showBaseUrlDialog = false
+            },
+            onDismiss = { showBaseUrlDialog = false }
+        )
+    }
+
+    // 5. Reasoning Effort Dialog
+    if (showReasoningDialog) {
+        val options = listOf("low", "medium", "high")
+        EnumDialog(
+            title = stringResource(R.string.ai_reasoning_effort_title),
+            current = aiReasoningEffort,
+            values = options,
+            valueText = { it.replaceFirstChar { c -> c.uppercase() } },
+            onDismiss = { showReasoningDialog = false },
+            onSelect = { selected ->
+                aiReasoningEffort = selected
+                prefs.aiReasoningEffort = selected
+                prefs.saveToFallbackStorageAsync(context)
+                showReasoningDialog = false
+            }
+        )
+    }
+
+    // 6. System Prompt Dialog
+    if (showSystemPromptDialog) {
+        TextFieldDialog(
+            title = { Text(stringResource(R.string.ai_system_prompt_title)) },
+            initialTextFieldValue = TextFieldValue(aiSystemPrompt),
+            singleLine = false,
+            maxLines = 15,
+            placeholder = { Text(defaultSystemPrompt) },
+            extraContent = {
+                if (aiSystemPrompt.isNotBlank()) {
+                    TextButton(
+                        onClick = {
+                            aiSystemPrompt = ""
+                            prefs.aiCustomSystemPrompt = ""
+                            prefs.saveToFallbackStorageAsync(context)
+                            showSystemPromptDialog = false
+                        }
+                    ) {
+                        Text(stringResource(R.string.reset))
+                    }
+                }
+            },
+            onDone = { newPrompt ->
+                aiSystemPrompt = newPrompt.trim()
+                prefs.aiCustomSystemPrompt = aiSystemPrompt
+                prefs.saveToFallbackStorageAsync(context)
+                showSystemPromptDialog = false
+            },
+            onDismiss = { showSystemPromptDialog = false }
+        )
+    }
+
+    // 7. Remote Prompt Source URL Dialog
+    if (showRemoteUrlDialog) {
+        TextFieldDialog(
+            title = { Text(stringResource(R.string.ai_remote_url_title)) },
+            initialTextFieldValue = TextFieldValue(promptRemoteUrl),
+            singleLine = true,
+            keyboardType = KeyboardType.Uri,
+            placeholder = { Text(Consts.DEFAULT_AI_PROMPT_REMOTE_URL) },
+            extraContent = {
+                TextButton(
+                    onClick = {
+                        promptRemoteUrl = Consts.DEFAULT_AI_PROMPT_REMOTE_URL
+                        prefs.aiPromptRemoteUrl = promptRemoteUrl
+                        prefs.saveToFallbackStorageAsync(context)
+                        showRemoteUrlDialog = false
+                    }
+                ) {
+                    Text(stringResource(R.string.reset))
+                }
+            },
+            onDone = { newUrl ->
+                promptRemoteUrl = newUrl.trim()
+                prefs.aiPromptRemoteUrl = promptRemoteUrl
+                prefs.saveToFallbackStorageAsync(context)
+                showRemoteUrlDialog = false
+            },
+            onDismiss = { showRemoteUrlDialog = false }
+        )
+    }
+}
+
+private fun formatUsd(value: Double): String {
+    val digits = if (value >= 1.0) 2 else 3
+    val scale = 10.0.pow(digits).roundToLong()
+    val scaled = (value * scale).roundToLong()
+    return "\$${scaled / scale}.${(scaled % scale).toString().padStart(digits, '0')}"
 }

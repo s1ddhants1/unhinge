@@ -1057,6 +1057,7 @@ object HostAppAiFab {
             editText.setText(text)
             editText.setSelection(text.length)
             editText.requestFocus()
+            Toast.makeText(activity, "Inserted reply into chat!", Toast.LENGTH_SHORT).show()
         }
         return true
     }
@@ -1795,12 +1796,30 @@ object HostAppAiFab {
                                         showDragHandle = true,
                                         onDismiss = performDismiss,
                                         onInsert = { text ->
-                                            if (commentInfo != null) {
-                                                insertTextIntoComment(activity, commentInfo, text)
+                                            val liveComment = commentInfo ?: currentCommentCardInfo ?: findCommentCardInfo(container.rootView, candidate) ?: findCommentCardInfo(activity.window?.decorView, candidate)
+                                            if (liveComment != null) {
+                                                insertTextIntoComment(activity, liveComment, text)
                                             } else if (isChat) {
-                                                insertReplyIntoChatInput(activity, text)
+                                                if (!insertReplyIntoChatInput(activity, text)) {
+                                                    copyOpenerFallback(activity, text)
+                                                }
                                             } else {
-                                                copyOpenerFallback(activity, text)
+                                                val decor = activity.window?.decorView
+                                                val editTexts = mutableListOf<android.widget.EditText>()
+                                                if (decor != null) findEditTexts(decor, editTexts)
+                                                val target = editTexts.firstOrNull { it.isFocused } ?: editTexts.firstOrNull()
+                                                if (target != null) {
+                                                    activity.runOnUiThread {
+                                                        target.setText(text)
+                                                        target.setSelection(text.length)
+                                                        target.requestFocus()
+                                                    }
+                                                    val cm = activity.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                                                    cm?.setPrimaryClip(ClipData.newPlainText("Unhinge Opener", text))
+                                                    Toast.makeText(activity, "Inserted opener into comment!", Toast.LENGTH_SHORT).show()
+                                                } else {
+                                                    copyOpenerFallback(activity, text)
+                                                }
                                             }
                                             performDismiss()
                                         }

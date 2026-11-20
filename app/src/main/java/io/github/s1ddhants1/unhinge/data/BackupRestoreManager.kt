@@ -5,6 +5,7 @@ import android.net.Uri
 import android.util.Log
 import io.github.s1ddhants1.unhinge.Consts
 import io.github.s1ddhants1.unhinge.model.CachedCandidateProfile
+import io.github.s1ddhants1.unhinge.model.MatchRecord
 import io.github.s1ddhants1.unhinge.util.PreferencesManager
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -44,7 +45,9 @@ data class UnhingeSettingsBackup(
     val aiReasoningEffort: String = Consts.DEFAULT_AI_REASONING_EFFORT,
     val pureBlack: Boolean = false,
     val themeMode: String = "SYSTEM",
-    val themeColor: Long = Consts.DEFAULT_THEME_COLOR
+    val themeColor: Long = Consts.DEFAULT_THEME_COLOR,
+    val aiApiKeysJson: String = "{}",
+    val openRouterOAuthKey: String = ""
 )
 
 @Serializable
@@ -53,13 +56,15 @@ data class UnhingeBackupBundle(
     val app: String = "Unhinge",
     val exportedAt: Long = System.currentTimeMillis(),
     val settings: UnhingeSettingsBackup? = null,
-    val candidates: List<CachedCandidateProfile>? = null
+    val candidates: List<CachedCandidateProfile>? = null,
+    val matches: List<MatchRecord>? = null
 )
 
 data class ImportResult(
     val success: Boolean,
     val settingsRestored: Boolean,
     val candidatesImported: Int,
+    val matchesImported: Int = 0,
     val errorMessage: String? = null
 )
 
@@ -73,17 +78,21 @@ object BackupRestoreManager {
     fun exportToJson(
         prefs: PreferencesManager?,
         candidateArchiveDb: CandidateArchiveDb?,
+        matchArchiveDb: MatchArchiveDb? = null,
         includeSettings: Boolean = true,
-        includeCandidates: Boolean = true
+        includeCandidates: Boolean = true,
+        includeMatches: Boolean = true
     ): String {
         val settingsBackup = if (includeSettings && prefs != null) prefs.exportSettings() else null
         val candidatesList = if (includeCandidates && candidateArchiveDb != null) candidateArchiveDb.getAllArchived() else null
+        val matchesList = if (includeMatches && matchArchiveDb != null) matchArchiveDb.getAllArchived(candidateArchiveDb) else null
         val bundle = UnhingeBackupBundle(
             version = 1,
             app = "Unhinge",
             exportedAt = System.currentTimeMillis(),
             settings = settingsBackup,
-            candidates = candidatesList
+            candidates = candidatesList,
+            matches = matchesList
         )
         return json.encodeToString(bundle)
     }
@@ -92,7 +101,8 @@ object BackupRestoreManager {
         context: Context?,
         jsonString: String,
         prefs: PreferencesManager?,
-        candidateArchiveDb: CandidateArchiveDb?
+        candidateArchiveDb: CandidateArchiveDb?,
+        matchArchiveDb: MatchArchiveDb? = null
     ): ImportResult {
         return try {
             val bundle = json.decodeFromString<UnhingeBackupBundle>(jsonString)
@@ -107,10 +117,16 @@ object BackupRestoreManager {
                 candidatesCount = candidateArchiveDb.upsertCandidates(bundle.candidates)
             }
 
+            var matchesCount = 0
+            if (!bundle.matches.isNullOrEmpty() && matchArchiveDb != null) {
+                matchesCount = matchArchiveDb.upsertMatches(bundle.matches)
+            }
+
             ImportResult(
-                success = settingsRestored || candidatesCount > 0,
+                success = settingsRestored || candidatesCount > 0 || matchesCount > 0,
                 settingsRestored = settingsRestored,
-                candidatesImported = candidatesCount
+                candidatesImported = candidatesCount,
+                matchesImported = matchesCount
             )
         } catch (e: Exception) {
             Log.e(Consts.TAG, "BackupRestoreManager: failed to import backup", e)
@@ -118,6 +134,7 @@ object BackupRestoreManager {
                 success = false,
                 settingsRestored = false,
                 candidatesImported = 0,
+                matchesImported = 0,
                 errorMessage = e.localizedMessage ?: "Invalid or incompatible backup format"
             )
         }

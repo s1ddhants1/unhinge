@@ -7,6 +7,12 @@ import android.content.Context
 import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -48,6 +54,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -122,18 +129,9 @@ fun InlineAiOpenerCard(
     val matchDisplayName = chatContext?.match?.firstName?.ifBlank { activeCandidate?.firstName.orEmpty() }
         ?: activeCandidate?.firstName.orEmpty()
 
-    val chatArchetypes = remember {
-        listOf(
-            "Playful Tease / Banter",
-            "Date Pitch / Move to Meet",
-            "Witty Callback",
-            "Casual / Low-Key",
-        )
-    }
-
     val promptEntries = remember(activeCandidate?.userId, activeCandidate?.prompts, isChatMode, chatContext?.match?.subjectId, targetPrompt) {
         if (isChatMode) {
-            chatArchetypes.map { PromptEntry(text = it) }
+            listOf(PromptEntry(text = "Tailored Reply"))
         } else {
             val prompts = activeCandidate?.prompts.orEmpty()
             if (prompts.isNotEmpty()) {
@@ -162,7 +160,7 @@ fun InlineAiOpenerCard(
     }
 
     val entries = remember(promptEntries) {
-        if (promptEntries.isNotEmpty()) promptEntries else listOf(PromptEntry(text = "AI Wingman: Personalized Opener"))
+        if (promptEntries.isNotEmpty()) promptEntries else listOf(PromptEntry(text = if (isChatMode) "Tailored Reply" else "AI Wingman: Personalized Opener"))
     }
 
     val defaultIndex = remember(targetPrompt, entries) {
@@ -183,8 +181,20 @@ fun InlineAiOpenerCard(
     val isEntryGenerating by (activeEntry?.isGeneratingFlow?.collectAsState() ?: remember { mutableStateOf(false) })
     val status by AiWingmanHelper.status.collectAsState()
 
+    val infiniteTransition = rememberInfiniteTransition(label = "regenerate_rotation")
+    val rotateAngle by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 850, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "rotation_angle",
+    )
+
+    val (credApiKey, credBaseUrl) = prefs.aiCredentials(prefs.aiProvider)
     val isApiKeyRequired = AiWingmanHelper.isApiKeyRequired(prefs.aiProvider, prefs.openRouterModel)
-    val isAiReady = !isApiKeyRequired || prefs.openRouterApiKey.isNotBlank()
+    val isAiReady = !isApiKeyRequired || credApiKey.isNotBlank()
 
     fun triggerGeneration(forceRefresh: Boolean = false) {
         if (!isAiReady || activeEntry == null) return
@@ -195,8 +205,8 @@ fun InlineAiOpenerCard(
                 profileBlock = profileBlock,
                 conversationHistory = chatMessages,
                 prompts = listOf(activeEntry),
-                apiKey = prefs.openRouterApiKey,
-                baseUrl = prefs.openRouterBaseUrl,
+                apiKey = credApiKey,
+                baseUrl = credBaseUrl,
                 model = prefs.openRouterModel,
                 scope = coroutineScope,
                 context = context,
@@ -216,8 +226,8 @@ fun InlineAiOpenerCard(
             }
             AiWingmanHelper.generateReplies(
                 prompts = promptsToGen,
-                apiKey = prefs.openRouterApiKey,
-                baseUrl = prefs.openRouterBaseUrl,
+                apiKey = credApiKey,
+                baseUrl = credBaseUrl,
                 model = prefs.openRouterModel,
                 scope = coroutineScope,
                 context = context,
@@ -240,21 +250,29 @@ fun InlineAiOpenerCard(
         }
     }
 
-    var isCopied by remember { mutableStateOf(false) }
+    var isPasted by remember { mutableStateOf(false) }
 
-    fun copyOpener(text: String) {
+    fun copyCardReply(text: String) {
         if (text.isBlank()) return
         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        cm.setPrimaryClip(ClipData.newPlainText("Unhinge Opener", text))
-        isCopied = true
-        onInsert?.invoke(text)
-        Toast.makeText(context, if (isCommentMode) "Inserted into comment" else "Copied opener to clipboard", Toast.LENGTH_SHORT).show()
+        cm.setPrimaryClip(ClipData.newPlainText(if (isChatMode) "Unhinge Reply" else "Unhinge Opener", text))
+        Toast.makeText(context, if (isChatMode) "Copied reply to clipboard" else "Copied opener to clipboard", Toast.LENGTH_SHORT).show()
+    }
+
+    fun pasteOpener(text: String) {
+        if (text.isBlank()) return
+        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        cm.setPrimaryClip(ClipData.newPlainText(if (isChatMode) "Unhinge Reply" else "Unhinge Opener", text))
+        isPasted = true
+        if (onInsert != null) {
+            onInsert.invoke(text)
+        } else {
+            Toast.makeText(context, if (isChatMode) "Copied reply to clipboard" else "Copied opener to clipboard", Toast.LENGTH_SHORT).show()
+        }
         coroutineScope.launch {
-            delay(900)
-            isCopied = false
-            if (isCommentMode || isChatMode) {
-                onDismiss?.invoke()
-            }
+            delay(500)
+            isPasted = false
+            onDismiss?.invoke()
         }
     }
 
@@ -319,7 +337,7 @@ fun InlineAiOpenerCard(
         Spacer(modifier = Modifier.height(8.dp))
 
         val headerSubtitle = if (isChatMode) {
-            "Smart banter and tailored replies crafted to match their energy and lead to a date."
+            "A tailored reply crafted to match their energy and keep the conversation going."
         } else {
             "Personalized openers crafted from profile prompts to make starting a conversation effortless."
         }
@@ -346,6 +364,8 @@ fun InlineAiOpenerCard(
             val entry = entries.getOrNull(page)
             val entryReply by (entry?.suggestedReplyFlow?.collectAsState() ?: remember { mutableStateOf(null) })
             val entryGenerating by (entry?.isGeneratingFlow?.collectAsState() ?: remember { mutableStateOf(false) })
+            val entryReplies by (entry?.repliesFlow?.collectAsState() ?: remember { mutableStateOf(emptyList()) })
+            val hasGeneratedOpener = !entryReply.isNullOrBlank() || entryReplies.isNotEmpty()
 
             val colonIdx = entry?.text?.indexOf(":") ?: -1
             val cardQuestion = if (colonIdx != -1) entry?.text?.substring(0, colonIdx)?.trim().orEmpty() else ""
@@ -377,7 +397,7 @@ fun InlineAiOpenerCard(
                     .height(330.dp),
             ) {
                 Box(modifier = Modifier.fillMaxSize()) {
-                    if (isSelected) {
+                    if (isSelected && hasGeneratedOpener) {
                         Box(
                             modifier = Modifier
                                 .align(Alignment.TopEnd)
@@ -392,8 +412,12 @@ fun InlineAiOpenerCard(
                             Icon(
                                 imageVector = Icons.Default.Refresh,
                                 contentDescription = "Regenerate",
-                                tint = textSecondary.copy(alpha = 0.5f),
-                                modifier = Modifier.size(15.dp),
+                                tint = if (entryGenerating) plumColor else textSecondary.copy(alpha = 0.5f),
+                                modifier = Modifier
+                                    .size(15.dp)
+                                    .graphicsLayer {
+                                        rotationZ = if (entryGenerating) rotateAngle else 0f
+                                    },
                             )
                         }
                     }
@@ -440,7 +464,7 @@ fun InlineAiOpenerCard(
                                 .fillMaxWidth()
                                 .weight(1f)
                                 .clickable(enabled = !entryReply.isNullOrBlank()) {
-                                    entryReply?.let(::copyOpener)
+                                    entryReply?.let(::copyCardReply)
                                 },
                             contentAlignment = Alignment.Center,
                         ) {
@@ -455,22 +479,11 @@ fun InlineAiOpenerCard(
                                     )
                                 }
                                 entryGenerating && entryReply.isNullOrBlank() -> {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    ) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(16.dp),
-                                            strokeWidth = 2.dp,
-                                            color = plumColor,
-                                        )
-                                        Text(
-                                            text = "Crafting opener...",
-                                            fontFamily = modernEraRegular,
-                                            fontSize = 13.5.sp,
-                                            color = textSecondary,
-                                        )
-                                    }
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(24.dp),
+                                        strokeWidth = 2.5.dp,
+                                        color = plumColor,
+                                    )
                                 }
                                 !entryReply.isNullOrBlank() -> {
                                     Text(
@@ -495,7 +508,11 @@ fun InlineAiOpenerCard(
                                 }
                                 else -> {
                                     Text(
-                                        text = "Tap Select below to craft a tailored opener.",
+                                        text = if (isChatMode) {
+                                            "Tap Select below to craft a tailored reply."
+                                        } else {
+                                            "Tap Select below to craft a tailored opener."
+                                        },
                                         fontFamily = modernEraRegular,
                                         fontSize = 13.sp,
                                         color = textSecondary,
@@ -535,14 +552,18 @@ fun InlineAiOpenerCard(
             Spacer(modifier = Modifier.height(18.dp))
         }
 
+        val activeReplies by (activeEntry?.repliesFlow?.collectAsState() ?: remember { mutableStateOf(emptyList()) })
+        val hasActiveOpener = !activeReply.isNullOrBlank() || activeReplies.isNotEmpty()
+        val isRefreshing = isEntryGenerating && hasActiveOpener
+
         Surface(
             shape = CircleShape,
-            color = plumColor,
+            color = if (isRefreshing) Color(0xFFE2E2E0) else plumColor,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp)
                 .height(52.dp)
-                .clickable {
+                .clickable(enabled = !isEntryGenerating) {
                     if (!isAiReady) {
                         openUnhingeSettings(context)
                         return@clickable
@@ -551,7 +572,7 @@ fun InlineAiOpenerCard(
                     if (current.isNullOrBlank()) {
                         triggerGeneration(forceRefresh = true)
                     } else {
-                        copyOpener(current)
+                        pasteOpener(current)
                     }
                 },
         ) {
@@ -560,7 +581,7 @@ fun InlineAiOpenerCard(
                 contentAlignment = Alignment.Center,
             ) {
                 when {
-                    isCopied -> {
+                    isPasted -> {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -572,13 +593,22 @@ fun InlineAiOpenerCard(
                                 modifier = Modifier.size(18.dp),
                             )
                             Text(
-                                text = if (isCommentMode) "Inserted" else "Selected",
+                                text = "Pasted",
                                 fontFamily = modernEraBold,
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = Color.White,
                             )
                         }
+                    }
+                    isRefreshing -> {
+                        Text(
+                            text = if (isChatMode) "Paste into chat" else "Paste into comment",
+                            fontFamily = modernEraBold,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFFA0A09E),
+                        )
                     }
                     isEntryGenerating && activeReply.isNullOrBlank() -> {
                         Row(
@@ -608,9 +638,18 @@ fun InlineAiOpenerCard(
                             color = Color.White,
                         )
                     }
+                    activeReply.isNullOrBlank() -> {
+                        Text(
+                            text = if (isChatMode) "Craft Reply" else "Craft Opener",
+                            fontFamily = modernEraBold,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White,
+                        )
+                    }
                     else -> {
                         Text(
-                            text = "Select",
+                            text = if (isChatMode) "Paste into chat" else "Paste into comment",
                             fontFamily = modernEraBold,
                             fontSize = 16.sp,
                             fontWeight = FontWeight.SemiBold,

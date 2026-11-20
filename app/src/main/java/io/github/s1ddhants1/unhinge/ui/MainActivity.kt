@@ -1,71 +1,39 @@
 package io.github.s1ddhants1.unhinge.ui
 
-import io.github.s1ddhants1.unhinge.R
-import androidx.compose.ui.res.stringResource
 import android.content.Context
+import android.content.Intent
+import android.content.SharedPreferences
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
-import androidx.compose.animation.*
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.layout.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.runtime.*
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil3.compose.setSingletonImageLoaderFactory
 import io.github.s1ddhants1.unhinge.Consts
-import io.github.s1ddhants1.unhinge.ui.component.*
+import io.github.s1ddhants1.unhinge.ui.component.navigation.UnhingeApp
 import io.github.s1ddhants1.unhinge.ui.theme.Theme
-import io.github.s1ddhants1.unhinge.util.AppActions
 import io.github.s1ddhants1.unhinge.util.LSPatchHelper
 import io.github.s1ddhants1.unhinge.util.PreferencesManager
-import coil3.compose.setSingletonImageLoaderFactory
 import io.github.s1ddhants1.unhinge.util.UnhingeImageLoader
 import io.github.s1ddhants1.unhinge.util.attempt
-import kotlinx.coroutines.launch
-
-enum class AppTab(val titleRes: Int) {
-    Candidates(R.string.nav_tab_title_candidates),
-    Matches(R.string.nav_tab_title_matches),
-    Home(R.string.nav_tab_title_home),
-    Profile(R.string.nav_tab_title_profile)
-}
 
 class MainActivity : ComponentActivity() {
+
     private val viewModel: MainViewModel by viewModels()
 
-    @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        super.onCreate(savedInstanceState)
 
         setContent {
-            val context = LocalContext.current
-            val coroutineScope = rememberCoroutineScope()
-            val snackbarHostState = remember { SnackbarHostState() }
             val state by viewModel.uiState.collectAsStateWithLifecycle()
-            var currentTab by remember { mutableStateOf(AppTab.Home) }
-            var showSettings by remember { mutableStateOf(false) }
-            var settingsSubpage by remember { mutableStateOf<io.github.s1ddhants1.unhinge.ui.component.settings.SettingsSubpage?>(null) }
-
-            LaunchedEffect(intent) {
-                val subpage = intent?.getStringExtra("subpage") ?: intent?.getStringExtra("navigate_to")
-                if (subpage == "ai_wingman" || subpage == "settings_ai") {
-                    showSettings = true
-                    settingsSubpage = io.github.s1ddhants1.unhinge.ui.component.settings.SettingsSubpage.AI_WINGMAN
-                }
-            }
 
             val localPrefs = remember { getSharedPreferences(Consts.PREFS_SETTINGS, Context.MODE_PRIVATE) }
             val prefsState = remember {
@@ -98,254 +66,21 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            BackHandler(enabled = showSettings || currentTab != AppTab.Home) {
-                if (showSettings) {
-                    if (settingsSubpage != null) {
-                        settingsSubpage = null
-                    } else {
-                        showSettings = false
-                    }
-                } else {
-                    currentTab = AppTab.Home
-                }
+            setSingletonImageLoaderFactory { context ->
+                UnhingeImageLoader.get(context)
             }
-
-            val topBarTitle = if (!showSettings) stringResource(currentTab.titleRes) else (settingsSubpage?.let { stringResource(it.titleRes) } ?: stringResource(R.string.nav_settings_menu))
-            val quickForceStoppedMsg = stringResource(R.string.quick_force_stopped)
-            val quickOpenedSettingsMsg = stringResource(R.string.quick_opened_settings)
 
             Theme(
                 themeMode = prefs.themeMode,
                 pureBlack = prefs.pureBlack,
-                themeColor = androidx.compose.ui.graphics.Color(prefs.themeColor)
+                themeColor = Color(prefs.themeColor)
             ) {
-                setSingletonImageLoaderFactory { context ->
-                    UnhingeImageLoader.get(context)
-                }
-
-                Scaffold(
-                    contentWindowInsets = WindowInsets.systemBars,
-                    snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
-                    topBar = {
-                        TopAppBar(
-                            title = {
-                                Text(
-                                    text = topBarTitle,
-                                    style = MaterialTheme.typography.titleLarge
-                                )
-                            },
-                            navigationIcon = {
-                                if (showSettings) {
-                                    IconButton(
-                                        onClick = {
-                                            if (settingsSubpage != null) {
-                                                settingsSubpage = null
-                                            } else {
-                                                showSettings = false
-                                            }
-                                        }
-                                    ) {
-                                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back))
-                                    }
-                                } else if (currentTab != AppTab.Home) {
-                                    IconButton(
-                                        onClick = {
-                                            currentTab = AppTab.Home
-                                        }
-                                    ) {
-                                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back))
-                                    }
-                                }
-                            },
-                            actions = {
-                                if (!showSettings) {
-                                    IconButton(
-                                        onClick = {
-                                            showSettings = true
-                                            settingsSubpage = null
-                                        }
-                                    ) {
-                                        Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.nav_settings_menu))
-                                    }
-                                }
-                            },
-                            colors = TopAppBarDefaults.topAppBarColors(
-                                containerColor = MaterialTheme.colorScheme.surface
-                            )
-                        )
-                    },
-                    bottomBar = {
-                        if (!showSettings) {
-                            Column {
-                                AppQuickControls(
-                                    onForceStop = {
-                                        coroutineScope.launch {
-                                            val stopped = AppActions.forceStopTargetApp(context)
-                                            snackbarHostState.showSnackbar(
-                                                if (stopped) quickForceStoppedMsg
-                                                else quickOpenedSettingsMsg
-                                            )
-                                        }
-                                    },
-                                    onOpenApp = {
-                                        AppActions.launchTargetApp(context)
-                                    }
-                                )
-                                NavigationBar(
-                                    containerColor = MaterialTheme.colorScheme.surfaceContainer
-                                ) {
-                                    fun selectTab(tab: AppTab) {
-                                    if (currentTab != tab) {
-                                        currentTab = tab
-                                    }
-                                }
-
-                                val incomingCount = state.completeData.incomingLikes.totalLikes
-                                val activeChatsCount = remember(state.completeData.matches) {
-                                    state.completeData.matches.count { !it.chatEnded && it.messageCount > 0 }
-                                }
-
-                                NavigationBarItem(
-                                    selected = currentTab == AppTab.Candidates,
-                                    onClick = { selectTab(AppTab.Candidates) },
-                                    icon = {
-                                        BadgedBox(
-                                            badge = {
-                                                if (incomingCount > 0) {
-                                                    Badge(
-                                                        containerColor = MaterialTheme.colorScheme.tertiary,
-                                                        contentColor = MaterialTheme.colorScheme.onTertiary
-                                                    ) {
-                                                        Text("$incomingCount")
-                                                    }
-                                                }
-                                            }
-                                        ) {
-                                            Icon(Icons.Default.People, contentDescription = stringResource(R.string.cd_candidates_tab))
-                                        }
-                                    },
-                                    label = { Text(stringResource(R.string.nav_label_candidates)) }
-                                )
-                                NavigationBarItem(
-                                    selected = currentTab == AppTab.Matches,
-                                    onClick = { selectTab(AppTab.Matches) },
-                                    icon = {
-                                        BadgedBox(
-                                            badge = {
-                                                if (activeChatsCount > 0) {
-                                                    Badge(
-                                                        containerColor = MaterialTheme.colorScheme.primary,
-                                                        contentColor = MaterialTheme.colorScheme.onPrimary
-                                                    ) {
-                                                        Text("$activeChatsCount")
-                                                    }
-                                                }
-                                            }
-                                        ) {
-                                            Icon(Icons.Default.ChatBubble, contentDescription = stringResource(R.string.cd_matches_tab))
-                                        }
-                                    },
-                                    label = { Text(stringResource(R.string.nav_label_matches)) }
-                                )
-                                NavigationBarItem(
-                                    selected = currentTab == AppTab.Home,
-                                    onClick = { selectTab(AppTab.Home) },
-                                    icon = { Icon(Icons.Default.Home, contentDescription = stringResource(R.string.cd_home_tab)) },
-                                    label = { Text(stringResource(R.string.nav_label_home)) }
-                                )
-                                NavigationBarItem(
-                                    selected = currentTab == AppTab.Profile,
-                                    onClick = { selectTab(AppTab.Profile) },
-                                    icon = { Icon(Icons.Default.AccountCircle, contentDescription = stringResource(R.string.cd_profile_tab)) },
-                                    label = { Text(stringResource(R.string.nav_label_profile)) }
-                                )
-                            }
-                        }
-                    }
-                }
-            ) { innerPadding ->
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(innerPadding)
-                    ) {
-                        if (showSettings) {
-                            io.github.s1ddhants1.unhinge.ui.component.settings.SettingsScreen(
-                                currentSubpage = settingsSubpage,
-                                onNavigateToSubpage = { settingsSubpage = it },
-                                prefs = prefs,
-                                onDataRestored = { viewModel.loadInsights() }
-                            )
-                        } else {
-                            PullToRefreshBox(
-                                isRefreshing = state.isRefreshing,
-                                onRefresh = { viewModel.loadInsights() },
-                                modifier = Modifier.fillMaxSize()
-                            ) {
-                                AnimatedContent(
-                                    targetState = currentTab,
-                                    transitionSpec = {
-                                        if (targetState.ordinal > initialState.ordinal) {
-                                            (slideInHorizontally(
-                                                animationSpec = spring(
-                                                    dampingRatio = Spring.DampingRatioLowBouncy,
-                                                    stiffness = Spring.StiffnessMediumLow
-                                                ),
-                                                initialOffsetX = { fullWidth -> (fullWidth * 0.25f).toInt() }
-                                            ) + fadeIn(animationSpec = tween(240))) togetherWith
-                                                     (slideOutHorizontally(
-                                                         animationSpec = spring(
-                                                             dampingRatio = Spring.DampingRatioNoBouncy,
-                                                             stiffness = Spring.StiffnessMediumLow
-                                                         ),
-                                                         targetOffsetX = { fullWidth -> (-fullWidth * 0.25f).toInt() }
-                                                     ) + fadeOut(animationSpec = tween(180)))
-                                         } else {
-                                             (slideInHorizontally(
-                                                 animationSpec = spring(
-                                                    dampingRatio = Spring.DampingRatioLowBouncy,
-                                                    stiffness = Spring.StiffnessMediumLow
-                                                ),
-                                                initialOffsetX = { fullWidth -> (-fullWidth * 0.25f).toInt() }
-                                            ) + fadeIn(animationSpec = tween(240))) togetherWith
-                                                     (slideOutHorizontally(
-                                                         animationSpec = spring(
-                                                             dampingRatio = Spring.DampingRatioNoBouncy,
-                                                             stiffness = Spring.StiffnessMediumLow
-                                                         ),
-                                                         targetOffsetX = { fullWidth -> (fullWidth * 0.25f).toInt() }
-                                                     ) + fadeOut(animationSpec = tween(180)))
-                                         }
-                                     },
-                                     label = "TabTransition"
-                                ) { tab ->
-                                    when (tab) {
-                                        AppTab.Home -> {
-                                            Column(modifier = Modifier.fillMaxSize()) {
-                                                FrameworkStatusBanner(
-                                                    isConnected = state.isFrameworkConnected,
-                                                    isInjectable = state.isInjectable,
-                                                    title = state.bannerTitle,
-                                                    desc = state.bannerDesc
-                                                )
-                                                RootStatusBanner(
-                                                    isRootGranted = state.isRootGranted
-                                                )
-                                                TelemetryScreen(
-                                                    data = state.completeData,
-                                                    isRefreshing = state.isRefreshing
-                                                )
-                                            }
-                                        }
-                                        AppTab.Profile -> ProfileRawScreen(data = state.completeData)
-                                        AppTab.Candidates -> CandidatesScreen(candidates = state.completeData.candidates, prefs = prefs)
-                                        AppTab.Matches -> MatchesScreen(matches = state.completeData.matches, prefs = prefs)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                UnhingeApp(
+                    viewModel = viewModel,
+                    state = state,
+                    prefs = prefs,
+                    intent = intent
+                )
             }
         }
     }
@@ -356,12 +91,12 @@ class MainActivity : ComponentActivity() {
         viewModel.loadInsights()
     }
 
-    override fun onNewIntent(intent: android.content.Intent) {
+    override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
     }
 
-    private fun syncPreferences(localPrefs: android.content.SharedPreferences, remotePrefs: android.content.SharedPreferences) {
+    private fun syncPreferences(localPrefs: SharedPreferences, remotePrefs: SharedPreferences) {
         val localTime = localPrefs.getLong("updated_at", 0L)
         val remoteTime = remotePrefs.getLong("updated_at", 0L)
 
@@ -421,6 +156,6 @@ class MainActivity : ComponentActivity() {
 
         remoteEditor.apply()
         localEditor.apply()
-        android.util.Log.i(Consts.TAG, "syncPreferences: local keys=${localMap.size}, remote keys=${remoteMap.size}")
+        Log.i(Consts.TAG, "syncPreferences: local keys=${localMap.size}, remote keys=${remoteMap.size}")
     }
 }

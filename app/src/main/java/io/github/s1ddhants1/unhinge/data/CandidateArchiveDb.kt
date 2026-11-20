@@ -421,4 +421,97 @@ class CandidateArchiveDb(context: Context) : SQLiteOpenHelper(context, "candidat
         db.update("archived_candidates", cv, "userId = ?", arrayOf(userId))
         return newState
     }
+
+    @Synchronized
+    fun updateRating(userId: String, status: String, comment: String = "") {
+        val db = writableDatabase
+        val cv = ContentValues().apply {
+            put("ratingStatus", status)
+            if (comment.isNotBlank()) {
+                put("likeComment", comment)
+            }
+        }
+        db.update("archived_candidates", cv, "userId = ?", arrayOf(userId))
+    }
+
+    @Synchronized
+    fun getCandidateByUserId(userId: String): CachedCandidateProfile? {
+        val db = readableDatabase
+        try {
+            db.rawQuery("""
+                SELECT userId, firstName, age, height, hometown, location,
+                       jobTitle, datingIntention, relationshipType, religion,
+                       ethnicity, isSelfieVerified, isCircleMember, isStandout,
+                       isDiscover, isLiveInFeed, ratingStatus, likeComment, firstSeenTimestamp,
+                       lastSeenTimestamp, photosJson, promptsJson,
+                       school, employer, politics, smoking, drinking, marijuana, drugs,
+                       kids, familyPlans, pet, zodiac, isNewHere, isYourTypeLately,
+                       isSecondChance, isIncomingLike, incomingComment, incomingLikeType, incomingTimestamp,
+                       lastActiveStatusId, isSaved, pronouns, languagesSpoken, screenshotProtected
+                FROM archived_candidates
+                WHERE userId = ?
+            """.trimIndent(), arrayOf(userId)).use { c ->
+                if (c.moveToNext()) {
+                    val photos = try {
+                        json.decodeFromString<List<String>>(c.getString(20) ?: "[]")
+                    } catch (e: Exception) { emptyList() }
+
+                    val prompts = try {
+                        json.decodeFromString<List<CandidatePromptItem>>(c.getString(21) ?: "[]")
+                    } catch (e: Exception) { emptyList() }
+
+                    return CachedCandidateProfile(
+                        userId = c.getString(0) ?: "",
+                        firstName = c.getString(1) ?: "",
+                        age = c.getInt(2),
+                        height = c.getInt(3),
+                        hometown = c.getString(4) ?: "",
+                        location = c.getString(5) ?: "",
+                        jobTitle = c.getString(6) ?: "",
+                        datingIntention = c.getString(7) ?: "",
+                        relationshipType = c.getString(8) ?: "",
+                        religion = c.getString(9) ?: "",
+                        ethnicity = c.getString(10) ?: "",
+                        isSelfieVerified = c.getInt(11) == 1,
+                        isCircleMember = c.getInt(12) == 1,
+                        isStandout = c.getInt(13) == 1,
+                        isDiscover = c.getInt(14) == 1,
+                        isLiveInFeed = c.getInt(15) == 1,
+                        ratingStatus = c.getString(16) ?: "",
+                        likeComment = c.getString(17) ?: "",
+                        firstSeenTimestamp = c.getLong(18),
+                        lastSeenTimestamp = c.getLong(19),
+                        photos = photos,
+                        prompts = prompts,
+                        school = c.getString(22) ?: "",
+                        employer = c.getString(23) ?: "",
+                        politics = c.getString(24) ?: "",
+                        smoking = c.getString(25) ?: "",
+                        drinking = c.getString(26) ?: "",
+                        marijuana = c.getString(27) ?: "",
+                        drugs = c.getString(28) ?: "",
+                        kids = c.getString(29) ?: "",
+                        familyPlans = c.getString(30) ?: "",
+                        pet = c.getString(31) ?: "",
+                        zodiac = c.getString(32) ?: "",
+                        isNewHere = c.getInt(33) == 1,
+                        isYourTypeLately = c.getInt(34) == 1,
+                        isSecondChance = c.getInt(35) == 1,
+                        isIncomingLike = c.getInt(36) == 1,
+                        incomingComment = c.getString(37) ?: "",
+                        incomingLikeType = c.getString(38) ?: "",
+                        incomingTimestamp = c.getLong(39),
+                        lastActiveStatusId = if (c.isNull(40) || c.getInt(40) == 0) null else c.getInt(40),
+                        isSaved = c.getInt(41) == 1,
+                        pronouns = c.getString(42) ?: "",
+                        languagesSpoken = c.getString(43) ?: "",
+                        screenshotProtected = c.getInt(44) == 1
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(Consts.TAG, "CandidateArchiveDb: Error getting candidate by userId $userId", e)
+        }
+        return null
+    }
 }

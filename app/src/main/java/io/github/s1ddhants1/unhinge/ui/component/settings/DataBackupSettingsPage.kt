@@ -18,6 +18,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import io.github.s1ddhants1.unhinge.data.BackupRestoreManager
 import io.github.s1ddhants1.unhinge.data.CandidateArchiveDb
+import io.github.s1ddhants1.unhinge.data.MatchArchiveDb
 import io.github.s1ddhants1.unhinge.util.PreferencesManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -29,7 +30,8 @@ import java.util.Locale
 private enum class ExportTarget {
     FULL,
     SETTINGS_ONLY,
-    CANDIDATES_ONLY
+    CANDIDATES_ONLY,
+    MATCHES_ONLY
 }
 
 @Composable
@@ -47,8 +49,11 @@ fun DataBackupSettingsPage(
     val clearedMsg = stringResource(R.string.backup_cleared)
     val scope = rememberCoroutineScope()
     val archiveDb = remember { CandidateArchiveDb(context) }
+    val matchArchiveDb = remember { MatchArchiveDb(context) }
     var archiveCount by remember { mutableIntStateOf(archiveDb.getArchiveCount()) }
+    var matchArchiveCount by remember { mutableIntStateOf(matchArchiveDb.getArchiveCount()) }
     var showClearDialog by remember { mutableStateOf(false) }
+    var showClearMatchesDialog by remember { mutableStateOf(false) }
     var currentExportTarget by remember { mutableStateOf(ExportTarget.FULL) }
 
     fun formattedTimestamp(): String {
@@ -65,20 +70,34 @@ fun DataBackupSettingsPage(
                         ExportTarget.FULL -> BackupRestoreManager.exportToJson(
                             prefs = prefs,
                             candidateArchiveDb = archiveDb,
+                            matchArchiveDb = matchArchiveDb,
                             includeSettings = true,
-                            includeCandidates = true
+                            includeCandidates = true,
+                            includeMatches = true
                         )
                         ExportTarget.SETTINGS_ONLY -> BackupRestoreManager.exportToJson(
                             prefs = prefs,
                             candidateArchiveDb = archiveDb,
+                            matchArchiveDb = matchArchiveDb,
                             includeSettings = true,
-                            includeCandidates = false
+                            includeCandidates = false,
+                            includeMatches = false
                         )
                         ExportTarget.CANDIDATES_ONLY -> BackupRestoreManager.exportToJson(
                             prefs = prefs,
                             candidateArchiveDb = archiveDb,
+                            matchArchiveDb = matchArchiveDb,
                             includeSettings = false,
-                            includeCandidates = true
+                            includeCandidates = true,
+                            includeMatches = false
+                        )
+                        ExportTarget.MATCHES_ONLY -> BackupRestoreManager.exportToJson(
+                            prefs = prefs,
+                            candidateArchiveDb = archiveDb,
+                            matchArchiveDb = matchArchiveDb,
+                            includeSettings = false,
+                            includeCandidates = false,
+                            includeMatches = true
                         )
                     }
                 }
@@ -107,15 +126,17 @@ fun DataBackupSettingsPage(
                     return@launch
                 }
                 val result = withContext(Dispatchers.IO) {
-                    BackupRestoreManager.importFromJson(context, jsonString, prefs, archiveDb)
+                    BackupRestoreManager.importFromJson(context, jsonString, prefs, archiveDb, matchArchiveDb)
                 }
                 if (result.success) {
                     archiveCount = withContext(Dispatchers.IO) { archiveDb.getArchiveCount() }
+                    matchArchiveCount = withContext(Dispatchers.IO) { matchArchiveDb.getArchiveCount() }
                     onDataRestored()
                     val msg = buildString {
                         append(restorePrefix)
                         if (result.settingsRestored) append(restoreSettingsMsg)
                         if (result.candidatesImported > 0) append(context.resources.getQuantityString(R.plurals.backup_restore_candidates, result.candidatesImported, result.candidatesImported))
+                        if (result.matchesImported > 0) append(" • ${result.matchesImported} matches restored")
                     }
                     Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                 } else {
@@ -150,6 +171,36 @@ fun DataBackupSettingsPage(
             },
             dismissButton = {
                 TextButton(onClick = { showClearDialog = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        )
+    }
+
+    if (showClearMatchesDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearMatchesDialog = false },
+            title = { Text(stringResource(R.string.backup_clear_matches_title)) },
+            text = { Text(pluralStringResource(R.plurals.backup_clear_matches_message, matchArchiveCount, matchArchiveCount)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        scope.launch {
+                            withContext(Dispatchers.IO) {
+                                matchArchiveDb.clearArchive()
+                            }
+                            matchArchiveCount = 0
+                            onDataRestored()
+                            Toast.makeText(context, context.getString(R.string.backup_matches_cleared), Toast.LENGTH_SHORT).show()
+                            showClearMatchesDialog = false
+                        }
+                    }
+                ) {
+                    Text(stringResource(R.string.action_clear_archive), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearMatchesDialog = false }) {
                     Text(stringResource(R.string.action_cancel))
                 }
             }
@@ -194,6 +245,16 @@ fun DataBackupSettingsPage(
                     exportLauncher.launch("unhinge_candidates_${formattedTimestamp()}.json")
                 }
             )
+            SettingsDivider()
+
+            SettingsActionRow(
+                title = stringResource(R.string.backup_export_matches),
+                icon = Icons.Default.ChatBubble,
+                onClick = {
+                    currentExportTarget = ExportTarget.MATCHES_ONLY
+                    exportLauncher.launch("unhinge_matches_${formattedTimestamp()}.json")
+                }
+            )
         }
 
         SettingsSectionCard(title = stringResource(R.string.backup_section_import)) {
@@ -227,6 +288,29 @@ fun DataBackupSettingsPage(
                 contentColor = MaterialTheme.colorScheme.error,
                 enabled = archiveCount > 0,
                 onClick = { showClearDialog = true }
+            )
+            SettingsDivider()
+
+            SettingsActionRow(
+                title = stringResource(R.string.backup_archived_matches),
+                icon = Icons.Default.Forum,
+                trailingContent = {
+                    Text(
+                        text = stringResource(R.string.backup_archived_saved_format, matchArchiveCount),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                },
+                onClick = {}
+            )
+            SettingsDivider()
+
+            SettingsActionRow(
+                title = stringResource(R.string.backup_clear_matches_row),
+                icon = Icons.Default.DeleteOutline,
+                contentColor = MaterialTheme.colorScheme.error,
+                enabled = matchArchiveCount > 0,
+                onClick = { showClearMatchesDialog = true }
             )
         }
 

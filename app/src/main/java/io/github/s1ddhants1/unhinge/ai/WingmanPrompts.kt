@@ -53,7 +53,7 @@ object WingmanPrompts {
     }
 
     fun chatReplySystemPrompt(
-        replyCount: Int,
+        replyCount: Int = 1,
         custom: String = "",
         prefs: PreferencesManager? = null,
         context: Context? = null,
@@ -76,7 +76,7 @@ object WingmanPrompts {
         prefs: PreferencesManager? = null,
         context: Context? = null,
         directionalStimulus: String = "",
-        replyCount: Int = 4,
+        replyCount: Int = 1,
     ): String {
         val effectiveTemplate = template?.takeIf { it.isNotBlank() }
             ?: PromptRepository.getEffectiveChatReplyTemplate(prefs, context)

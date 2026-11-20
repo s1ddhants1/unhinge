@@ -8,12 +8,19 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.edit
 import io.github.s1ddhants1.unhinge.Consts
+import io.github.s1ddhants1.unhinge.ai.AiProviderPresets
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.reflect.KProperty
 
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
@@ -269,10 +276,55 @@ class PreferencesManager(
     var unlockGatedFeatures by booleanPreference(Consts.PREF_UNLOCK_GATED_FEATURES, true)
     var allowScreenshots by booleanPreference(Consts.PREF_ALLOW_SCREENSHOTS, true)
 
-    var aiProvider by stringPreference(Consts.PREF_AI_PROVIDER, "Zen")
+    var aiProvider by stringPreference(Consts.PREF_AI_PROVIDER, "OpenRouter")
     var openRouterApiKey by stringPreference(Consts.PREF_OPENROUTER_API_KEY, "")
-    var openRouterBaseUrl by stringPreference(Consts.PREF_OPENROUTER_BASE_URL, Consts.ZEN_DEFAULT_BASE_URL)
-    var openRouterModel by stringPreference(Consts.PREF_OPENROUTER_MODEL, Consts.ZEN_DEFAULT_MODEL)
+    var aiApiKeysJson by stringPreference(Consts.PREF_AI_API_KEYS, "{}")
+    var openRouterOAuthKey by stringPreference(Consts.PREF_OPENROUTER_OAUTH_KEY, "")
+    var openRouterOAuthSession by stringPreference(Consts.PREF_OPENROUTER_OAUTH_SESSION, "")
+    var openRouterBaseUrl by stringPreference(Consts.PREF_OPENROUTER_BASE_URL, Consts.OPENROUTER_DEFAULT_BASE_URL)
+    var openRouterModel by stringPreference(Consts.PREF_OPENROUTER_MODEL, Consts.OPENROUTER_DEFAULT_MODEL)
+
+    fun aiApiKeyFor(provider: String): String {
+        return try {
+            val json = Json.parseToJsonElement(aiApiKeysJson).jsonObject
+            val key = json[provider]?.jsonPrimitive?.contentOrNull
+            if (!key.isNullOrBlank()) return key
+            if (provider.equals("OpenRouter", ignoreCase = true)) openRouterApiKey else ""
+        } catch (_: Exception) {
+            if (provider.equals("OpenRouter", ignoreCase = true)) openRouterApiKey else ""
+        }
+    }
+
+    fun setAiApiKey(provider: String, key: String) {
+        try {
+            val current = runCatching { Json.parseToJsonElement(aiApiKeysJson).jsonObject.toMutableMap() }.getOrElse { mutableMapOf() }
+            if (key.isBlank()) {
+                current.remove(provider)
+            } else {
+                current[provider] = JsonPrimitive(key.trim())
+            }
+            aiApiKeysJson = JsonObject(current).toString()
+        } catch (_: Exception) {
+            aiApiKeysJson = "{}"
+        }
+        if (provider.equals("OpenRouter", ignoreCase = true)) {
+            openRouterApiKey = key.trim()
+        }
+    }
+
+    fun aiCredentials(provider: String): Pair<String, String> {
+        val preset = AiProviderPresets.find(provider)
+        val apiKey = when {
+            provider.equals("OpenRouter", ignoreCase = true) && openRouterOAuthKey.isNotBlank() -> openRouterOAuthKey
+            else -> aiApiKeyFor(provider)
+        }
+        val baseUrl = if (preset != null && preset.editableEndpoint) {
+            openRouterBaseUrl.ifBlank { preset.endpoint }
+        } else {
+            preset?.endpoint ?: openRouterBaseUrl
+        }
+        return apiKey to baseUrl
+    }
     var aiCustomSystemPrompt by stringPreference(Consts.PREF_AI_CUSTOM_SYSTEM_PROMPT, "")
     var aiPromptRemoteUrl: String
         get() {
@@ -334,6 +386,18 @@ class PreferencesManager(
                 val apiKeyInStorage = localPrefs.getString(Consts.PREF_OPENROUTER_API_KEY, "") ?: ""
                 if (apiKeyInStorage.isNotBlank()) {
                     openRouterApiKey = apiKeyInStorage
+                }
+                val apiKeysInStorage = localPrefs.getString(Consts.PREF_AI_API_KEYS, "") ?: ""
+                if (apiKeysInStorage.isNotBlank()) {
+                    aiApiKeysJson = apiKeysInStorage
+                }
+                val oAuthKeyInStorage = localPrefs.getString(Consts.PREF_OPENROUTER_OAUTH_KEY, "") ?: ""
+                if (oAuthKeyInStorage.isNotBlank()) {
+                    openRouterOAuthKey = oAuthKeyInStorage
+                }
+                val oAuthSessionInStorage = localPrefs.getString(Consts.PREF_OPENROUTER_OAUTH_SESSION, "") ?: ""
+                if (oAuthSessionInStorage.isNotBlank()) {
+                    openRouterOAuthSession = oAuthSessionInStorage
                 }
                 val baseUrlInStorage = localPrefs.getString(Consts.PREF_OPENROUTER_BASE_URL, "") ?: ""
                 if (baseUrlInStorage.isNotBlank()) {
@@ -399,7 +463,7 @@ class PreferencesManager(
                 allowScreenshots = localPrefs.getBoolean(Consts.PREF_ALLOW_SCREENSHOTS, allowScreenshots)
                 val providerInStorage = localPrefs.getString(Consts.PREF_AI_PROVIDER, "") ?: ""
                 if (providerInStorage.isNotBlank()) {
-                    aiProvider = providerInStorage
+                    aiProvider = AiProviderPresets.normalizeProvider(providerInStorage)
                 }
             }
         }
@@ -436,6 +500,9 @@ class PreferencesManager(
                         .putBoolean(Consts.PREF_ALLOW_SCREENSHOTS, allowScreenshots)
                         .putString(Consts.PREF_AI_PROVIDER, aiProvider)
                         .putString(Consts.PREF_OPENROUTER_API_KEY, openRouterApiKey)
+                        .putString(Consts.PREF_AI_API_KEYS, aiApiKeysJson)
+                        .putString(Consts.PREF_OPENROUTER_OAUTH_KEY, openRouterOAuthKey)
+                        .putString(Consts.PREF_OPENROUTER_OAUTH_SESSION, openRouterOAuthSession)
                         .putString(Consts.PREF_OPENROUTER_BASE_URL, openRouterBaseUrl)
                         .putString(Consts.PREF_OPENROUTER_MODEL, openRouterModel)
                         .putString(Consts.PREF_AI_CUSTOM_SYSTEM_PROMPT, aiCustomSystemPrompt)
@@ -480,6 +547,9 @@ class PreferencesManager(
                                 .putBoolean(Consts.PREF_ALLOW_SCREENSHOTS, allowScreenshots)
                                 .putString(Consts.PREF_AI_PROVIDER, aiProvider)
                                 .putString(Consts.PREF_OPENROUTER_API_KEY, openRouterApiKey)
+                                .putString(Consts.PREF_AI_API_KEYS, aiApiKeysJson)
+                                .putString(Consts.PREF_OPENROUTER_OAUTH_KEY, openRouterOAuthKey)
+                                .putString(Consts.PREF_OPENROUTER_OAUTH_SESSION, openRouterOAuthSession)
                                 .putString(Consts.PREF_OPENROUTER_BASE_URL, openRouterBaseUrl)
                                 .putString(Consts.PREF_OPENROUTER_MODEL, openRouterModel)
                                 .putString(Consts.PREF_AI_CUSTOM_SYSTEM_PROMPT, aiCustomSystemPrompt)
@@ -551,7 +621,9 @@ class PreferencesManager(
             aiReasoningEffort = aiReasoningEffort,
             pureBlack = pureBlack,
             themeMode = themeModeString,
-            themeColor = themeColor
+            themeColor = themeColor,
+            aiApiKeysJson = aiApiKeysJson,
+            openRouterOAuthKey = openRouterOAuthKey
         )
     }
 
@@ -589,6 +661,8 @@ class PreferencesManager(
         pureBlack = settings.pureBlack
         themeModeString = settings.themeMode
         themeColor = settings.themeColor
+        aiApiKeysJson = settings.aiApiKeysJson
+        openRouterOAuthKey = settings.openRouterOAuthKey
         saveToFallbackStorageAsync(ctx)
     }
 

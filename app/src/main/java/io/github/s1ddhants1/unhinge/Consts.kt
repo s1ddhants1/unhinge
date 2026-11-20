@@ -41,6 +41,9 @@ object Consts {
 
     const val PREF_AI_PROVIDER = "ai_provider"
     const val PREF_OPENROUTER_API_KEY = "openrouter_api_key"
+    const val PREF_AI_API_KEYS = "ai_api_keys"
+    const val PREF_OPENROUTER_OAUTH_KEY = "openrouter_oauth_key"
+    const val PREF_OPENROUTER_OAUTH_SESSION = "openrouter_oauth_session"
     const val PREF_OPENROUTER_BASE_URL = "openrouter_base_url"
     const val PREF_OPENROUTER_MODEL = "openrouter_model"
     const val PREF_AI_CUSTOM_SYSTEM_PROMPT = "ai_custom_system_prompt"

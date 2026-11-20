@@ -26,9 +26,13 @@ object SuStorageReader {
         Log.d(Consts.TAG, "SuStorageReader: isRoot = $isRoot")
         if (!isRoot) {
             Log.w(Consts.TAG, "SuStorageReader: Root access not available, returning default state")
-            val archived = CandidateArchiveDb(context).getAllArchived()
+            val candidateArchiveDb = CandidateArchiveDb(context)
+            val archived = candidateArchiveDb.getAllArchived()
+            val matchArchiveDb = MatchArchiveDb(context)
+            val archivedMatches = matchArchiveDb.getAllArchived(candidateArchiveDb)
             return@withContext CompleteHingeData(
                 candidates = archived,
+                matches = archivedMatches,
                 isRootGranted = false
             )
         }
@@ -247,7 +251,8 @@ object SuStorageReader {
 
             if (!localDb.exists()) {
                 val archived = CandidateArchiveDb(context).getAllArchived()
-                return DbExtractResult(playerMedia, playerAnswers, archived, matches)
+                val archivedMatches = MatchArchiveDb(context).getAllArchived()
+                return DbExtractResult(playerMedia, playerAnswers, archived, archivedMatches)
             }
 
             SQLiteDatabase.openDatabase(localDb.absolutePath, null, SQLiteDatabase.OPEN_READONLY).use { db ->
@@ -565,19 +570,25 @@ object SuStorageReader {
                                 }
                                 val transcript = transcriptsMap[mId] ?: ""
 
-                                messagesMap.getOrPut(sId) { mutableListOf() }.add(
-                                    ChatMessageRecord(
-                                        localId = mId,
-                                        subjectId = sId,
-                                        body = body,
-                                        createdTimestamp = created,
-                                        sentBySubject = sentBySub,
-                                        unread = unread,
-                                        reactions = reactions,
-                                        isVoiceNote = hasVoice,
-                                        voiceTranscript = transcript
-                                    )
+                                val msgRecord = ChatMessageRecord(
+                                    localId = mId,
+                                    subjectId = sId,
+                                    body = body,
+                                    createdTimestamp = created,
+                                    sentBySubject = sentBySub,
+                                    unread = unread,
+                                    reactions = reactions,
+                                    isVoiceNote = hasVoice,
+                                    voiceTranscript = transcript
                                 )
+                                val list = messagesMap.getOrPut(sId) { mutableListOf() }
+                                val alreadyPresent = list.any { existing ->
+                                    (mId.isNotBlank() && existing.localId == mId) ||
+                                    (existing.createdTimestamp == created && existing.sentBySubject == sentBySub && existing.body == body)
+                                }
+                                if (!alreadyPresent) {
+                                    list.add(msgRecord)
+                                }
                             }
                         }
                     } catch (e: Exception) {
@@ -601,11 +612,14 @@ object SuStorageReader {
                             while (c.moveToNext()) {
                                 val u = c.getString(0)
                                 val p = c.getString(1)
-                                if (u != null && p != null) subjectPhotosMap[u] = p
+                                if (u != null && p != null && !subjectPhotosMap.containsKey(u)) {
+                                    subjectPhotosMap[u] = p
+                                }
                             }
                         }
                     } catch (e: Exception) { }
 
+                    val seenSubjectIds = mutableSetOf<String>()
                     try {
                         db.rawQuery("""
                             SELECT m.subjectId, m.playerInitiated, m.reciprocatedMatch, m.initiatedMatch,
@@ -615,10 +629,12 @@ object SuStorageReader {
                                    p.firstName, p.age, p.jobTitleText
                             FROM matches m
                             LEFT JOIN profiles p ON m.subjectId = p.userId
+                            GROUP BY m.subjectId
                             ORDER BY m.reciprocatedMatch DESC
                         """.trimIndent(), null).use { c ->
                             while (c.moveToNext()) {
                                 val sId = c.getString(0) ?: continue
+                                if (!seenSubjectIds.add(sId)) continue
                                 val pInitiated = c.getInt(1) == 1
                                 val reciprocated = c.getLong(2)
                                 val initiated = c.getLong(3)
@@ -670,6 +686,17 @@ object SuStorageReader {
                     } catch (e: Exception) {
                         Log.e(Consts.TAG, "SuStorageReader: Error reading matches", e)
                     }
+
+                    try {
+                        val matchArchiveDb = MatchArchiveDb(context)
+                        val candidateArchiveDb = CandidateArchiveDb(context)
+                        val distinctMatches = matches.distinctBy { it.subjectId }
+                        val mergedMatches = matchArchiveDb.upsertAndMerge(distinctMatches, candidateArchiveDb)
+                        matches.clear()
+                        matches.addAll(mergedMatches)
+                    } catch (e: Exception) {
+                        Log.e(Consts.TAG, "SuStorageReader: Error during match archive merge", e)
+                    }
                 } catch (e: Exception) {
                     Log.e(Consts.TAG, "SuStorageReader: Error in matches pipeline", e)
                 }
@@ -677,7 +704,8 @@ object SuStorageReader {
         } catch (e: Exception) {
             Log.e(Consts.TAG, "SuStorageReader: Error copying or opening SQLite database", e)
             val archived = CandidateArchiveDb(context).getAllArchived()
-            return DbExtractResult(playerMedia, playerAnswers, archived, matches, null)
+            val archivedMatches = MatchArchiveDb(context).getAllArchived()
+            return DbExtractResult(playerMedia, playerAnswers, archived, archivedMatches, null)
         }
 
         return DbExtractResult(playerMedia, playerAnswers, candidates, matches, synthesizedIncomingLikes)
