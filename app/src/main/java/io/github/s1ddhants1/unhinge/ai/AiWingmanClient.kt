@@ -1,6 +1,5 @@
 package io.github.s1ddhants1.unhinge.ai
 
-import io.github.s1ddhants1.unhinge.ai.AiHttpClient.readTextLimited
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -19,13 +18,11 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 
 object AiWingmanClient {
-    private val httpClient: OkHttpClient = AiHttpClient.client
-    val modelCatalog: AiModelCatalog = AiModelCatalog(httpClient)
+    val modelCatalog: AiModelCatalog = AiModelCatalog()
 
     val linesSchema: JsonObject = buildJsonObject {
         put("type", JsonPrimitive("object"))
@@ -73,8 +70,8 @@ object AiWingmanClient {
                         .header("Authorization", "Bearer ${apiKey.trim()}")
                         .get()
                         .build()
-                    httpClient.newCall(request).execute().use { response ->
-                        val text = response.body.string()
+                    AiHttpClient.execute(request).use { response ->
+                        val text = response.text()
                         if (!response.isSuccessful) throw AiHttpException(response.code, text, response.headers)
                         val root = runCatching { Json.parseToJsonElement(text) as? JsonObject }.getOrNull()
                         val data = root?.get("data") as? JsonObject
@@ -237,6 +234,9 @@ object AiWingmanClient {
         topP: Double = 0.95,
         reasoningEffort: String = "low",
     ): Result<String> {
+        val openCode = OpenCodeEmulation.isOpenCode(provider, baseUrl)
+        val effectiveSystemPrompt = if (openCode) OpenCodeEmulation.withFreeTierPrefix(systemPrompt) else systemPrompt
+
         fun body(responseFormat: JsonObject?, includeReasoning: Boolean = true) = buildJsonObject {
             if (model.isNotBlank()) put("model", JsonPrimitive(model))
             put(
@@ -245,7 +245,7 @@ object AiWingmanClient {
                     listOf(
                         buildJsonObject {
                             put("role", JsonPrimitive("system"))
-                            put("content", JsonPrimitive(systemPrompt))
+                            put("content", JsonPrimitive(effectiveSystemPrompt))
                         },
                         buildJsonObject {
                             put("role", JsonPrimitive("user"))
@@ -267,6 +267,7 @@ object AiWingmanClient {
                 )
             }
             if (responseFormat != null) put("response_format", responseFormat)
+            if (openCode) put("stream", JsonPrimitive(true))
         }
 
         return requestWithStructuredFallback(
@@ -279,7 +280,7 @@ object AiWingmanClient {
             ).distinct(),
             parse = ::extractOpenAiContent,
             applyHeaders = {
-                if (OpenCodeEmulation.isOpenCode(provider, baseUrl)) {
+                if (openCode) {
                     OpenCodeEmulation.injectHeaders(this, apiKey)
                 } else {
                     if (apiKey.isNotBlank()) header("Authorization", "Bearer ${apiKey.trim()}")
@@ -322,7 +323,7 @@ object AiWingmanClient {
         }
 
         try {
-            httpClient.newCall(reqBuilder.build()).execute().use { response ->
+            AiHttpClient.execute(reqBuilder.build()).use { response ->
                 val text = response.readTextLimited(AiModelCatalog.MODEL_RESPONSE_LIMIT_BYTES.toLong())
                     ?: return@withContext Result.failure(AiException(AiFailure.REQUEST_FAILED, "Response exceeded size limit"))
                 if (!response.isSuccessful) {
@@ -418,7 +419,7 @@ object AiWingmanClient {
         }
 
         try {
-            httpClient.newCall(reqBuilder.build()).execute().use { response ->
+            AiHttpClient.execute(reqBuilder.build()).use { response ->
                 val text = response.readTextLimited(AiModelCatalog.MODEL_RESPONSE_LIMIT_BYTES.toLong())
                     ?: return@withContext Result.failure(AiException(AiFailure.REQUEST_FAILED, "Response exceeded size limit"))
                 if (!response.isSuccessful) {
@@ -498,7 +499,7 @@ object AiWingmanClient {
             reqBuilder.applyHeaders()
 
             try {
-                httpClient.newCall(reqBuilder.build()).execute().use { response ->
+                AiHttpClient.execute(reqBuilder.build()).use { response ->
                     val responseText = response.readTextLimited(AiModelCatalog.MODEL_RESPONSE_LIMIT_BYTES.toLong())
                         ?: return@use
                     if (!response.isSuccessful) {
@@ -511,7 +512,14 @@ object AiWingmanClient {
                             ),
                         )
                     }
-                    val completion = parseAiCompletion(responseText, parse)
+                    val isEventStream = response.headers["Content-Type"]?.contains("text/event-stream", ignoreCase = true) == true ||
+                        responseText.trimStart().startsWith("data:")
+                    val normalized = if (isEventStream) {
+                        collapseEventStream(responseText)
+                    } else {
+                        responseText
+                    }
+                    val completion = parseAiCompletion(normalized, parse)
                     if (completion.isSuccess) {
                         return@withContext completion
                     }
@@ -526,6 +534,40 @@ object AiWingmanClient {
             }
         }
         Result.failure(AiException(AiFailure.REQUEST_FAILED, "AI request failed"))
+    }
+
+    private fun collapseEventStream(text: String): String {
+        val content = StringBuilder()
+        var finishReason: String? = null
+        text.lineSequence().forEach { raw ->
+            val line = raw.trim()
+            if (!line.startsWith("data:")) return@forEach
+            val payload = line.removePrefix("data:").trim()
+            if (payload.isEmpty() || payload == "[DONE]") return@forEach
+            val chunk = runCatching { Json.parseToJsonElement(payload).jsonObject }.getOrNull() ?: return@forEach
+            val choice = (chunk["choices"] as? JsonArray)?.firstOrNull() as? JsonObject ?: return@forEach
+            val deltaOrMessage = (choice["delta"] as? JsonObject) ?: (choice["message"] as? JsonObject)
+            (deltaOrMessage?.get("content") as? JsonPrimitive)?.contentOrNull?.let { chunkText ->
+                content.append(chunkText)
+            }
+            ((choice["finish_reason"] as? JsonPrimitive)?.contentOrNull
+                ?: (deltaOrMessage?.get("finish_reason") as? JsonPrimitive)?.contentOrNull)?.let {
+                finishReason = it
+            }
+        }
+        return buildJsonObject {
+            put(
+                "choices",
+                JsonArray(
+                    listOf(
+                        buildJsonObject {
+                            put("message", buildJsonObject { put("content", JsonPrimitive(content.toString())) })
+                            finishReason?.let { put("finish_reason", JsonPrimitive(it)) }
+                        },
+                    ),
+                ),
+            )
+        }.toString()
     }
 
     private fun parseAiCompletion(

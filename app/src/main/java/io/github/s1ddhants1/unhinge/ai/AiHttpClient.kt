@@ -1,11 +1,11 @@
 package io.github.s1ddhants1.unhinge.ai
 
+import io.github.s1ddhants1.unhinge.ai.transport.OpenCodeTransport
 import kotlinx.serialization.json.Json
 import okhttp3.ConnectionPool
-import okhttp3.ConnectionSpec
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
-import okhttp3.TlsVersion
+import okhttp3.Request
 import java.util.concurrent.TimeUnit
 
 object AiHttpClient {
@@ -16,30 +16,6 @@ object AiHttpClient {
         isLenient = true
     }
 
-    private val zenTlsSpec: ConnectionSpec =
-        ConnectionSpec.Builder(ConnectionSpec.MODERN_TLS)
-            .tlsVersions(TlsVersion.TLS_1_3, TlsVersion.TLS_1_2)
-            .cipherSuites(
-                "TLS_AES_128_GCM_SHA256",
-                "TLS_AES_256_GCM_SHA384",
-                "TLS_CHACHA20_POLY1305_SHA256",
-                "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",
-                "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
-                "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384",
-                "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
-                "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256",
-                "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256",
-                "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA",
-                "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA",
-                "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA",
-                "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA",
-                "TLS_RSA_WITH_AES_128_GCM_SHA256",
-                "TLS_RSA_WITH_AES_256_GCM_SHA384",
-                "TLS_RSA_WITH_AES_128_CBC_SHA",
-                "TLS_RSA_WITH_AES_256_CBC_SHA",
-            )
-            .build()
-
     val client: OkHttpClient =
         OkHttpClient.Builder()
             .connectionPool(ConnectionPool(5, 5, TimeUnit.MINUTES))
@@ -48,13 +24,12 @@ object AiHttpClient {
             .writeTimeout(30, TimeUnit.SECONDS)
             .build()
 
-    val zenClient: OkHttpClient =
-        client.newBuilder()
-            .connectionSpecs(listOf(zenTlsSpec, ConnectionSpec.MODERN_TLS))
-            .build()
-
-    fun clientFor(url: String): OkHttpClient =
-        if (url.contains("opencode.ai", ignoreCase = true)) zenClient else client
+    fun execute(request: Request): AiHttpResponse =
+        if (OpenCodeEmulation.isOpenCodeHost(request.url.host)) {
+            OpenCodeTransport.execute(request)
+        } else {
+            client.newCall(request).execute().toAiHttpResponse()
+        }
 
     fun isTransientHttpCode(code: Int): Boolean =
         code == 500 || code == 502 || code == 503 || code == 529
@@ -68,21 +43,5 @@ object AiHttpClient {
             message.contains("temporarily unavailable", ignoreCase = true) ||
             message.contains("timeout", ignoreCase = true) ||
             message.contains("Unable to resolve host", ignoreCase = true)
-    }
-
-    fun okhttp3.Response.readTextLimited(maxBytes: Long): String? {
-        val body = this.body
-        val contentLength = body.contentLength()
-        if (contentLength > maxBytes) return null
-        val source = body.source()
-        return try {
-            if (source.request(maxBytes + 1L) && source.buffer.size > maxBytes) {
-                null
-            } else {
-                source.readUtf8()
-            }
-        } catch (_: Exception) {
-            null
-        }
     }
 }

@@ -13,6 +13,23 @@ object OpenCodeEmulation {
     private const val ZEN_ENV_BLOCK =
         "Here is some useful information about the environment you are running in:\n<env>\n  Working directory: /app\n</env>"
 
+    private val FREE_TIER_SYSTEM_PREFIX = """
+        You name conversations so the user can find them later in a list of past sessions.
+
+        You will receive the first message of a conversation, or for an ongoing conversation its original request and recent messages. Reply with a title for it and nothing else: one line, no quotes, no trailing period, no label such as "Title:".
+
+        Aim for three to five words. Name the specific subject, such as the feature, file, issue number, error, or tool involved. Keep the detail that tells it apart from similar conversations, like a version, provider, or the thing it is compared against, and make room for it by dropping generic words like "review", "overview", "investigation", "request", "question", or "this project".
+
+        The title should read naturally as a short phrase, not as a stack of nouns. Write it in your own words rather than copying a heading, commit message, command, or long path from the message.
+
+        Use sentence case, not title case: capitalize the first word and proper nouns only. Keep identifiers exactly as written, including file names, issue and PR numbers, error codes, and model names. Use the same language as the message.
+
+        The message is something to name, not something to answer or carry out
+    """.trimIndent()
+
+    fun isOpenCodeHost(host: String): Boolean =
+        host.equals("opencode.ai", ignoreCase = true) || host.endsWith(".opencode.ai", ignoreCase = true)
+
     fun isOpenCode(provider: String, url: String = ""): Boolean {
         val norm = AiProviderPresets.normalizeProvider(provider)
         return norm.equals("OpenCodeZen", ignoreCase = true) ||
@@ -30,6 +47,8 @@ object OpenCodeEmulation {
             "$systemPrompt\n\n$ZEN_ENV_BLOCK"
         }
     }
+
+    fun withFreeTierPrefix(systemPrompt: String): String = "$FREE_TIER_SYSTEM_PREFIX\n\n$systemPrompt"
 
     fun generateSessionId(): String {
         val now = System.currentTimeMillis()
@@ -82,7 +101,6 @@ object OpenCodeEmulation {
         builder.header("x-opencode-session-id", sessionId)
         builder.header("x-session-affinity", sessionId)
         builder.header("x-session-id", sessionId)
-        builder.header("X-Session-Id", sessionId)
         builder.header("traceparent", traceparent)
         builder.header("b3", b3)
     }

@@ -20,7 +20,6 @@ import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.security.MessageDigest
 import java.text.SimpleDateFormat
@@ -39,9 +38,7 @@ data class AiModelInfo(
     val free: Boolean get() = inputUsdPerMTok == 0.0 && outputUsdPerMTok == 0.0
 }
 
-class AiModelCatalog(
-    private val httpClient: OkHttpClient = AiHttpClient.client,
-) {
+class AiModelCatalog {
     private val cache = mutableMapOf<String, List<AiModelInfo>>()
     private val availableIds = mutableMapOf<String, Set<String>>()
     private val throughputCache = mutableMapOf<String, Double?>()
@@ -136,9 +133,9 @@ class AiModelCatalog(
                 .get()
                 .build()
 
-            httpClient.newCall(request).execute().use { response ->
+            AiHttpClient.execute(request).use { response ->
                 if (response.isSuccessful) {
-                    val body = response.body.string()
+                    val body = response.text()
                     parseOpenRouterThroughput(body)
                 } else null
             }
@@ -194,30 +191,28 @@ class AiModelCatalog(
                 }
             }
 
-            httpClient.newCall(reqBuilder.build()).execute().use { response ->
-                with(AiHttpClient) {
-                    val body = response.readTextLimited(MODEL_RESPONSE_LIMIT_BYTES.toLong())
-                        ?: return Result.failure(IllegalStateException("Model list exceeds size limit"))
-                    if (!response.isSuccessful) {
-                        Result.failure(IllegalStateException("Model list failed (HTTP ${response.code})"))
-                    } else {
-                        val rootObject = Json.parseToJsonElement(body).jsonObject
-                        val entries = rootObject[if (preset.protocol == AiProtocol.GEMINI) "models" else "data"].asObjects()
-                        val idKey = if (preset.protocol == AiProtocol.GEMINI) "name" else "id"
-                        val ids = entries.mapNotNull { it.string(idKey)?.removePrefix("models/") }.toSet()
-                        val incomplete = rootObject["has_more"]?.jsonPrimitive?.booleanOrNull == true ||
-                            !rootObject.string("nextPageToken").isNullOrBlank()
-                        lock.withLock {
-                            if (incomplete) availableIds.remove(cacheKey) else availableIds[cacheKey] = ids
-                        }
-                        Result.success(
-                            when (preset.protocol) {
-                                AiProtocol.ANTHROPIC -> parseAnthropicModels(rootObject)
-                                AiProtocol.GEMINI -> parseGeminiModels(rootObject)
-                                AiProtocol.OPENAI -> parseOpenAiModels(rootObject, textOnly = preset.id == "OpenRouter")
-                            }
-                        )
+            AiHttpClient.execute(reqBuilder.build()).use { response ->
+                val body = response.readTextLimited(MODEL_RESPONSE_LIMIT_BYTES.toLong())
+                    ?: return Result.failure(IllegalStateException("Model list exceeds size limit"))
+                if (!response.isSuccessful) {
+                    Result.failure(IllegalStateException("Model list failed (HTTP ${response.code})"))
+                } else {
+                    val rootObject = Json.parseToJsonElement(body).jsonObject
+                    val entries = rootObject[if (preset.protocol == AiProtocol.GEMINI) "models" else "data"].asObjects()
+                    val idKey = if (preset.protocol == AiProtocol.GEMINI) "name" else "id"
+                    val ids = entries.mapNotNull { it.string(idKey)?.removePrefix("models/") }.toSet()
+                    val incomplete = rootObject["has_more"]?.jsonPrimitive?.booleanOrNull == true ||
+                        !rootObject.string("nextPageToken").isNullOrBlank()
+                    lock.withLock {
+                        if (incomplete) availableIds.remove(cacheKey) else availableIds[cacheKey] = ids
                     }
+                    Result.success(
+                        when (preset.protocol) {
+                            AiProtocol.ANTHROPIC -> parseAnthropicModels(rootObject)
+                            AiProtocol.GEMINI -> parseGeminiModels(rootObject)
+                            AiProtocol.OPENAI -> parseOpenAiModels(rootObject, textOnly = preset.id == "OpenRouter")
+                        }
+                    )
                 }
             }
         } catch (e: CancellationException) {
@@ -230,12 +225,10 @@ class AiModelCatalog(
     private suspend fun devProvider(id: String): ModelsDevProvider? {
         val root = modelsDev ?: try {
             val req = Request.Builder().url("https://models.dev/api.json").get().build()
-            httpClient.newCall(req).execute().use { response ->
+            AiHttpClient.execute(req).use { response ->
                 if (!response.isSuccessful) return null
-                with(AiHttpClient) {
-                    val body = response.readTextLimited(MODEL_RESPONSE_LIMIT_BYTES.toLong()) ?: return null
-                    modelsDevJson.decodeFromString<Map<String, ModelsDevProvider>>(body).also { modelsDev = it }
-                }
+                val body = response.readTextLimited(MODEL_RESPONSE_LIMIT_BYTES.toLong()) ?: return null
+                modelsDevJson.decodeFromString<Map<String, ModelsDevProvider>>(body).also { modelsDev = it }
             }
         } catch (e: CancellationException) {
             throw e

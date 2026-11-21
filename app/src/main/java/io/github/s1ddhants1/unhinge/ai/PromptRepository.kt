@@ -100,17 +100,17 @@ object PromptRepository {
             }
             val request = Request.Builder().url(target).build()
             val initialResponse = attempt("fetch remote prompt from $target", silent = true) {
-                AiHttpClient.clientFor(target).newCall(request).execute()
+                AiHttpClient.execute(request)
             }
             val body = if (initialResponse != null && initialResponse.isSuccessful) {
-                initialResponse.use { it.body.string().trim() }
+                initialResponse.use { it.text().trim() }
             } else {
                 initialResponse?.close()
                 if (target != Consts.DEFAULT_AI_PROMPT_REMOTE_URL && target.contains("githubusercontent.com/s1ddhants1/unhinge")) {
                     val fallbackReq = Request.Builder().url(Consts.DEFAULT_AI_PROMPT_REMOTE_URL).build()
-                    AiHttpClient.clientFor(Consts.DEFAULT_AI_PROMPT_REMOTE_URL).newCall(fallbackReq).execute().use { resp ->
+                    AiHttpClient.execute(fallbackReq).use { resp ->
                         if (!resp.isSuccessful) error("HTTP ${resp.code}")
-                        resp.body.string().trim()
+                        resp.text().trim()
                     }
                 } else {
                     error("HTTP ${initialResponse?.code ?: 404}")
